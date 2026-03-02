@@ -34,6 +34,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.FileOpen
+import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Sync
@@ -77,7 +78,8 @@ fun LyricsEditorBottomSheet(
     initialTimeOffset: Int = 0,
     onDismiss: () -> Unit,
     onSave: (String, Int) -> Unit,
-    onRefresh: () -> Unit = {}
+    onRefresh: () -> Unit = {},
+    onEmbedInFile: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
@@ -602,6 +604,35 @@ fun LyricsEditorBottomSheet(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(context.getString(R.string.bottomsheet_lyrics_save))
                 }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Embed in File Button
+            FilledTonalButton(
+                onClick = {
+                    HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.LongPress)
+                    if (editedLyrics.isNotBlank()) {
+                        onEmbedInFile(editedLyrics)
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp),
+                shape = RoundedCornerShape(16.dp),
+                enabled = editedLyrics.isNotBlank(),
+                colors = ButtonDefaults.filledTonalButtonColors(
+                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+                )
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.MusicNote,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(context.getString(R.string.bottomsheet_lyrics_embed))
             }
 
             Spacer(modifier = Modifier.height(16.dp))

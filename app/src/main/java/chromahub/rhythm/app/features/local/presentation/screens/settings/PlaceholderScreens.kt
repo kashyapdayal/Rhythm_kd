@@ -5266,6 +5266,7 @@ fun ExperimentalFeaturesScreen(onBackClick: () -> Unit) {
     val hapticFeedbackEnabled by appSettings.hapticFeedbackEnabled.collectAsState()
     val showLyrics by appSettings.showLyrics.collectAsState()
     val ignoreMediaStoreCovers by appSettings.ignoreMediaStoreCovers.collectAsState()
+    val losslessArtwork by appSettings.losslessArtwork.collectAsState()
     val appMode by appSettings.appMode.collectAsState()
     val allowCellularStreaming by appSettings.allowCellularStreaming.collectAsState()
     val bitPerfectMode by appSettings.bitPerfectMode.collectAsState()
@@ -5336,6 +5337,13 @@ fun ExperimentalFeaturesScreen(onBackClick: () -> Unit) {
                                 context.getString(chromahub.rhythm.app.R.string.settings_ignore_mediastore_covers_desc),
                                 toggleState = ignoreMediaStoreCovers,
                                 onToggleChange = { appSettings.setIgnoreMediaStoreCovers(it) }
+                            ),
+                            SettingItem(
+                                Icons.Default.HighQuality,
+                                context.getString(chromahub.rhythm.app.R.string.settings_lossless_artwork),
+                                context.getString(chromahub.rhythm.app.R.string.settings_lossless_artwork_desc),
+                                toggleState = losslessArtwork,
+                                onToggleChange = { appSettings.setLosslessArtwork(it) }
                             )
                         )
                     )
@@ -8372,6 +8380,17 @@ fun PlayerCustomizationSettingsScreen(onBackClick: () -> Unit) {
                                     description = context.getString(R.string.lyrics_show_romanization_desc),
                                     toggleState = appSettings.showLyricsRomanization.collectAsState().value,
                                     onToggleChange = { appSettings.setShowLyricsRomanization(it) }
+                                )
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(horizontal = 20.dp),
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
+                                )
+                                SettingRow(
+                                    icon = Icons.Rounded.LightMode,
+                                    title = context.getString(R.string.settings_keep_screen_on_lyrics),
+                                    description = context.getString(R.string.settings_keep_screen_on_lyrics_desc),
+                                    toggleState = appSettings.keepScreenOnLyrics.collectAsState().value,
+                                    onToggleChange = { appSettings.setKeepScreenOnLyrics(it) }
                                 )
                                 HorizontalDivider(
                                     modifier = Modifier.padding(horizontal = 20.dp),

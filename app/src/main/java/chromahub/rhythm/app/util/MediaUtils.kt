@@ -717,6 +717,177 @@ object MediaUtils {
     }
 
     /**
+     * Embeds lyrics into the audio file's metadata tags using jaudiotagger.
+     * Supports synced (LRC) and unsynced (plain) lyrics via FieldKey.LYRICS.
+     * @param context The application context
+     * @param song The song to embed lyrics into
+     * @param lyrics The lyrics text (plain or LRC formatted) to embed
+     * @return true if lyrics were successfully embedded, false otherwise
+     */
+    fun embedLyricsInFile(
+        context: Context,
+        song: Song,
+        lyrics: String
+    ): Boolean {
+        return try {
+            val contentResolver = context.contentResolver
+
+            Log.d(TAG, "Attempting to embed lyrics into: ${song.title}")
+            Log.d(TAG, "Song URI: ${song.uri}")
+
+            if (!song.uri.toString().startsWith("content://media/")) {
+                Log.e(TAG, "Invalid URI scheme for lyrics embedding: ${song.uri}")
+                return false
+            }
+
+            // Get file path from URI
+            val filePath = when (song.uri.scheme) {
+                "content" -> {
+                    val projection = arrayOf(MediaStore.Audio.Media.DATA)
+                    contentResolver.query(song.uri, projection, null, null, null)
+                        ?.use { cursor ->
+                            if (cursor.moveToFirst()) {
+                                val dataIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
+                                cursor.getString(dataIndex)
+                            } else null
+                        }
+                }
+                "file" -> song.uri.path
+                else -> null
+            }
+
+            var fileWriteSucceeded = false
+
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                try {
+                    Log.d(TAG, "Using temporary file approach for lyrics embedding (Android 10+)")
+                    val extension = filePath?.substringAfterLast('.', "mp3") ?: "mp3"
+                    val tempFile = File(
+                        context.cacheDir,
+                        "temp_lyrics_${System.currentTimeMillis()}.$extension"
+                    )
+
+                    try {
+                        // Step 1: Copy original file to temp location
+                        contentResolver.openInputStream(song.uri)?.use { inputStream ->
+                            tempFile.outputStream().use { outputStream ->
+                                inputStream.copyTo(outputStream)
+                            }
+                        }
+
+                        if (!tempFile.exists() || tempFile.length() == 0L) {
+                            throw Exception("Failed to copy file to temp location for lyrics embedding")
+                        }
+
+                        // Step 2: Write lyrics to temp file using jaudiotagger
+                        val audioFileObj = AudioFileIO.read(tempFile)
+                        val tag: Tag = audioFileObj.tag ?: audioFileObj.createDefaultTag()
+                        tag.setField(FieldKey.LYRICS, lyrics)
+                        audioFileObj.tag = tag
+                        AudioFileIO.write(audioFileObj)
+                        Log.d(TAG, "Lyrics written to temp file successfully")
+
+                        // Step 3: Copy modified temp file back
+                        val outputStream = try {
+                            contentResolver.openOutputStream(song.uri, "w")
+                        } catch (e: android.app.RecoverableSecurityException) {
+                            Log.e(TAG, "RecoverableSecurityException - user permission required for lyrics embedding")
+                            throw RecoverableSecurityExceptionWrapper(
+                                "User permission required to embed lyrics",
+                                e.userAction,
+                                song.uri,
+                                tempFile.absolutePath
+                            )
+                        } catch (e: SecurityException) {
+                            Log.e(TAG, "SecurityException during lyrics embedding", e)
+                            null
+                        }
+
+                        if (outputStream == null) {
+                            throw Exception("Cannot open output stream for lyrics embedding: ${song.uri}")
+                        }
+
+                        outputStream.use { outStream ->
+                            tempFile.inputStream().use { inputStream ->
+                                inputStream.copyTo(outStream)
+                            }
+                        }
+
+                        fileWriteSucceeded = true
+                        Log.d(TAG, "Successfully embedded lyrics (Android 10+)")
+
+                    } finally {
+                        if (tempFile.exists()) {
+                            tempFile.delete()
+                        }
+                    }
+                } catch (e: RecoverableSecurityExceptionWrapper) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to embed lyrics on Android 10+", e)
+                }
+            } else {
+                // Android 9 and below
+                if (filePath == null) {
+                    Log.e(TAG, "Could not get file path for lyrics embedding")
+                } else {
+                    val audioFile = File(filePath)
+                    if (!audioFile.exists()) {
+                        Log.e(TAG, "File does not exist: $filePath")
+                    } else if (!audioFile.canWrite()) {
+                        Log.e(TAG, "File is not writable: $filePath")
+                    } else {
+                        try {
+                            val audioFileObj = AudioFileIO.read(audioFile)
+                            val tag: Tag = audioFileObj.tag ?: audioFileObj.createDefaultTag()
+                            tag.setField(FieldKey.LYRICS, lyrics)
+                            audioFileObj.tag = tag
+                            AudioFileIO.write(audioFileObj)
+
+                            fileWriteSucceeded = true
+                            Log.d(TAG, "Successfully embedded lyrics (Android 9-): $filePath")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Failed to embed lyrics using jaudiotagger", e)
+                        }
+                    }
+                }
+            }
+
+            if (fileWriteSucceeded) {
+                // Trigger media scanner
+                try {
+                    val scanFilePath = filePath ?: when (song.uri.scheme) {
+                        "content" -> {
+                            val projection = arrayOf(MediaStore.Audio.Media.DATA)
+                            contentResolver.query(song.uri, projection, null, null, null)
+                                ?.use { cursor ->
+                                    if (cursor.moveToFirst()) {
+                                        cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA))
+                                    } else null
+                                }
+                        }
+                        else -> null
+                    }
+                    if (scanFilePath != null) {
+                        android.media.MediaScannerConnection.scanFile(context, arrayOf(scanFilePath), null, null)
+                        Log.d(TAG, "Media scanner triggered for lyrics-embedded file: $scanFilePath")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error triggering media scanner after lyrics embedding", e)
+                }
+            }
+
+            Log.d(TAG, "Lyrics embedding result: $fileWriteSucceeded")
+            fileWriteSucceeded
+        } catch (e: RecoverableSecurityExceptionWrapper) {
+            throw e
+        } catch (e: Exception) {
+            Log.e(TAG, "Error embedding lyrics into file", e)
+            false
+        }
+    }
+
+    /**
      * Updates song metadata using ContentResolver
      * @param context The application context
      * @param song The song to update
@@ -1705,9 +1876,10 @@ object MediaUtils {
      * @param context The application context
      * @param songUri The URI of the song file
      * @param cacheDir The cache directory to save the extracted artwork
+     * @param lossless If true, saves raw bytes as PNG without re-compression; if false, compresses to JPEG quality 90
      * @return Uri pointing to the cached artwork file, or null if no embedded art found
      */
-    fun extractEmbeddedAlbumArt(context: Context, songUri: Uri, cacheDir: File): Uri? {
+    fun extractEmbeddedAlbumArt(context: Context, songUri: Uri, cacheDir: File, lossless: Boolean = false): Uri? {
         val retriever = MediaMetadataRetriever()
         try {
             retriever.setDataSource(context, songUri)
@@ -1715,19 +1887,29 @@ object MediaUtils {
             // Extract embedded picture
             val embeddedArt = retriever.embeddedPicture
             if (embeddedArt != null && embeddedArt.isNotEmpty()) {
-                // Save to cache with unique filename based on song URI
-                val artworkFile = File(cacheDir, "embedded_art_${songUri.hashCode()}.jpg")
-
-                FileOutputStream(artworkFile).use { out ->
-                    val bitmap = BitmapFactory.decodeByteArray(embeddedArt, 0, embeddedArt.size)
-                    if (bitmap != null) {
-                        bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
-                        out.flush()
-                        Log.d(
-                            TAG,
-                            "Extracted embedded album art from file: ${artworkFile.absolutePath}"
-                        )
-                        return artworkFile.toUri()
+                if (lossless) {
+                    // Save raw bytes as PNG (lossless) without re-compression
+                    val artworkFile = File(cacheDir, "embedded_art_${songUri.hashCode()}.png")
+                    FileOutputStream(artworkFile).use { out ->
+                        val bitmap = BitmapFactory.decodeByteArray(embeddedArt, 0, embeddedArt.size)
+                        if (bitmap != null) {
+                            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                            out.flush()
+                            Log.d(TAG, "Extracted lossless embedded album art: ${artworkFile.absolutePath}")
+                            return artworkFile.toUri()
+                        }
+                    }
+                } else {
+                    // Save to cache with JPEG compression (default behavior)
+                    val artworkFile = File(cacheDir, "embedded_art_${songUri.hashCode()}.jpg")
+                    FileOutputStream(artworkFile).use { out ->
+                        val bitmap = BitmapFactory.decodeByteArray(embeddedArt, 0, embeddedArt.size)
+                        if (bitmap != null) {
+                            bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
+                            out.flush()
+                            Log.d(TAG, "Extracted embedded album art: ${artworkFile.absolutePath}")
+                            return artworkFile.toUri()
+                        }
                     }
                 }
             } else {

@@ -294,6 +294,7 @@ class MusicRepository(context: Context) {
         val errors = mutableListOf<Pair<Int, Exception>>()
         val seenIds = mutableSetOf<String>()
         val seenPaths = mutableSetOf<String>()
+        val seenContentKeys = mutableSetOf<String>() // title+artist+duration key for content-based dedup
         var duplicatesFound = 0
         var filteredByFormat = 0
         var filteredByQuality = 0
@@ -417,6 +418,16 @@ class MusicRepository(context: Context) {
                                 
                                 seenPaths.add(path)
                             }
+
+                            // Content-based duplicate detection (title+artist+duration)
+                            val contentKey = "${song.title.lowercase().trim()}|${song.artist.lowercase().trim()}|${song.duration}"
+                            if (seenContentKeys.contains(contentKey)) {
+                                Log.d(TAG, "Skipping content duplicate: ${song.title} by ${song.artist}")
+                                duplicatesFound++
+                                processedCount++
+                                continue
+                            }
+                            seenContentKeys.add(contentKey)
                             
                             // Duration filtering (quality check)
                             if (minimumDuration > 0 && song.duration < minimumDuration) {
@@ -671,10 +682,11 @@ class MusicRepository(context: Context) {
 
             // Determine album art URI based on user preference
             val ignoreMediaStoreCovers = appSettings.ignoreMediaStoreCovers.value
+            val losslessArtwork = appSettings.losslessArtwork.value
             
             val albumArtUri = if (ignoreMediaStoreCovers) {
                 // Extract embedded album art directly from file
-                chromahub.rhythm.app.util.MediaUtils.extractEmbeddedAlbumArt(context, contentUri, context.cacheDir)
+                chromahub.rhythm.app.util.MediaUtils.extractEmbeddedAlbumArt(context, contentUri, context.cacheDir, losslessArtwork)
                     ?: ContentUris.withAppendedId(
                         Uri.parse("content://media/external/audio/albumart"),
                         albumId
@@ -1063,6 +1075,7 @@ class MusicRepository(context: Context) {
 
     suspend fun loadAlbums(): List<Album> = withContext(Dispatchers.IO) {
         val albums = mutableListOf<Album>()
+        val seenAlbumTitles = mutableSetOf<String>() // Dedup albums by normalized title
         val collection = MediaStore.Audio.Albums.EXTERNAL_CONTENT_URI
 
         val projection = arrayOf(
@@ -1100,6 +1113,14 @@ class MusicRepository(context: Context) {
                 val artist = cursor.getString(artistColumn) ?: "Unknown Artist"
                 val songsCount = cursor.getInt(songsCountColumn)
                 val year = cursor.getInt(yearColumn)
+
+                // Deduplicate albums by normalized title (case-insensitive, trimmed)
+                val normalizedTitle = title.lowercase().trim()
+                if (seenAlbumTitles.contains(normalizedTitle)) {
+                    Log.d(TAG, "Skipping duplicate album: $title")
+                    continue
+                }
+                seenAlbumTitles.add(normalizedTitle)
 
                 // Get songs for this album from the pre-loaded map
                 val albumSongs = songsByAlbumTitle[title] ?: emptyList()

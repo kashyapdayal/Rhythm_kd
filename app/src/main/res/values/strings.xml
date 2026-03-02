@@ -431,8 +431,10 @@
     <string name="player_lyrics">LYRICS</string>
     <string name="player_repeat">REPEAT</string>
     <string name="player_queue">Queue</string>
-    <string name="player_playback_speed">Playback Speed</string>
-    <string name="player_playback_speed_desc">Adjust the speed of audio playback.</string>
+    <string name="player_playback_speed">Speed &amp; Pitch</string>
+    <string name="player_playback_speed_desc">Adjust the speed and pitch of audio playback.</string>
+    <string name="player_speed_label">Speed</string>
+    <string name="player_pitch_label">Pitch</string>
     <string name="playback_speed">Playback Speed</string>
     
     <!-- SearchScreen -->
@@ -839,6 +841,8 @@
     <string name="lyrics_show_translation_desc">Display translated lyrics when available</string>
     <string name="lyrics_show_romanization">Show Romanization</string>
     <string name="lyrics_show_romanization_desc">Display romanized lyrics when available</string>
+    <string name="settings_keep_screen_on_lyrics">Keep Screen Awake</string>
+    <string name="settings_keep_screen_on_lyrics_desc">Prevent screen from turning off while lyrics are visible</string>
     
     <!-- Theme Customization -->
     <string name="theme_good_to_know">Good to Know</string>
@@ -1415,6 +1419,9 @@
     <string name="bottomsheet_lyrics_later">Later</string>
     <string name="bottomsheet_lyrics_load">Load Lyrics</string>
     <string name="bottomsheet_lyrics_save">Save Lyrics</string>
+    <string name="bottomsheet_lyrics_embed">Embed in File</string>
+    <string name="lyrics_embed_success">Lyrics embedded in file successfully</string>
+    <string name="lyrics_embed_failed">Failed to embed lyrics in file</string>
     
     <!-- Bottom Sheet: Sleep Timer -->
     <string name="bottomsheet_timer_remaining">remaining</string>
@@ -1591,6 +1598,8 @@
     <string name="settings_gestures_desc">Swipe to skip</string>
     <string name="settings_ignore_mediastore_covers">Ignore MediaStore Covers</string>
     <string name="settings_ignore_mediastore_covers_desc">Embedded album art</string>
+    <string name="settings_lossless_artwork">Lossless Artwork</string>
+    <string name="settings_lossless_artwork_desc">Show cover art as-is without downscaling or compression. May use more memory.</string>
     <string name="settings_artist_parsing">Artists</string>
     <string name="settings_artist_parsing_desc">Separators, display</string>
     <string name="settings_rhythm_stats">Rhythm Stats</string>

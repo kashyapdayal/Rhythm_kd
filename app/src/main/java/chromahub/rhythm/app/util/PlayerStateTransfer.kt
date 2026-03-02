@@ -1,6 +1,7 @@
 package chromahub.rhythm.app.util
 
 import android.util.Log
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.MediaItem
 
@@ -17,6 +18,7 @@ class PlayerStateTransfer {
         val currentPosition: Long,
         val playWhenReady: Boolean,
         val playbackSpeed: Float,
+        val playbackPitch: Float,
         val shuffleModeEnabled: Boolean,
         val repeatMode: Int
     )
@@ -43,6 +45,7 @@ class PlayerStateTransfer {
                 currentPosition = player.currentPosition,
                 playWhenReady = player.playWhenReady,
                 playbackSpeed = player.playbackParameters.speed,
+                playbackPitch = player.playbackParameters.pitch,
                 shuffleModeEnabled = player.shuffleModeEnabled,
                 repeatMode = player.repeatMode
             )
@@ -62,7 +65,7 @@ class PlayerStateTransfer {
             // Restore playback settings
             player.shuffleModeEnabled = savedState.shuffleModeEnabled
             player.repeatMode = savedState.repeatMode
-            player.setPlaybackSpeed(savedState.playbackSpeed)
+            player.playbackParameters = PlaybackParameters(savedState.playbackSpeed, savedState.playbackPitch)
             player.playWhenReady = savedState.playWhenReady
             
             // Prepare the player

@@ -69,6 +69,7 @@ class AppSettings private constructor(context: Context) {
         private const val KEY_LYRICS_SOURCE_PREFERENCE = "lyrics_source_preference"
         private const val KEY_SHOW_LYRICS_TRANSLATION = "show_lyrics_translation"
         private const val KEY_SHOW_LYRICS_ROMANIZATION = "show_lyrics_romanization"
+        private const val KEY_KEEP_SCREEN_ON_LYRICS = "keep_screen_on_lyrics"
         
         // Theme Settings
         private const val KEY_USE_SYSTEM_THEME = "use_system_theme"
@@ -100,6 +101,7 @@ class AppSettings private constructor(context: Context) {
         private const val KEY_HIDDEN_PLAYER_CHIPS = "hidden_player_chips"
         private const val KEY_GROUP_BY_ALBUM_ARTIST = "group_by_album_artist" // New setting for album artist grouping
         private const val KEY_IGNORE_MEDIASTORE_COVERS = "ignore_mediastore_covers" // Ignore Android MediaStore covers, read embedded art directly
+        private const val KEY_LOSSLESS_ARTWORK = "lossless_artwork" // Show cover art without downscaling/compression
         
         // Audio Device Settings
         private const val KEY_LAST_AUDIO_DEVICE = "last_audio_device"
@@ -287,6 +289,7 @@ class AppSettings private constructor(context: Context) {
         private const val KEY_SAVED_SHUFFLE_STATE = "saved_shuffle_state"
         private const val KEY_SAVED_REPEAT_MODE = "saved_repeat_mode"
         private const val KEY_PLAYBACK_SPEED = "playback_speed"
+        private const val KEY_PLAYBACK_PITCH = "playback_pitch"
         private const val KEY_USE_HOURS_IN_TIME_FORMAT = "use_hours_in_time_format"
         private const val KEY_STOP_PLAYBACK_ON_APP_CLOSE = "stop_playback_on_app_close"
         private const val KEY_QUEUE_PERSISTENCE_ENABLED = "queue_persistence_enabled" // Enable/disable queue persistence
@@ -462,6 +465,9 @@ class AppSettings private constructor(context: Context) {
     private val _showLyricsRomanization = MutableStateFlow(prefs.getBoolean(KEY_SHOW_LYRICS_ROMANIZATION, true))
     val showLyricsRomanization: StateFlow<Boolean> = _showLyricsRomanization.asStateFlow()
     
+    private val _keepScreenOnLyrics = MutableStateFlow(prefs.getBoolean(KEY_KEEP_SCREEN_ON_LYRICS, false))
+    val keepScreenOnLyrics: StateFlow<Boolean> = _keepScreenOnLyrics.asStateFlow()
+    
     // Theme Settings
     private val _useSystemTheme = MutableStateFlow(prefs.getBoolean(KEY_USE_SYSTEM_THEME, true))
     val useSystemTheme: StateFlow<Boolean> = _useSystemTheme.asStateFlow()
@@ -603,6 +609,10 @@ class AppSettings private constructor(context: Context) {
     // Ignore MediaStore Covers - Read embedded album art directly
     private val _ignoreMediaStoreCovers = MutableStateFlow(prefs.getBoolean(KEY_IGNORE_MEDIASTORE_COVERS, false))
     val ignoreMediaStoreCovers: StateFlow<Boolean> = _ignoreMediaStoreCovers.asStateFlow()
+
+    // Lossless Artwork - Show cover art as-is without compression
+    private val _losslessArtwork = MutableStateFlow(prefs.getBoolean(KEY_LOSSLESS_ARTWORK, false))
+    val losslessArtwork: StateFlow<Boolean> = _losslessArtwork.asStateFlow()
     
     // Alphabet Bar Settings
     private val _showAlphabetBar = MutableStateFlow(prefs.getBoolean(KEY_SHOW_ALPHABET_BAR, false))
@@ -708,6 +718,9 @@ class AppSettings private constructor(context: Context) {
     
     private val _playbackSpeed = MutableStateFlow(prefs.getFloat(KEY_PLAYBACK_SPEED, 1.0f))
     val playbackSpeed: StateFlow<Float> = _playbackSpeed.asStateFlow()
+
+    private val _playbackPitch = MutableStateFlow(prefs.getFloat(KEY_PLAYBACK_PITCH, 1.0f))
+    val playbackPitch: StateFlow<Float> = _playbackPitch.asStateFlow()
     
     // Time Format Settings - Show hours:minutes:seconds for longer tracks (>60 min)
     private val _useHoursInTimeFormat = MutableStateFlow(prefs.getBoolean(KEY_USE_HOURS_IN_TIME_FORMAT, true))
@@ -1265,6 +1278,11 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
         _showLyricsRomanization.value = show
     }
     
+    fun setKeepScreenOnLyrics(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_KEEP_SCREEN_ON_LYRICS, enabled).apply()
+        _keepScreenOnLyrics.value = enabled
+    }
+    
     // Theme Settings Methods
     fun setUseSystemTheme(use: Boolean) {
         prefs.edit().putBoolean(KEY_USE_SYSTEM_THEME, use).apply()
@@ -1421,6 +1439,11 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
     fun setIgnoreMediaStoreCovers(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_IGNORE_MEDIASTORE_COVERS, enabled).apply()
         _ignoreMediaStoreCovers.value = enabled
+    }
+
+    fun setLosslessArtwork(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_LOSSLESS_ARTWORK, enabled).apply()
+        _losslessArtwork.value = enabled
     }
     
     fun setShowAlphabetBar(show: Boolean) {
@@ -1608,6 +1631,11 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
     fun setPlaybackSpeed(speed: Float) {
         prefs.edit().putFloat(KEY_PLAYBACK_SPEED, speed).apply()
         _playbackSpeed.value = speed
+    }
+
+    fun setPlaybackPitch(pitch: Float) {
+        prefs.edit().putFloat(KEY_PLAYBACK_PITCH, pitch).apply()
+        _playbackPitch.value = pitch
     }
     
     // Time Format Settings Methods

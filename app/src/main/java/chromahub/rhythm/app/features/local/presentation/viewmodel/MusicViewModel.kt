@@ -22,6 +22,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
+import chromahub.rhythm.app.R
 import chromahub.rhythm.app.shared.data.model.Album
 import chromahub.rhythm.app.shared.data.model.AppSettings
 import chromahub.rhythm.app.shared.data.model.Artist
@@ -36,6 +37,7 @@ import chromahub.rhythm.app.infrastructure.widget.WidgetUpdater
 import chromahub.rhythm.app.util.AudioDeviceManager
 import chromahub.rhythm.app.util.EqualizerUtils
 import chromahub.rhythm.app.util.GsonUtils
+import chromahub.rhythm.app.util.MediaUtils
 import chromahub.rhythm.app.util.PlaylistImportExportUtils
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
@@ -106,6 +108,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     val clearQueueOnNewSong = appSettings.clearQueueOnNewSong
     val repeatModePersistence = appSettings.repeatModePersistence
     val playbackSpeed = appSettings.playbackSpeed
+    val playbackPitch = appSettings.playbackPitch
     
     // Equalizer settings
     val equalizerEnabled = appSettings.equalizerEnabled
@@ -2118,11 +2121,12 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                             }
                         }
                         
-                        // Restore saved playback speed
+                        // Restore saved playback speed and pitch
                         val savedSpeed = appSettings.playbackSpeed.value
-                        Log.d(TAG, "Restoring saved playback speed: $savedSpeed")
-                        if (controller.playbackParameters.speed != savedSpeed) {
-                            controller.setPlaybackSpeed(savedSpeed)
+                        val savedPitch = appSettings.playbackPitch.value
+                        Log.d(TAG, "Restoring saved playback speed: $savedSpeed, pitch: $savedPitch")
+                        if (controller.playbackParameters.speed != savedSpeed || controller.playbackParameters.pitch != savedPitch) {
+                            controller.playbackParameters = androidx.media3.common.PlaybackParameters(savedSpeed, savedPitch)
                         }
                         
                         Log.d(TAG, "Initial repeat mode from controller: $controllerRepeatMode (${
@@ -4514,7 +4518,49 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
-    
+
+    /**
+     * Embed lyrics into the current song's audio file metadata
+     */
+    fun embedLyricsInFile(lyrics: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val song = _currentSong.value
+                if (song != null) {
+                    val context = getApplication<Application>()
+                    val success = MediaUtils.embedLyricsInFile(context, song, lyrics)
+                    withContext(Dispatchers.Main) {
+                        if (success) {
+                            android.widget.Toast.makeText(
+                                context,
+                                context.getString(R.string.lyrics_embed_success),
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                        } else {
+                            android.widget.Toast.makeText(
+                                context,
+                                context.getString(R.string.lyrics_embed_failed),
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }
+                    Log.d(TAG, "Embed lyrics result: $success for ${song.title}")
+                } else {
+                    Log.w(TAG, "Cannot embed lyrics - no current song")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error embedding lyrics in file", e)
+                withContext(Dispatchers.Main) {
+                    android.widget.Toast.makeText(
+                        getApplication(),
+                        getApplication<Application>().getString(R.string.lyrics_embed_failed),
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+        }
+    }
+
     /**
      * Save edited lyrics for the current song to cache
      */
@@ -5402,7 +5448,16 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     fun setPlaybackSpeed(speed: Float) {
         Log.d(TAG, "Setting playback speed to $speed")
         appSettings.setPlaybackSpeed(speed)
-        mediaController?.setPlaybackSpeed(speed)
+        val currentPitch = appSettings.playbackPitch.value
+        mediaController?.playbackParameters = androidx.media3.common.PlaybackParameters(speed, currentPitch)
+    }
+
+    // Playback Pitch Control
+    fun setPlaybackPitch(pitch: Float) {
+        Log.d(TAG, "Setting playback pitch to $pitch")
+        appSettings.setPlaybackPitch(pitch)
+        val currentSpeed = appSettings.playbackSpeed.value
+        mediaController?.playbackParameters = androidx.media3.common.PlaybackParameters(currentSpeed, pitch)
     }
 
     // Enhanced play tracking with user preferences

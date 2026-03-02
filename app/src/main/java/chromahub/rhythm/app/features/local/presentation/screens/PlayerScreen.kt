@@ -337,6 +337,7 @@ fun PlayerScreen(
     val enhancedSeekingEnabled by appSettingsInstance.enhancedSeekingEnabled.collectAsState()
     val showLyricsTranslation by appSettingsInstance.showLyricsTranslation.collectAsState()
     val showLyricsRomanization by appSettingsInstance.showLyricsRomanization.collectAsState()
+    val keepScreenOnLyrics by appSettingsInstance.keepScreenOnLyrics.collectAsState()
     
     // Enhanced seeking state - shows preview during scrubbing
     var isScrubbing by remember { mutableStateOf(false) }
@@ -539,6 +540,18 @@ fun PlayerScreen(
             isLyricsContentVisible = false // Hide lyrics immediately
             delay(300) // Wait for lyrics to fade out completely
             isSongInfoVisible = true // Then show song info
+        }
+    }
+
+    // Keep screen awake while lyrics are visible
+    val shouldKeepScreenOn = keepScreenOnLyrics && isLyricsContentVisible
+    val activity = context as? android.app.Activity
+    DisposableEffect(shouldKeepScreenOn) {
+        if (shouldKeepScreenOn && activity != null) {
+            activity.window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        onDispose {
+            activity?.window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
     }
 
@@ -3526,9 +3539,11 @@ fun PlayerScreen(
     if (showPlaybackSpeedDialog) {
         PlaybackSpeedDialog(
             currentSpeed = playbackSpeed,
+            currentPitch = musicViewModel.playbackPitch.collectAsState().value,
             onDismiss = { showPlaybackSpeedDialog = false },
-            onSave = { speed ->
+            onSave = { speed, pitch ->
                 musicViewModel.setPlaybackSpeed(speed)
+                musicViewModel.setPlaybackPitch(pitch)
                 showPlaybackSpeedDialog = false
             }
         )
@@ -3573,6 +3588,10 @@ fun PlayerScreen(
             onRefresh = {
                 // Clear cache and refetch lyrics from source priority
                 musicViewModel.clearLyricsCacheAndRefetch()
+            },
+            onEmbedInFile = { editedLyrics ->
+                // Embed lyrics into the audio file's metadata
+                musicViewModel.embedLyricsInFile(editedLyrics)
             }
         )
     }
@@ -3628,21 +3647,27 @@ fun PlayerScreen(
 @Composable
 fun PlaybackSpeedDialog(
     currentSpeed: Float,
+    currentPitch: Float = 1.0f,
     onDismiss: () -> Unit,
-    onSave: (Float) -> Unit
+    onSave: (Float, Float) -> Unit
 ) {
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
 
-    // Speed range: 0.25x to 2.0x
+    // Speed range: 0.25x to 3.0x
     val minSpeed = 0.25f
-    val maxSpeed = 2.0f
+    val maxSpeed = 3.0f
+
+    // Pitch range: 0.25x to 3.0x
+    val minPitch = 0.25f
+    val maxPitch = 3.0f
     
     var selectedSpeed by remember { mutableFloatStateOf(currentSpeed.coerceIn(minSpeed, maxSpeed)) }
+    var selectedPitch by remember { mutableFloatStateOf(currentPitch.coerceIn(minPitch, maxPitch)) }
 
-    // Helper function to format speed display
-    fun formatSpeedDisplay(speed: Float): String {
-        return "${String.format("%.2f", speed)}x"
+    // Helper function to format display
+    fun formatValue(value: Float): String {
+        return "${String.format("%.2f", value)}x"
     }
 
     AlertDialog(
@@ -3682,28 +3707,50 @@ fun PlaybackSpeedDialog(
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.padding(16.dp)
+                    Row(
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        modifier = Modifier.fillMaxWidth().padding(16.dp)
                     ) {
-                        Text(
-                            text = formatSpeedDisplay(selectedSpeed),
-                            style = MaterialTheme.typography.headlineLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-//                        Text(
-//                            text = "Playback Speed",
-//                            style = MaterialTheme.typography.bodySmall,
-//                            color = MaterialTheme.colorScheme.onPrimaryContainer
-//                        )
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = context.getString(R.string.player_speed_label),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Text(
+                                text = formatValue(selectedSpeed),
+                                style = MaterialTheme.typography.headlineMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = context.getString(R.string.player_pitch_label),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Text(
+                                text = formatValue(selectedPitch),
+                                style = MaterialTheme.typography.headlineMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
                     }
                 }
 
                 Spacer(modifier = Modifier.height(20.dp))
 
-                // Slider
+                // Speed Slider
                 Column {
+                    Text(
+                        text = context.getString(R.string.player_speed_label),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
                     Row(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         modifier = Modifier.fillMaxWidth()
@@ -3714,7 +3761,7 @@ fun PlaybackSpeedDialog(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
-                            text = "2.0x",
+                            text = "3.0x",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -3733,7 +3780,7 @@ fun PlaybackSpeedDialog(
                             )
                         },
                         valueRange = minSpeed..maxSpeed,
-                        steps = 6, // 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0
+                        steps = 10,
                         colors = SliderDefaults.colors(
                             thumbColor = MaterialTheme.colorScheme.primary,
                             activeTrackColor = MaterialTheme.colorScheme.primary,
@@ -3741,13 +3788,12 @@ fun PlaybackSpeedDialog(
                         )
                     )
                     
-                    // Quick preset buttons
-                    Spacer(modifier = Modifier.height(16.dp))
+                    // Speed preset buttons
                     LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        items(listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f), key = { "speed_$it" }) { presetSpeed ->
+                        items(listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f, 2.5f, 3.0f), key = { "speed_$it" }) { presetSpeed ->
                             AssistChip(
                                 onClick = {
                                     selectedSpeed = presetSpeed
@@ -3759,7 +3805,7 @@ fun PlaybackSpeedDialog(
                                 },
                                 label = {
                                     Text(
-                                        text = formatSpeedDisplay(presetSpeed),
+                                        text = formatValue(presetSpeed),
                                         style = MaterialTheme.typography.labelMedium
                                     )
                                 },
@@ -3780,13 +3826,100 @@ fun PlaybackSpeedDialog(
                         }
                     }
                 }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Pitch Slider
+                Column {
+                    Text(
+                        text = context.getString(R.string.player_pitch_label),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "0.25x",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "3.0x",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Slider(
+                        value = selectedPitch,
+                        onValueChange = { newValue ->
+                            selectedPitch = newValue
+                            HapticUtils.performHapticFeedback(
+                                context,
+                                haptics,
+                                HapticFeedbackType.TextHandleMove
+                            )
+                        },
+                        valueRange = minPitch..maxPitch,
+                        steps = 10,
+                        colors = SliderDefaults.colors(
+                            thumbColor = MaterialTheme.colorScheme.tertiary,
+                            activeTrackColor = MaterialTheme.colorScheme.tertiary,
+                            inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
+                        )
+                    )
+
+                    // Pitch preset buttons
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        items(listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f), key = { "pitch_$it" }) { presetPitch ->
+                            AssistChip(
+                                onClick = {
+                                    selectedPitch = presetPitch
+                                    HapticUtils.performHapticFeedback(
+                                        context,
+                                        haptics,
+                                        HapticFeedbackType.LongPress
+                                    )
+                                },
+                                label = {
+                                    Text(
+                                        text = formatValue(presetPitch),
+                                        style = MaterialTheme.typography.labelMedium
+                                    )
+                                },
+                                modifier = Modifier.height(32.dp),
+                                shape = RoundedCornerShape(16.dp),
+                                colors = AssistChipDefaults.assistChipColors(
+                                    containerColor = if (selectedPitch == presetPitch)
+                                        MaterialTheme.colorScheme.tertiaryContainer
+                                    else
+                                        MaterialTheme.colorScheme.surfaceVariant,
+                                    labelColor = if (selectedPitch == presetPitch)
+                                        MaterialTheme.colorScheme.onTertiaryContainer
+                                    else
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                ),
+                                border = null
+                            )
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
             Button(
                 onClick = {
                     HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
-                    onSave(selectedSpeed)
+                    onSave(selectedSpeed, selectedPitch)
                 },
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.primary,
