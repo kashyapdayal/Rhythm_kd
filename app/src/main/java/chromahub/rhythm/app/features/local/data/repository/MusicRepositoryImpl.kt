@@ -371,7 +371,8 @@ class MusicRepository(context: Context) {
                         year = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.YEAR),
                         dateAdded = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED),
                         size = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE),
-                        genre = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.GENRE),
+                        // GENRE was added to MediaStore in API 30; use getColumnIndex (may be -1 on Android 8/9)
+                        genre = cursor.getColumnIndex(MediaStore.Audio.Media.GENRE),
                         albumArtist = cursor.getColumnIndex(MediaStore.Audio.Media.ALBUM_ARTIST) // May be -1 on older devices
                     )
                 } catch (e: IllegalArgumentException) {
@@ -557,7 +558,8 @@ class MusicRepository(context: Context) {
                         year = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.YEAR),
                         dateAdded = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED),
                         size = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE),
-                        genre = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.GENRE),
+                        // GENRE column is optional; not available on all Android versions (pre-API 30)
+                        genre = cursor.getColumnIndex(MediaStore.Audio.Media.GENRE),
                         albumArtist = cursor.getColumnIndex(MediaStore.Audio.Media.ALBUM_ARTIST)
                     )
                 } catch (e: IllegalArgumentException) {
@@ -650,7 +652,7 @@ class MusicRepository(context: Context) {
             val year = cursor.getInt(indices.year)
             val dateAdded = cursor.getLong(indices.dateAdded) * 1000L
             val size = cursor.getLong(indices.size)
-            val genreId = cursor.getString(indices.genre)?.trim()
+            val genreId = if (indices.genre >= 0) cursor.getString(indices.genre)?.trim() else null
             val albumArtist = if (indices.albumArtist >= 0) {
                 cursor.getString(indices.albumArtist)?.trim()?.takeIf { it.isNotBlank() }
             } else null
@@ -672,25 +674,13 @@ class MusicRepository(context: Context) {
                 id
             )
 
-            // Determine album art URI based on user preference
-            val appSettings = AppSettings.getInstance(context)
-            val ignoreMediaStoreCovers = appSettings.ignoreMediaStoreCovers.value
-            val losslessArtwork = appSettings.losslessArtwork.value
-            
-            val albumArtUri = if (ignoreMediaStoreCovers) {
-                // Extract embedded album art directly from file
-                chromahub.rhythm.app.util.MediaUtils.extractEmbeddedAlbumArt(context, contentUri, context.cacheDir, losslessArtwork)
-                    ?: ContentUris.withAppendedId(
-                        Uri.parse("content://media/external/audio/albumart"),
-                        albumId
-                    ) // Fallback to MediaStore if no embedded art
-            } else {
-                // Use MediaStore album art (default behavior)
-                ContentUris.withAppendedId(
-                    Uri.parse("content://media/external/audio/albumart"),
-                    albumId
-                )
-            }
+            // Always use MediaStore album art URI during scan to avoid blocking I/O.
+            // When ignoreMediaStoreCovers or losslessArtwork is enabled, Coil's image loader
+            // will handle the embedded-art extraction lazily at display time.
+            val albumArtUri = ContentUris.withAppendedId(
+                Uri.parse("content://media/external/audio/albumart"),
+                albumId
+            )
 
             // Load cached genre if available
             val cachedGenre = try {
@@ -1171,11 +1161,21 @@ class MusicRepository(context: Context) {
         val allSongs = loadSongs()
         val artistMap = mutableMapOf<String, MutableList<Song>>()
         val albumsByArtist = mutableMapOf<String, MutableSet<String>>()
-        
+
+        // Read artist separator settings ONCE before the loop to avoid
+        // calling AppSettings.getInstance() for every song (O(n) cost)
+        val appSettings = AppSettings.getInstance(context)
+        val artistSeparatorEnabled = appSettings.artistSeparatorEnabled.value
+        val preloadedCharDelimiters: List<String> = if (artistSeparatorEnabled) {
+            appSettings.artistSeparatorDelimiters.value.toList().map { it.toString() }
+        } else {
+            emptyList()
+        }
+
         // Group songs by individual track artists (splitting collaborations)
         for (song in allSongs) {
-            // Split artist names on common separators
-            val artistNames = splitArtistNames(song.artist)
+            // Split artist names on common separators using pre-loaded settings
+            val artistNames = splitArtistNames(song.artist, preloadedCharDelimiters)
             
             for (artistName in artistNames) {
                 val cleanName = artistName.trim()
@@ -1213,6 +1213,7 @@ class MusicRepository(context: Context) {
     /**
      * Splits artist names on common collaboration separators.
      * Returns a list of individual artist names.
+     * Reads AppSettings internally — use [splitArtistNames(String, List<String>)] in hot loops.
      */
     fun splitArtistNames(artistName: String): List<String> {
         // Character-level delimiters from artist separator settings
@@ -1223,7 +1224,14 @@ class MusicRepository(context: Context) {
         } else {
             emptyList()
         }
-        
+        return splitArtistNames(artistName, charDelimiters)
+    }
+
+    /**
+     * Splits artist names using pre-loaded character delimiters.
+     * Use this overload in hot loops to avoid reading AppSettings per call.
+     */
+    fun splitArtistNames(artistName: String, preloadedCharDelimiters: List<String>): List<String> {
         // Word-level separators for collaborations
         val wordSeparators = listOf(
             " & ",
@@ -1240,19 +1248,19 @@ class MusicRepository(context: Context) {
             " vs. ",
             " with "
         )
-        
+
         var names = listOf(artistName)
-        
+
         // Split on character-level delimiters first (/, ;, etc.)
-        for (delimiter in charDelimiters) {
+        for (delimiter in preloadedCharDelimiters) {
             names = names.flatMap { it.split(delimiter) }
         }
-        
+
         // Then split on word-level separators
         for (separator in wordSeparators) {
             names = names.flatMap { it.split(separator, ignoreCase = true) }
         }
-        
+
         return names.map { it.trim() }.filter { it.isNotBlank() }
     }
     
@@ -3442,6 +3450,37 @@ class MusicRepository(context: Context) {
         }
 
         updatedAlbums
+    }
+
+    /**
+     * Extracts embedded album art from audio files in a background pass.
+     * Called post-scan when ignoreMediaStoreCovers or losslessArtwork is enabled.
+     * Updates [cachedSongs] with embedded art URIs and returns songs that were updated.
+     */
+    suspend fun extractEmbeddedArtworkForSongs(
+        songs: List<Song>,
+        lossless: Boolean = false
+    ): List<Song> = withContext(Dispatchers.IO) {
+        val updatedSongs = songs.toMutableList()
+        var anyUpdated = false
+        for (i in updatedSongs.indices) {
+            val song = updatedSongs[i]
+            try {
+                val embeddedUri = chromahub.rhythm.app.util.MediaUtils.extractEmbeddedAlbumArt(
+                    context, song.uri, context.cacheDir, lossless
+                )
+                if (embeddedUri != null && embeddedUri != song.artworkUri) {
+                    updatedSongs[i] = song.copy(artworkUri = embeddedUri)
+                    anyUpdated = true
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to extract embedded art for ${song.title}", e)
+            }
+        }
+        if (anyUpdated) {
+            cachedSongs = updatedSongs
+        }
+        updatedSongs
     }
 
     /**

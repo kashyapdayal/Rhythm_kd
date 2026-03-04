@@ -1160,6 +1160,29 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 _isExtractingMetadata.value = false
             }
         }
+
+        // Extract embedded album art in background when ignoreMediaStoreCovers or losslessArtwork is enabled.
+        // This runs after the UI is fully settled so it doesn't affect splash screen load time.
+        viewModelScope.launch(Dispatchers.IO) {
+            delay(7000) // Wait until well after UI is loaded
+            try {
+                val ignoreMediaStoreCovers = appSettings.ignoreMediaStoreCovers.value
+                val losslessArtwork = appSettings.losslessArtwork.value
+                if (ignoreMediaStoreCovers || losslessArtwork) {
+                    Log.d(TAG, "Starting background embedded album art extraction (ignoreMediaStoreCovers=$ignoreMediaStoreCovers, lossless=$losslessArtwork)")
+                    val currentSongs = _songs.value
+                    if (currentSongs.isNotEmpty()) {
+                        val updatedSongs = repository.extractEmbeddedArtworkForSongs(currentSongs, losslessArtwork)
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                            _songs.value = updatedSongs
+                        }
+                        Log.d(TAG, "Background embedded art extraction complete for ${currentSongs.size} songs")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error during background embedded art extraction", e)
+            }
+        }
     }
     
     // Keep old method for library refresh which needs immediate execution
@@ -1590,6 +1613,25 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 // Try to update the actual file metadata first
                 val context = getApplication<Application>().applicationContext
+
+                // Early format check — unsupported formats cannot be tag-edited
+                val fileExtension = run {
+                    val projection = arrayOf(android.provider.MediaStore.Audio.Media.DATA)
+                    context.contentResolver.query(song.uri, projection, null, null, null)
+                        ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+                        ?.substringAfterLast('.', "")
+                        ?.lowercase()
+                        ?: song.uri.lastPathSegment?.substringAfterLast('.', "") ?: ""
+                }
+                if (fileExtension.isNotEmpty() && !chromahub.rhythm.app.util.MediaUtils.isSupportedByJaudiotagger(fileExtension)) {
+                    withContext(Dispatchers.Main) {
+                        val msg = ".$fileExtension format is not supported for metadata editing"
+                        android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
+                        onError(msg)
+                    }
+                    return@launch
+                }
+
                 val success = withContext(Dispatchers.IO) {
                     chromahub.rhythm.app.util.MediaUtils.updateSongMetadata(
                         context = context,
@@ -4530,6 +4572,26 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     return@launch
                 }
                 val context = getApplication<Application>()
+
+                // Early format check — OGG Opus and other unsupported codecs cannot be tag-edited
+                val fileExtension = run {
+                    val projection = arrayOf(android.provider.MediaStore.Audio.Media.DATA)
+                    context.contentResolver.query(song.uri, projection, null, null, null)
+                        ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+                        ?.substringAfterLast('.', "")
+                        ?.lowercase()
+                        ?: song.uri.lastPathSegment?.substringAfterLast('.', "") ?: ""
+                }
+                if (fileExtension.isNotEmpty() && !MediaUtils.isSupportedByJaudiotagger(fileExtension)) {
+                    withContext(Dispatchers.Main) {
+                        val msg = context.getString(R.string.lyrics_embed_failed) +
+                            " (.$fileExtension format not supported)"
+                        android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
+                        onError?.invoke(msg)
+                    }
+                    return@launch
+                }
+
                 val success = MediaUtils.embedLyricsInFile(context, song, lyrics)
                 withContext(Dispatchers.Main) {
                     if (success) {

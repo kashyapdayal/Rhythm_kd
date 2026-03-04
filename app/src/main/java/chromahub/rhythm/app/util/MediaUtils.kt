@@ -727,9 +727,6 @@ object MediaUtils {
         return try {
             val contentResolver = context.contentResolver
 
-            Log.d(TAG, "Attempting to embed lyrics into: ${song.title}")
-            Log.d(TAG, "Song URI: ${song.uri}")
-
             if (!song.uri.toString().startsWith("content://media/")) {
                 Log.e(TAG, "Invalid URI scheme for lyrics embedding: ${song.uri}")
                 return false
@@ -753,126 +750,110 @@ object MediaUtils {
 
             var fileWriteSucceeded = false
 
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                // Android 11+: Direct write will fail for external media files.
+                // Return false so ViewModel triggers createWriteRequest for proper permission UI.
+                return false
+            } else if (android.os.Build.VERSION.SDK_INT == android.os.Build.VERSION_CODES.Q) {
+                // Android 10: WRITE_EXTERNAL_STORAGE is granted; write via temp file + ContentResolver stream
                 try {
-                    Log.d(TAG, "Using temporary file approach for lyrics embedding (Android 10+)")
                     val extension = filePath?.substringAfterLast('.', "mp3") ?: "mp3"
                     val tempFile = File(
                         context.cacheDir,
                         "temp_lyrics_${System.currentTimeMillis()}.$extension"
                     )
-
                     try {
-                        // Step 1: Copy original file to temp location
-                        contentResolver.openInputStream(song.uri)?.use { inputStream ->
-                            tempFile.outputStream().use { outputStream ->
-                                inputStream.copyTo(outputStream)
-                            }
+                        // Copy original file to temp
+                        contentResolver.openInputStream(song.uri)?.use { input ->
+                            tempFile.outputStream().use { output -> input.copyTo(output) }
                         }
-
                         if (!tempFile.exists() || tempFile.length() == 0L) {
-                            throw Exception("Failed to copy file to temp location for lyrics embedding")
+                            throw Exception("Failed to copy file to temp for lyrics embedding")
                         }
-
-                        // Step 2: Write lyrics to temp file using jaudiotagger
+                        // Embed lyrics in temp file
                         val audioFileObj = AudioFileIO.read(tempFile)
                         val tag: Tag = audioFileObj.tag ?: audioFileObj.createDefaultTag()
                         tag.setField(FieldKey.LYRICS, lyrics)
                         audioFileObj.tag = tag
                         AudioFileIO.write(audioFileObj)
-                        Log.d(TAG, "Lyrics written to temp file successfully")
-
-                        // Step 3: Copy modified temp file back
-                        val outputStream = try {
-                            contentResolver.openOutputStream(song.uri, "w")
-                        } catch (e: android.app.RecoverableSecurityException) {
-                            Log.e(TAG, "RecoverableSecurityException - user permission required for lyrics embedding")
-                            throw RecoverableSecurityExceptionWrapper(
-                                "User permission required to embed lyrics",
-                                e.userAction,
-                                song.uri,
-                                tempFile.absolutePath
-                            )
-                        } catch (e: SecurityException) {
-                            Log.e(TAG, "SecurityException during lyrics embedding", e)
-                            null
-                        }
-
-                        if (outputStream == null) {
-                            throw Exception("Cannot open output stream for lyrics embedding: ${song.uri}")
-                        }
-
-                        outputStream.use { outStream ->
-                            tempFile.inputStream().use { inputStream ->
-                                inputStream.copyTo(outStream)
+                        // Write temp back via ContentResolver (WRITE_EXTERNAL_STORAGE covers API 29)
+                        val outputStream = contentResolver.openOutputStream(song.uri, "wt")
+                        if (outputStream != null) {
+                            outputStream.use { out ->
+                                tempFile.inputStream().use { input -> input.copyTo(out) }
+                            }
+                            fileWriteSucceeded = true
+                        } else {
+                            // Fallback: write directly via file path
+                            if (filePath != null) {
+                                val audioFile = File(filePath)
+                                if (audioFile.exists() && audioFile.canWrite()) {
+                                    val af = AudioFileIO.read(audioFile)
+                                    val t: Tag = af.tag ?: af.createDefaultTag()
+                                    t.setField(FieldKey.LYRICS, lyrics)
+                                    af.tag = t
+                                    AudioFileIO.write(af)
+                                    fileWriteSucceeded = true
+                                }
                             }
                         }
-
-                        fileWriteSucceeded = true
-                        Log.d(TAG, "Successfully embedded lyrics (Android 10+)")
-
                     } finally {
-                        if (tempFile.exists()) {
-                            tempFile.delete()
-                        }
+                        if (tempFile.exists()) tempFile.delete()
                     }
                 } catch (e: RecoverableSecurityExceptionWrapper) {
                     throw e
                 } catch (e: Exception) {
-                    Log.e(TAG, "Failed to embed lyrics on Android 10+", e)
+                    Log.e(TAG, "Failed to embed lyrics on Android 10", e)
+                    // Last resort: direct file path with WRITE_EXTERNAL_STORAGE
+                    if (filePath != null) {
+                        try {
+                            val audioFile = File(filePath)
+                            if (audioFile.exists() && audioFile.canWrite()) {
+                                val af = AudioFileIO.read(audioFile)
+                                val t: Tag = af.tag ?: af.createDefaultTag()
+                                t.setField(FieldKey.LYRICS, lyrics)
+                                af.tag = t
+                                AudioFileIO.write(af)
+                                fileWriteSucceeded = true
+                            }
+                        } catch (e2: Exception) {
+                            Log.e(TAG, "Direct path write also failed", e2)
+                        }
+                    }
                 }
             } else {
-                // Android 9 and below
-                if (filePath == null) {
-                    Log.e(TAG, "Could not get file path for lyrics embedding")
-                } else {
+                // Android 9 and below: direct file path write
+                if (filePath != null) {
                     val audioFile = File(filePath)
-                    if (!audioFile.exists()) {
-                        Log.e(TAG, "File does not exist: $filePath")
-                    } else if (!audioFile.canWrite()) {
-                        Log.e(TAG, "File is not writable: $filePath")
-                    } else {
+                    if (audioFile.exists() && audioFile.canWrite()) {
                         try {
                             val audioFileObj = AudioFileIO.read(audioFile)
                             val tag: Tag = audioFileObj.tag ?: audioFileObj.createDefaultTag()
                             tag.setField(FieldKey.LYRICS, lyrics)
                             audioFileObj.tag = tag
                             AudioFileIO.write(audioFileObj)
-
                             fileWriteSucceeded = true
-                            Log.d(TAG, "Successfully embedded lyrics (Android 9-): $filePath")
                         } catch (e: Exception) {
                             Log.e(TAG, "Failed to embed lyrics using jaudiotagger", e)
                         }
+                    } else {
+                        Log.e(TAG, "File not writable or not found: $filePath")
                     }
+                } else {
+                    Log.e(TAG, "Could not get file path for lyrics embedding")
                 }
             }
 
             if (fileWriteSucceeded) {
-                // Trigger media scanner
                 try {
-                    val scanFilePath = filePath ?: when (song.uri.scheme) {
-                        "content" -> {
-                            val projection = arrayOf(MediaStore.Audio.Media.DATA)
-                            contentResolver.query(song.uri, projection, null, null, null)
-                                ?.use { cursor ->
-                                    if (cursor.moveToFirst()) {
-                                        cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA))
-                                    } else null
-                                }
-                        }
-                        else -> null
-                    }
-                    if (scanFilePath != null) {
-                        android.media.MediaScannerConnection.scanFile(context, arrayOf(scanFilePath), null, null)
-                        Log.d(TAG, "Media scanner triggered for lyrics-embedded file: $scanFilePath")
+                    if (filePath != null) {
+                        android.media.MediaScannerConnection.scanFile(context, arrayOf(filePath), null, null)
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Error triggering media scanner after lyrics embedding", e)
                 }
             }
 
-            Log.d(TAG, "Lyrics embedding result: $fileWriteSucceeded")
             fileWriteSucceeded
         } catch (e: RecoverableSecurityExceptionWrapper) {
             throw e
@@ -886,6 +867,20 @@ object MediaUtils {
      * Creates a write request for Android 11+ to get permission to embed lyrics in a file
      */
     @androidx.annotation.RequiresApi(android.os.Build.VERSION_CODES.R)
+    /**
+     * Returns true if jaudiotagger can read and write the given file extension.
+     * OGG Opus, WebM, MKA, and other non-Vorbis OGG variants are not supported.
+     */
+    fun isSupportedByJaudiotagger(extension: String): Boolean {
+        return when (extension.lowercase()) {
+            "mp3", "flac", "ogg", "wav", "wave", "aif", "aiff",
+            "mp4", "m4a", "m4p", "m4b", "wma", "dsf", "dff" -> true
+            // opus files use OGG container but Opus codec; jaudiotagger cannot handle them
+            "opus" -> false
+            else -> false
+        }
+    }
+
     fun createWriteRequestForLyrics(
         context: Context,
         song: Song,
@@ -898,18 +893,20 @@ object MediaUtils {
             val urisToModify = listOf(song.uri)
             val pendingIntent = MediaStore.createWriteRequest(contentResolver, urisToModify)
 
-            // Create a temp file with the lyrics embedded
-            val tempFilePath = prepareTempFileWithLyrics(context, song, lyrics)
-            if (tempFilePath == null) {
-                Log.e(TAG, "Failed to create temp file with lyrics")
-                return null
+            // Attempt to pre-prepare the temp file, but do NOT let failure block the
+            // permission dialog. completeLyricsWriteAfterPermission will retry if absent.
+            val tempFilePath = try {
+                prepareTempFileWithLyrics(context, song, lyrics)
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not pre-prepare lyrics temp file; will retry after permission: ${e.message}")
+                null
             }
 
             PendingLyricsWriteRequest(
                 intentSender = pendingIntent.intentSender,
                 song = song,
                 lyrics = lyrics,
-                tempFilePath = tempFilePath
+                tempFilePath = tempFilePath ?: "" // empty string = retry in completion
             )
         } catch (e: Exception) {
             Log.e(TAG, "Failed to create lyrics write request for song: ${song.title}", e)
@@ -970,13 +967,21 @@ object MediaUtils {
         pendingRequest: PendingLyricsWriteRequest
     ): Boolean {
         return try {
-            val tempFile = File(pendingRequest.tempFilePath)
-            if (!tempFile.exists()) {
-                Log.e(TAG, "Temp lyrics file no longer exists: ${pendingRequest.tempFilePath}")
-                return false
+            val contentResolver = context.contentResolver
+
+            // Resolve temp file — may be empty if prep failed before permission was granted.
+            // Now that we have write access, retry preparation from the original URI.
+            var tempFile = if (pendingRequest.tempFilePath.isNotEmpty()) File(pendingRequest.tempFilePath) else null
+            if (tempFile == null || !tempFile.exists()) {
+                Log.d(TAG, "Temp lyrics file absent; re-preparing after permission grant")
+                val retryPath = prepareTempFileWithLyrics(context, pendingRequest.song, pendingRequest.lyrics)
+                if (retryPath == null) {
+                    Log.e(TAG, "Cannot embed lyrics: format not supported or file unreadable")
+                    return false
+                }
+                tempFile = File(retryPath)
             }
 
-            val contentResolver = context.contentResolver
             val outputStream = contentResolver.openOutputStream(pendingRequest.song.uri, "w")
             if (outputStream == null) {
                 Log.e(TAG, "Cannot open output stream after permission granted for lyrics")
@@ -1453,28 +1458,27 @@ object MediaUtils {
     ): PendingWriteRequest? {
         return try {
             val contentResolver = context.contentResolver
-
             Log.d(TAG, "Creating write request for song: ${song.title}")
 
-            // Create a PendingIntent for write permission using createWriteRequest
             val urisToModify = listOf(song.uri)
             val pendingIntent = MediaStore.createWriteRequest(contentResolver, urisToModify)
 
-            // Create a temp file with the modified metadata for later use
-            val tempFilePath = prepareTempFileWithMetadata(
-                context = context,
-                song = song,
-                newTitle = newTitle,
-                newArtist = newArtist,
-                newAlbum = newAlbum,
-                newGenre = newGenre,
-                newYear = newYear,
-                newTrackNumber = newTrackNumber
-            )
-
-            if (tempFilePath == null) {
-                Log.e(TAG, "Failed to create temp file with metadata")
-                return null
+            // Attempt to pre-prepare the temp file, but do NOT let failure block the
+            // permission dialog. completeWriteAfterPermissionGranted will retry if absent.
+            val tempFilePath = try {
+                prepareTempFileWithMetadata(
+                    context = context,
+                    song = song,
+                    newTitle = newTitle,
+                    newArtist = newArtist,
+                    newAlbum = newAlbum,
+                    newGenre = newGenre,
+                    newYear = newYear,
+                    newTrackNumber = newTrackNumber
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not pre-prepare metadata temp file; will retry after permission: ${e.message}")
+                null
             }
 
             PendingWriteRequest(
@@ -1486,7 +1490,7 @@ object MediaUtils {
                 newGenre = newGenre,
                 newYear = newYear,
                 newTrackNumber = newTrackNumber,
-                tempFilePath = tempFilePath
+                tempFilePath = tempFilePath ?: "" // empty string = retry in completion
             )
         } catch (e: Exception) {
             Log.e(TAG, "Failed to create write request for song: ${song.title}", e)
@@ -1588,17 +1592,30 @@ object MediaUtils {
     ): Boolean {
         return try {
             val contentResolver = context.contentResolver
-            val tempFile = File(pendingRequest.tempFilePath)
 
-            if (!tempFile.exists()) {
-                Log.e(TAG, "Temp file not found: ${pendingRequest.tempFilePath}")
-                return false
+            // Resolve temp file — may be empty if prep failed before permission was granted.
+            // Now that we have write access, retry preparation from the original URI.
+            var tempFile = if (pendingRequest.tempFilePath.isNotEmpty()) File(pendingRequest.tempFilePath) else null
+            if (tempFile == null || !tempFile.exists()) {
+                Log.d(TAG, "Temp file absent; re-preparing metadata after permission grant")
+                val retryPath = prepareTempFileWithMetadata(
+                    context = context,
+                    song = pendingRequest.song,
+                    newTitle = pendingRequest.newTitle,
+                    newArtist = pendingRequest.newArtist,
+                    newAlbum = pendingRequest.newAlbum,
+                    newGenre = pendingRequest.newGenre,
+                    newYear = pendingRequest.newYear,
+                    newTrackNumber = pendingRequest.newTrackNumber
+                )
+                if (retryPath == null) {
+                    Log.e(TAG, "Cannot write metadata: format not supported or file unreadable")
+                    return false
+                }
+                tempFile = File(retryPath)
             }
 
-            Log.d(
-                TAG,
-                "Completing write operation after permission granted for: ${pendingRequest.song.title}"
-            )
+            Log.d(TAG, "Completing write operation after permission granted for: ${pendingRequest.song.title}")
 
             // Now we have permission, copy the temp file back to original location
             val outputStream = contentResolver.openOutputStream(pendingRequest.song.uri, "w")

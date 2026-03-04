@@ -84,8 +84,8 @@ fun PlayerChipOrderBottomSheet(
     fun getChipInfo(chipId: String): Pair<String, ImageVector> {
         return when (chipId) {
             "FAVORITE" -> Pair("Favorite", RhythmIcons.FavoriteFilled)
-            "SPEED" -> Pair("Playback Speed", Icons.Filled.Speed)
-            "PITCH" -> Pair("Playback Pitch", Icons.Filled.GraphicEq)
+            "SPEED" -> Pair("Speed", Icons.Filled.Speed)
+            "PITCH" -> Pair("Pitch", Icons.Filled.GraphicEq)
             "EQUALIZER" -> Pair("Equalizer", Icons.Filled.GraphicEq)
             "SLEEP_TIMER" -> Pair("Sleep Timer", Icons.Filled.AccessTime)
             "LYRICS" -> Pair("Lyrics", Icons.Rounded.Lyrics)
