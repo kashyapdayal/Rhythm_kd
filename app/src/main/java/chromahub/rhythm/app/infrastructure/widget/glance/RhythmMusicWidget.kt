@@ -45,12 +45,20 @@ import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import coil.ImageLoader
+import coil.request.ImageRequest
+import coil.size.Size
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import chromahub.rhythm.app.activities.MainActivity
 import chromahub.rhythm.app.R
-import androidx.glance.appwidget.ImageProvider as AppWidgetImageProvider
+import androidx.glance.appwidget.ImageProvider
 
 /**
  * Modern Glance-based Music Widget with Material 3 Expressive Design
@@ -1186,6 +1194,30 @@ class RhythmMusicWidget : GlanceAppWidget() {
         size: Dp? = null,
         cornerRadius: Dp = 20.dp
     ) {
+        val context = LocalContext.current
+        val bitmap = remember(artworkUri) { mutableStateOf<Bitmap?>(null) }
+        
+        LaunchedEffect(artworkUri) {
+            if (artworkUri != null) {
+                try {
+                    val loadedBitmap = withContext(Dispatchers.IO) {
+                        val imageLoader = ImageLoader(context)
+                        val request = ImageRequest.Builder(context)
+                            .data(artworkUri)
+                            .size(Size(300, 300))
+                            .build()
+                        val result = imageLoader.execute(request)
+                        (result.drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap
+                    }
+                    bitmap.value = loadedBitmap
+                } catch (e: Exception) {
+                    bitmap.value = null
+                }
+            } else {
+                bitmap.value = null
+            }
+        }
+        
         val sizingModifier = if (size != null) modifier.size(size) else modifier
         val placeholderSizeDp = if (size != null) {
             val raw = size.value * 0.6f
@@ -1195,9 +1227,9 @@ class RhythmMusicWidget : GlanceAppWidget() {
         }
         
         Box(modifier = sizingModifier) {
-            if (artworkUri != null) {
+            if (bitmap.value != null) {
                 Image(
-                    provider = AppWidgetImageProvider(artworkUri),
+                    provider = ImageProvider(bitmap.value!!),
                     contentDescription = "Album Art",
                     modifier = GlanceModifier.fillMaxSize().cornerRadius(cornerRadius),
                     contentScale = ContentScale.Crop
