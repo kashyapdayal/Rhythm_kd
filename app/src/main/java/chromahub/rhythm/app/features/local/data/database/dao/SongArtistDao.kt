@@ -1,0 +1,38 @@
+package chromahub.rhythm.app.features.local.data.database.dao
+
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+import androidx.room.Transaction
+import chromahub.rhythm.app.features.local.data.database.entity.SongArtistEntity
+
+@Dao
+interface SongArtistDao {
+    @Query("SELECT * FROM song_artists WHERE groupByAlbumArtist = :groupByAlbumArtist")
+    suspend fun getAllSongArtists(groupByAlbumArtist: Boolean): List<SongArtistEntity>
+
+    @Query("SELECT DISTINCT artistName FROM song_artists WHERE groupByAlbumArtist = :groupByAlbumArtist")
+    suspend fun getArtistNames(groupByAlbumArtist: Boolean): List<String>
+
+    @Query("SELECT COUNT(*) FROM song_artists WHERE artistName = :artistName AND groupByAlbumArtist = :groupByAlbumArtist")
+    suspend fun getTrackCountForArtist(artistName: String, groupByAlbumArtist: Boolean): Int
+
+    @Query("SELECT COUNT(DISTINCT s.album) FROM song_artists sa INNER JOIN songs s ON sa.songId = s.id WHERE sa.artistName = :artistName AND sa.groupByAlbumArtist = :groupByAlbumArtist AND s.album IS NOT NULL AND s.album != ''")
+    suspend fun getAlbumCountForArtist(artistName: String, groupByAlbumArtist: Boolean): Int
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(songArtists: List<SongArtistEntity>)
+
+    @Query("DELETE FROM song_artists WHERE groupByAlbumArtist = :groupByAlbumArtist")
+    suspend fun deleteByGroupType(groupByAlbumArtist: Boolean)
+
+    @Query("DELETE FROM song_artists WHERE songId = :songId")
+    suspend fun deleteBySongId(songId: String)
+
+    @Transaction
+    suspend fun replaceAll(songArtists: List<SongArtistEntity>, groupByAlbumArtist: Boolean) {
+        deleteByGroupType(groupByAlbumArtist)
+        insertAll(songArtists)
+    }
+}

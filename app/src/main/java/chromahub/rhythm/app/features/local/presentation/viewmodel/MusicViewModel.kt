@@ -860,18 +860,21 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     private data class InitializationResult(val success: Boolean, val error: String? = null)
     
     /**
-     * Load core data in parallel for faster initialization
+     * Load core data efficiently. Songs are loaded first as they populate the 
+     * Room database relationships required for Albums and Artists on a cold start.
      */
     private suspend fun initializeCoreDataParallel(): InitializationResult {
         return try {
-            // Load songs, albums, and artists in parallel using coroutines
-            val songsDeferred = viewModelScope.async(Dispatchers.IO) {
-                repository.loadSongs(
-                    allowedFormats = allowedFormats.value,
-                    minimumBitrate = minimumBitrate.value,
-                    minimumDuration = minimumDuration.value
-                )
-            }
+            // 1. Load songs first. This takes the longest on cold start as it scans
+            // MediaStore and populates the Room database.
+            val songs = repository.loadSongs(
+                allowedFormats = allowedFormats.value,
+                minimumBitrate = minimumBitrate.value,
+                minimumDuration = minimumDuration.value
+            )
+            
+            // 2. Load albums and artists concurrently, now that the Room database 
+            // has been populated by the songs load.
             val albumsDeferred = viewModelScope.async(Dispatchers.IO) {
                 repository.loadAlbums()
             }
@@ -880,7 +883,6 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             }
             
             // Await all results
-            val songs = songsDeferred.await()
             val albums = albumsDeferred.await()
             val artists = artistsDeferred.await()
             
@@ -1130,49 +1132,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
      * This is called AFTER _isInitialized is set to true, so UI is already responsive.
      */
     private fun startBackgroundTasksDeferred() {
-        // Background sync: if initial load came from disk cache, refresh from MediaStore
-        // to pick up newly added/removed songs. This runs early so the library stays current.
-        // IMPORTANT: Merge cached metadata (genre, bitrate, sampleRate, channels, codec) from
-        // existing songs into fresh MediaStore results to avoid redundant re-processing.
-        viewModelScope.launch(Dispatchers.IO) {
-            delay(500) // Brief delay to let UI render with cached data first
-            try {
-                val cachedSongs = _songs.value
-                val cachedSongMap = cachedSongs.associateBy { it.id }
-                val freshSongs = repository.loadSongs(
-                    forceRefresh = true,
-                    allowedFormats = allowedFormats.value,
-                    minimumBitrate = minimumBitrate.value,
-                    minimumDuration = minimumDuration.value
-                )
-                if (freshSongs.isNotEmpty()) {
-                    // Merge cached metadata into fresh songs so post-scan processing isn't redone
-                    val mergedSongs = freshSongs.map { fresh ->
-                        val cached = cachedSongMap[fresh.id]
-                        if (cached != null) {
-                            fresh.copy(
-                                genre = fresh.genre ?: cached.genre,
-                                bitrate = fresh.bitrate ?: cached.bitrate,
-                                sampleRate = fresh.sampleRate ?: cached.sampleRate,
-                                channels = fresh.channels ?: cached.channels,
-                                codec = fresh.codec ?: cached.codec,
-                                artworkUri = fresh.artworkUri ?: cached.artworkUri
-                            )
-                        } else {
-                            fresh
-                        }
-                    }
-                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                        _songs.value = mergedSongs
-                    }
-                    // Persist merged data (including freshly merged metadata) to Room
-                    repository.updateAndPersistSongs(mergedSongs)
-                    Log.d(TAG, "Background MediaStore sync complete: ${mergedSongs.size} songs (merged metadata from ${cachedSongMap.size} cached)")
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error during background MediaStore sync", e)
-            }
-        }
+        // Note: The redundant full MediaStore sync on startup has been removed.
+        // It used to call loadSongs(forceRefresh=true) 500ms after app launch,
+        // causing severe UI lag and DB writes.
+        // We now rely on the MediaStoreObserver to detect actual changes and trigger updates.
 
         // Start listening time tracking (lightweight, can start immediately)
         viewModelScope.launch {
@@ -1474,8 +1437,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             onComplete = { updatedSongs ->
                 // Update the songs state with the new audio metadata information
                 _songs.value = updatedSongs
-                // Persist metadata to disk cache
-                repository.persistSongCacheToDisk()
+                // Update repository cache and persist metadata to disk cache
+                Log.d(TAG, "Background metadata extraction completed, updating repository cache and persisting ${updatedSongs.size} songs to cache")
+                repository.updateAndPersistSongs(updatedSongs)
                 val songsWithMetadata = updatedSongs.count { 
                     it.bitrate != null && it.sampleRate != null && it.channels != null && it.codec != null 
                 }
@@ -1540,18 +1504,18 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             val startTime = System.currentTimeMillis()
 
             try {
-                // Trigger the refresh in the repository
-                repository.refreshMusicData()
-
-                // Reload data into StateFlows after refresh with filtering parameters
-                _songs.value = repository.loadSongs(
-                    forceRefresh = true,
+                // Trigger the refresh in the repository and get the fresh data directly
+                // to avoid resolving entire media store twice
+                val (freshSongs, freshAlbums, freshArtists) = repository.refreshMusicData(
                     allowedFormats = allowedFormats.value,
                     minimumBitrate = minimumBitrate.value,
                     minimumDuration = minimumDuration.value
                 )
-                _albums.value = repository.loadAlbums()
-                _artists.value = repository.loadArtists()
+
+                // Update StateFlows with the fresh data
+                _songs.value = freshSongs
+                _albums.value = freshAlbums
+                _artists.value = freshArtists
 
                 // Re-populate dynamic playlists (if enabled)
                 if (appSettings.defaultPlaylistsEnabled.value) {

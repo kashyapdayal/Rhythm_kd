@@ -59,7 +59,9 @@ import chromahub.rhythm.app.util.EnhancedWord
 // AppleMusicLyricsParser import removed - kept for future re-implementation
 import android.content.SharedPreferences
 import chromahub.rhythm.app.features.local.data.database.RhythmDatabase
+import chromahub.rhythm.app.features.local.data.database.entity.ArtistEntity
 import chromahub.rhythm.app.features.local.data.database.entity.SongEntity
+import chromahub.rhythm.app.features.local.data.database.entity.SongArtistEntity
 
 /**
  * Scan progress data class for real-time updates
@@ -143,10 +145,13 @@ class MusicRepository(context: Context) {
      */
     fun persistSongCacheToDisk() {
         cachedSongs?.let { songs ->
+            Log.d(TAG, "Persisting ${songs.size} songs to disk cache")
+            val songsWithMetadata = songs.count { it.bitrate != null && it.sampleRate != null && it.channels != null && it.codec != null }
+            Log.d(TAG, "Songs with complete metadata: $songsWithMetadata/${songs.size}")
             repositoryScope.launch {
-                saveSongsToRoom(songs)
+                saveSongsToRoom(songs, clearArtistCache = false) // Don't clear artist cache when persisting metadata
             }
-        }
+        } ?: Log.w(TAG, "No cached songs to persist to disk")
     }
 
     /**
@@ -157,11 +162,11 @@ class MusicRepository(context: Context) {
         cachedSongs = songs
         cacheTimestamp = System.currentTimeMillis()
         repositoryScope.launch {
-            saveSongsToRoom(songs)
+            saveSongsToRoom(songs, clearArtistCache = false) // Don't clear artist cache for metadata updates
         }
     }
 
-    private suspend fun saveSongsToRoom(songs: List<Song>) {
+    private suspend fun saveSongsToRoom(songs: List<Song>, clearArtistCache: Boolean = true) {
         try {
             val entities = songs.map { song ->
                 SongEntity(
@@ -184,10 +189,65 @@ class MusicRepository(context: Context) {
                     codec = song.codec
                 )
             }
+            
+            val songsWithMetadata = songs.count { it.bitrate != null && it.sampleRate != null && it.channels != null && it.codec != null }
+            Log.d(TAG, "Saving ${songs.size} songs to Room (${songsWithMetadata} with metadata, clearArtistCache=$clearArtistCache)")
+            
             songDao.replaceAll(entities)
-            Log.d(TAG, "Saved ${songs.size} songs to Room database")
+
+            // Save song-artist relationships for both grouping modes
+            saveSongArtistRelationships(songs)
+
+            if (clearArtistCache) {
+                // Clear artist cache since songs have changed
+                roomDb.artistDao().deleteAll()
+                Log.d(TAG, "Saved ${songs.size} songs to Room database and cleared artist cache")
+            } else {
+                Log.d(TAG, "Saved ${songs.size} songs to Room database (kept artist cache)")
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to save songs to Room database", e)
+        }
+    }
+
+    /**
+     * Saves song-artist relationships for both grouping modes.
+     */
+    private suspend fun saveSongArtistRelationships(songs: List<Song>) = withContext(Dispatchers.IO) {
+        try {
+            val relationships = mutableListOf<SongArtistEntity>()
+
+            // Read artist separator settings once
+            val appSettings = AppSettings.getInstance(context)
+            val artistSeparatorEnabled = appSettings.artistSeparatorEnabled.value
+            val preloadedCharDelimiters: List<String> = if (artistSeparatorEnabled) {
+                appSettings.artistSeparatorDelimiters.value.toList().map { it.toString() }
+            } else {
+                emptyList()
+            }
+
+            for (song in songs) {
+                // For groupByAlbumArtist = true
+                val albumArtistName = (song.albumArtist?.takeIf { it.isNotBlank() } ?: song.artist).trim()
+                if (albumArtistName.isNotBlank() && albumArtistName != "<unknown>") {
+                    relationships.add(SongArtistEntity(song.id, albumArtistName, true))
+                }
+
+                // For groupByAlbumArtist = false (split track artists)
+                val trackArtistNames = splitArtistNames(song.artist, preloadedCharDelimiters)
+                for (artistName in trackArtistNames) {
+                    val cleanName = artistName.trim()
+                    if (cleanName.isNotBlank() && cleanName != "<unknown>") {
+                        relationships.add(SongArtistEntity(song.id, cleanName, false))
+                    }
+                }
+            }
+
+            roomDb.songArtistDao().replaceAll(relationships, true)
+            roomDb.songArtistDao().replaceAll(relationships, false)
+            Log.d(TAG, "Saved ${relationships.size} song-artist relationships")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to save song-artist relationships", e)
         }
     }
     
@@ -221,7 +281,8 @@ class MusicRepository(context: Context) {
                     null
                 }
             }
-            Log.d(TAG, "Loaded ${songs.size} songs from Room database")
+            val songsWithMetadata = songs.count { it.bitrate != null && it.sampleRate != null && it.channels != null && it.codec != null }
+            Log.d(TAG, "Loaded ${songs.size} songs from Room database (${songsWithMetadata} with metadata)")
             songs
         } catch (e: Exception) {
             Log.e(TAG, "Failed to load songs from Room database", e)
@@ -1310,22 +1371,109 @@ class MusicRepository(context: Context) {
     /**
      * Loads artists from device storage with enhanced metadata extraction.
      * Supports grouping by album artist or track artist based on user preference.
+     * Uses Room cache when available to avoid recomputation.
      */
     suspend fun loadArtists(): List<Artist> = withContext(Dispatchers.IO) {
         val appSettings = AppSettings.getInstance(context)
         val groupByAlbumArtist = appSettings.groupByAlbumArtist.value
-        
+
         Log.d(TAG, "Loading artists (groupByAlbumArtist=$groupByAlbumArtist)")
-        
-        if (groupByAlbumArtist) {
-            // New method: Group by album artist from songs
-            loadArtistsGroupedByAlbumArtist()
-        } else {
-            // Original method: Use MediaStore.Audio.Artists (grouped by track artist)
-            loadArtistsFromMediaStore()
+
+        // Try to load from Room cache first
+        val cachedArtists = loadArtistsFromRoom(groupByAlbumArtist)
+        if (cachedArtists != null && cachedArtists.isNotEmpty()) {
+            Log.d(TAG, "Loaded ${cachedArtists.size} artists from Room cache (groupByAlbumArtist=$groupByAlbumArtist)")
+            return@withContext cachedArtists
+        }
+
+        Log.d(TAG, "No cached artists found, computing from relationships (groupByAlbumArtist=$groupByAlbumArtist)")
+        // Cache miss - compute from relationships
+        val artists = loadArtistsFromRelationships(groupByAlbumArtist)
+
+        // Cache the result
+        saveArtistsToRoom(artists, groupByAlbumArtist)
+        Log.d(TAG, "Cached ${artists.size} artists to Room (groupByAlbumArtist=$groupByAlbumArtist)")
+
+        artists
+    }
+
+    /**
+     * Loads artists from cached song-artist relationships.
+     */
+    private suspend fun loadArtistsFromRelationships(groupByAlbumArtist: Boolean): List<Artist> = withContext(Dispatchers.IO) {
+        try {
+            val artistNames = roomDb.songArtistDao().getArtistNames(groupByAlbumArtist)
+            val artists = mutableListOf<Artist>()
+
+            for (artistName in artistNames) {
+                val trackCount = roomDb.songArtistDao().getTrackCountForArtist(artistName, groupByAlbumArtist)
+                val albumCount = roomDb.songArtistDao().getAlbumCountForArtist(artistName, groupByAlbumArtist)
+
+                val artist = Artist(
+                    id = if (groupByAlbumArtist) "album_artist_${artistName.hashCode()}" else "track_artist_${artistName.hashCode()}",
+                    name = artistName,
+                    numberOfAlbums = albumCount,
+                    numberOfTracks = trackCount
+                )
+                artists.add(artist)
+            }
+
+            artists.sortedBy { it.name.lowercase() }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to load artists from relationships, falling back to computation", e)
+            // Fallback to old method
+            if (groupByAlbumArtist) {
+                loadArtistsGroupedByAlbumArtist()
+            } else {
+                loadArtistsFromMediaStore()
+            }
         }
     }
-    
+
+    /**
+     * Loads artists from Room cache if available.
+     */
+    private suspend fun loadArtistsFromRoom(groupByAlbumArtist: Boolean): List<Artist>? = withContext(Dispatchers.IO) {
+        try {
+            val artistEntities = roomDb.artistDao().getArtists(groupByAlbumArtist)
+            if (artistEntities.isEmpty()) return@withContext null
+
+            artistEntities.map { entity ->
+                Artist(
+                    id = entity.id,
+                    name = entity.name,
+                    artworkUri = entity.artworkUri?.let { Uri.parse(it) },
+                    numberOfAlbums = entity.numberOfAlbums,
+                    numberOfTracks = entity.numberOfTracks
+                )
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to load artists from Room cache", e)
+            null
+        }
+    }
+
+    /**
+     * Saves artists to Room cache.
+     */
+    private suspend fun saveArtistsToRoom(artists: List<Artist>, groupByAlbumArtist: Boolean) = withContext(Dispatchers.IO) {
+        try {
+            val artistEntities = artists.map { artist ->
+                ArtistEntity(
+                    id = artist.id,
+                    name = artist.name,
+                    artworkUri = artist.artworkUri?.toString(),
+                    numberOfAlbums = artist.numberOfAlbums,
+                    numberOfTracks = artist.numberOfTracks,
+                    groupByAlbumArtist = groupByAlbumArtist
+                )
+            }
+            roomDb.artistDao().replaceAll(artistEntities, groupByAlbumArtist)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to save artists to Room cache", e)
+        }
+    }
+
     /**
      * Original method: Loads artists using MediaStore.Audio.Artists
      * This groups by track artist, showing collaborations as separate entries
@@ -1520,19 +1668,30 @@ class MusicRepository(context: Context) {
 
     /**
      * Triggers a full rescan of music data from the device's MediaStore.
-     * This method will reload songs, albums, and artists.
+     * This method will reload songs, albums, and artists, and return them.
      */
-    suspend fun refreshMusicData() {
+    suspend fun refreshMusicData(
+        allowedFormats: Set<String>? = null,
+        minimumBitrate: Int = 0,
+        minimumDuration: Long = 0L
+    ): Triple<List<Song>, List<Album>, List<Artist>> {
         Log.d(TAG, "Refreshing music data...")
         
         // Invalidate in-memory cache to force fresh query
         cachedSongs = null
         cacheTimestamp = 0L
         
-        loadSongs(forceRefresh = true)
-        loadAlbums()
-        loadArtists()
+        val songs = loadSongs(
+            forceRefresh = true,
+            allowedFormats = allowedFormats,
+            minimumBitrate = minimumBitrate,
+            minimumDuration = minimumDuration
+        )
+        val albums = loadAlbums()
+        val artists = loadArtists()
         Log.d(TAG, "Music data refresh complete.")
+        
+        return Triple(songs, albums, artists)
     }
     
     /**
@@ -4228,6 +4387,11 @@ class MusicRepository(context: Context) {
     ) = withContext(Dispatchers.IO) {
         val songsWithoutMetadata = songs.filter { 
             it.bitrate == null || it.sampleRate == null || it.channels == null || it.codec == null 
+        }
+        
+        Log.d(TAG, "Songs total: ${songs.size}, songs without metadata: ${songsWithoutMetadata.size}")
+        if (songsWithoutMetadata.isNotEmpty()) {
+            Log.d(TAG, "Sample songs without metadata: ${songsWithoutMetadata.take(3).map { "${it.title} (bitrate=${it.bitrate}, sampleRate=${it.sampleRate}, channels=${it.channels}, codec=${it.codec})" }}")
         }
         
         if (songsWithoutMetadata.isEmpty()) {
