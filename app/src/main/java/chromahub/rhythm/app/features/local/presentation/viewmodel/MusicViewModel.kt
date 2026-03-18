@@ -5074,6 +5074,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             if (clampedVolume > 0f) {
                 _isMuted.value = false
             }
+            // Stop playback if volume reaches 0 and setting is enabled
+            if (clampedVolume == 0f && !_isMuted.value && appSettings.stopPlaybackOnZeroVolume.value) {
+                pauseMusic()
+            }
         }
     }
     

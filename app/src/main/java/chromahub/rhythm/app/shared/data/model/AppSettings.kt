@@ -109,6 +109,7 @@ class AppSettings private constructor(context: Context) {
         private const val KEY_LAST_AUDIO_DEVICE = "last_audio_device"
         private const val KEY_AUTO_CONNECT_DEVICE = "auto_connect_device"
         private const val KEY_USE_SYSTEM_VOLUME = "use_system_volume"
+        private const val KEY_STOP_PLAYBACK_ON_ZERO_VOLUME = "stop_playback_on_zero_volume"
         private const val KEY_DISMISSED_AUTOEQ_SUGGESTIONS = "dismissed_autoeq_suggestions"
         
         // Equalizer Settings
@@ -664,6 +665,9 @@ class AppSettings private constructor(context: Context) {
     
     private val _useSystemVolume = MutableStateFlow(prefs.getBoolean(KEY_USE_SYSTEM_VOLUME, false))
     val useSystemVolume: StateFlow<Boolean> = _useSystemVolume.asStateFlow()
+    
+    private val _stopPlaybackOnZeroVolume = MutableStateFlow(prefs.getBoolean(KEY_STOP_PLAYBACK_ON_ZERO_VOLUME, false))
+    val stopPlaybackOnZeroVolume: StateFlow<Boolean> = _stopPlaybackOnZeroVolume.asStateFlow()
     
     // Equalizer Settings
     private val _equalizerEnabled = MutableStateFlow(prefs.getBoolean(KEY_EQUALIZER_ENABLED, false))
@@ -1542,6 +1546,11 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
     fun setUseSystemVolume(enable: Boolean) {
         prefs.edit().putBoolean(KEY_USE_SYSTEM_VOLUME, enable).apply()
         _useSystemVolume.value = enable
+    }
+    
+    fun setStopPlaybackOnZeroVolume(enable: Boolean) {
+        prefs.edit().putBoolean(KEY_STOP_PLAYBACK_ON_ZERO_VOLUME, enable).apply()
+        _stopPlaybackOnZeroVolume.value = enable
     }
     
     // Equalizer Settings Methods
@@ -2951,6 +2960,7 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
         _lastAudioDevice.value = prefs.getString(KEY_LAST_AUDIO_DEVICE, null)
         _autoConnectDevice.value = prefs.getBoolean(KEY_AUTO_CONNECT_DEVICE, true)
         _useSystemVolume.value = prefs.getBoolean(KEY_USE_SYSTEM_VOLUME, false)
+        _stopPlaybackOnZeroVolume.value = prefs.getBoolean(KEY_STOP_PLAYBACK_ON_ZERO_VOLUME, false)
         
         // Cache Settings
         _maxCacheSize.value = safeLong(KEY_MAX_CACHE_SIZE, 500L * 1024L * 1024L)
