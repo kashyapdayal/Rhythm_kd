@@ -20,7 +20,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.WindowInsets
@@ -48,6 +48,7 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import chromahub.rhythm.app.ui.theme.MusicDimensions
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -78,6 +79,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import chromahub.rhythm.app.ui.LocalMiniPlayerPadding
@@ -405,7 +407,7 @@ fun LocalNavigation(
             totalPadding += UiConstants.MiniPlayerHeight + 16.dp // Card height + spacing
         }
         
-        // Add NavBar height if visible (only on phones, not tablets)
+        // Add NavBar height if visible (only on phones, not tablets) - using base value for padding
         if (showBottomNav && !isTablet) {
             totalPadding += UiConstants.NavBarHeight + 16.dp // NavBar height + spacing
         }
@@ -800,7 +802,7 @@ private fun LocalNavigationContent(
                                 tonalElevation = 3.dp,
                                 shadowElevation = 0.dp,
                                 modifier = Modifier
-                                    .height(64.dp)
+                                    .height(MusicDimensions.bottomNavigationHeight)
                                     .weight(1f) // Make it take up available space
                             ) {
                                 Row(
@@ -1007,7 +1009,7 @@ private fun LocalNavigationContent(
                                 shape = ExpressiveShapes.Full,
                                 interactionSource = searchInteractionSource,
                                 modifier = Modifier
-                                    .size(64.dp) // Match height of navigation bar
+                                    .size(MusicDimensions.bottomNavigationHeight) // Match height of navigation bar
                                     .graphicsLayer {
                                         scaleX = searchScale
                                         scaleY = searchScale

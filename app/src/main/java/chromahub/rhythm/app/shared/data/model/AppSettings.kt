@@ -59,6 +59,7 @@ class AppSettings private constructor(context: Context) {
         private const val KEY_GAPLESS_PLAYBACK = "gapless_playback"
         private const val KEY_CROSSFADE = "crossfade"
         private const val KEY_CROSSFADE_DURATION = "crossfade_duration"
+        private const val KEY_CROSSFADE_REPEAT_ONE = "crossfade_repeat_one"
         private const val KEY_AUDIO_NORMALIZATION = "audio_normalization"
         private const val KEY_REPLAY_GAIN = "replay_gain"
         private const val KEY_BIT_PERFECT_MODE = "bit_perfect_mode"
@@ -206,6 +207,7 @@ class AppSettings private constructor(context: Context) {
     // UI Settings
     private const val KEY_USE_SETTINGS = "use_settings"
     private const val KEY_DEFAULT_SCREEN = "default_screen"
+    private const val KEY_FORCE_PLAYER_COMPACT_MODE = "force_player_compact_mode"
     
         // Codec Monitoring & Enhanced Seeking
         private const val KEY_CODEC_MONITORING_ENABLED = "codec_monitoring_enabled"
@@ -435,6 +437,9 @@ class AppSettings private constructor(context: Context) {
     
     private val _crossfadeDuration = MutableStateFlow(prefs.getFloat(KEY_CROSSFADE_DURATION, 4f))
     val crossfadeDuration: StateFlow<Float> = _crossfadeDuration.asStateFlow()
+
+    private val _crossfadeRepeatOne = MutableStateFlow(prefs.getBoolean(KEY_CROSSFADE_REPEAT_ONE, false))
+    val crossfadeRepeatOne: StateFlow<Boolean> = _crossfadeRepeatOne.asStateFlow()
     
     private val _audioNormalization = MutableStateFlow(prefs.getBoolean(KEY_AUDIO_NORMALIZATION, true))
     val audioNormalization: StateFlow<Boolean> = _audioNormalization.asStateFlow()
@@ -1052,6 +1057,9 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
     private val _useSettings = MutableStateFlow(prefs.getBoolean(KEY_USE_SETTINGS, true))
     val useSettings: StateFlow<Boolean> = _useSettings.asStateFlow()
     
+    private val _forcePlayerCompactMode = MutableStateFlow(prefs.getBoolean(KEY_FORCE_PLAYER_COMPACT_MODE, false))
+    val forcePlayerCompactMode: StateFlow<Boolean> = _forcePlayerCompactMode.asStateFlow()
+    
     // Festive Theme Settings
     private val _festiveThemeEnabled = MutableStateFlow(prefs.getBoolean(KEY_FESTIVE_THEME_ENABLED, true))
     val festiveThemeEnabled: StateFlow<Boolean> = _festiveThemeEnabled.asStateFlow()
@@ -1269,11 +1277,16 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
             Log.w("AppSettings", "Invalid crossfade duration: $duration, keeping current value")
         }
     }
+
+    fun setCrossfadeRepeatOne(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_CROSSFADE_REPEAT_ONE, enabled).apply()
+        _crossfadeRepeatOne.value = enabled
+    }
     
     fun setBitPerfectMode(enable: Boolean) {
         prefs.edit().putBoolean(KEY_BIT_PERFECT_MODE, enable).apply()
         _bitPerfectMode.value = enable
-        Log.d("AppSettings", "Bit-perfect mode ${if (enable) "enabled" else "disabled"} - audio will be output at native sample rate")
+        Log.d("AppSettings", "High-resolution audio mode ${if (enable) "enabled" else "disabled"} - audio will be output at native sample rate")
     }
     
     fun setAudioRoutingMode(mode: String) {
@@ -2055,6 +2068,11 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
     fun setUseCustomNotification(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_USE_CUSTOM_NOTIFICATION, enabled).apply()
         _useCustomNotification.value = enabled
+    }
+    
+    fun setForcePlayerCompactMode(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_FORCE_PLAYER_COMPACT_MODE, enabled).apply()
+        _forcePlayerCompactMode.value = enabled
     }
     
     // Codec Monitoring & Enhanced Seeking Methods
@@ -2954,8 +2972,9 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
         // Playback Settings
         _highQualityAudio.value = prefs.getBoolean(KEY_HIGH_QUALITY_AUDIO, true)
         _gaplessPlayback.value = prefs.getBoolean(KEY_GAPLESS_PLAYBACK, true)
-        _crossfade.value = prefs.getBoolean(KEY_CROSSFADE, false)
-        _crossfadeDuration.value = prefs.getFloat(KEY_CROSSFADE_DURATION, 2f)
+        _crossfade.value = prefs.getBoolean(KEY_CROSSFADE, true)
+        _crossfadeDuration.value = prefs.getFloat(KEY_CROSSFADE_DURATION, 4f)
+        _crossfadeRepeatOne.value = prefs.getBoolean(KEY_CROSSFADE_REPEAT_ONE, false)
         _audioNormalization.value = prefs.getBoolean(KEY_AUDIO_NORMALIZATION, true)
         _replayGain.value = prefs.getBoolean(KEY_REPLAY_GAIN, false)
         
@@ -3073,6 +3092,7 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
         
         // Other settings
         _hapticFeedbackEnabled.value = prefs.getBoolean(KEY_HAPTIC_FEEDBACK_ENABLED, true)
+        _forcePlayerCompactMode.value = prefs.getBoolean(KEY_FORCE_PLAYER_COMPACT_MODE, false)
         _onboardingCompleted.value = prefs.getBoolean(KEY_ONBOARDING_COMPLETED, false)
         _initialMediaScanCompleted.value = prefs.getBoolean(KEY_INITIAL_MEDIA_SCAN_COMPLETED, false)
         _genreDetectionCompleted.value = prefs.getBoolean(KEY_GENRE_DETECTION_COMPLETED, false)

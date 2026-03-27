@@ -194,6 +194,10 @@ class MediaPlaybackService : MediaLibraryService(), Player.Listener {
         const val BROADCAST_SLEEP_TIMER_STATUS = "chromahub.rhythm.app.broadcast.SLEEP_TIMER_STATUS"
         const val EXTRA_TIMER_ACTIVE = "timer_active"
         const val EXTRA_REMAINING_TIME = "remaining_time"
+
+        // Broadcast actions for shuffle updates
+        const val ACTION_SHUFFLE_STATE_CHANGED = "chromahub.rhythm.app.action.SHUFFLE_STATE_CHANGED"
+        const val EXTRA_SHUFFLE_ENABLED = "shuffle_enabled"
         
         // Audio session ID
         const val ACTION_GET_AUDIO_SESSION_ID = "chromahub.rhythm.app.action.GET_AUDIO_SESSION_ID"
@@ -1377,6 +1381,14 @@ class MediaPlaybackService : MediaLibraryService(), Player.Listener {
     override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
         super.onShuffleModeEnabledChanged(shuffleModeEnabled)
         Log.d(TAG, "Shuffle mode changed to: $shuffleModeEnabled")
+
+        // Broadcast explicit shuffle state updates so UI can reconcile queue order immediately.
+        val intent = Intent(ACTION_SHUFFLE_STATE_CHANGED).apply {
+            setPackage(packageName)
+            putExtra(EXTRA_SHUFFLE_ENABLED, shuffleModeEnabled)
+        }
+        sendBroadcast(intent)
+
         // Use debounced update to prevent rapid UI changes
         scheduleCustomLayoutUpdate(100)
     }

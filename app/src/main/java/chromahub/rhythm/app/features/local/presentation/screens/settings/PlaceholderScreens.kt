@@ -152,6 +152,7 @@ fun TunerSettingRow(item: SettingItem) {
     
     val iconBackgroundColor by animateColorAsState(
         targetValue = when {
+            !item.enabled -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
             item.toggleState == true -> MaterialTheme.colorScheme.primaryContainer
             isPressed -> MaterialTheme.colorScheme.secondaryContainer
             else -> MaterialTheme.colorScheme.surfaceContainerHighest
@@ -165,6 +166,7 @@ fun TunerSettingRow(item: SettingItem) {
     
     val iconTintColor by animateColorAsState(
         targetValue = when {
+            !item.enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
             item.toggleState == true -> MaterialTheme.colorScheme.onPrimaryContainer
             else -> MaterialTheme.colorScheme.onSurfaceVariant
         },
@@ -179,11 +181,14 @@ fun TunerSettingRow(item: SettingItem) {
         modifier = Modifier
             .fillMaxWidth()
             .graphicsLayer {
+                alpha = if (item.enabled) 1f else 0.6f
+            }
+            .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
             }
             .then(
-                if (item.onClick != null && item.toggleState == null) {
+                if (item.enabled && item.onClick != null && item.toggleState == null) {
                     Modifier.clickable(onClick = {
                         isPressed = true
                         HapticUtils.performHapticFeedback(context, hapticFeedback, HapticFeedbackType.LongPress)
@@ -224,14 +229,22 @@ fun TunerSettingRow(item: SettingItem) {
                 text = item.title,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
+                color = if (item.enabled) {
+                    MaterialTheme.colorScheme.onSurface
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                }
             )
             item.description?.let {
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = it,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (item.enabled) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    },
                     lineHeight = MaterialTheme.typography.bodyMedium.lineHeight
                 )
             }
@@ -249,24 +262,32 @@ fun TunerSettingRow(item: SettingItem) {
             TunerAnimatedSwitch(
                 checked = item.toggleState,
                 onCheckedChange = {
+                    if (!item.enabled) return@TunerAnimatedSwitch
                     HapticUtils.performHapticFeedback(context, hapticFeedback, HapticFeedbackType.TextHandleMove)
                     item.onToggleChange?.invoke(it)
-                }
+                },
+                enabled = item.enabled
             )
         } else if (item.toggleState != null) {
             TunerAnimatedSwitch(
                 checked = item.toggleState,
                 onCheckedChange = {
+                    if (!item.enabled) return@TunerAnimatedSwitch
                     HapticUtils.performHapticFeedback(context, hapticFeedback, HapticFeedbackType.TextHandleMove)
                     item.onToggleChange?.invoke(it)
-                }
+                },
+                enabled = item.enabled
             )
         } else if (item.onClick != null) {
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
                 contentDescription = context.getString(R.string.cd_navigate),
                 modifier = Modifier.size(20.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                tint = if (item.enabled) {
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
+                }
             )
         }
     }
@@ -276,6 +297,7 @@ fun TunerSettingRow(item: SettingItem) {
 fun TunerAnimatedSwitch(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
+    enabled: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     val thumbColor by animateColorAsState(
@@ -305,6 +327,7 @@ fun TunerAnimatedSwitch(
     Switch(
         checked = checked,
         onCheckedChange = onCheckedChange,
+        enabled = enabled,
         modifier = modifier,
         colors = SwitchDefaults.colors(
             checkedThumbColor = thumbColor,
@@ -496,11 +519,12 @@ fun QueuePlaybackSettingsScreen(onBackClick: () -> Unit) {
     val repeatModePersistence by appSettings.repeatModePersistence.collectAsState()
     val shuffleModePersistence by appSettings.shuffleModePersistence.collectAsState()
     val queuePersistenceEnabled by appSettings.queuePersistenceEnabled.collectAsState()
-    val useSystemVolume by appSettings.useSystemVolume.collectAsState()
     val playlistClickBehavior by appSettings.playlistClickBehavior.collectAsState(initial = "ask")
     val useHoursInTimeFormat by appSettings.useHoursInTimeFormat.collectAsState()
+    val gaplessEnabled by appSettings.gaplessPlayback.collectAsState()
     val crossfadeEnabled by appSettings.crossfade.collectAsState()
     val crossfadeDuration by appSettings.crossfadeDuration.collectAsState()
+    val crossfadeRepeatOne by appSettings.crossfadeRepeatOne.collectAsState()
     val stopPlaybackOnAppClose by appSettings.stopPlaybackOnAppClose.collectAsState()
     val audioRoutingMode by appSettings.audioRoutingMode.collectAsState()
     val bitPerfectMode by appSettings.bitPerfectMode.collectAsState()
@@ -550,8 +574,13 @@ fun QueuePlaybackSettingsScreen(onBackClick: () -> Unit) {
                     SettingItem(
                         RhythmIcons.Queue,
                         context.getString(R.string.settings_queue_action_dialog),
-                        if (showQueueDialog) context.getString(R.string.settings_queue_action_dialog_desc_ask) else context.getString(R.string.settings_queue_action_dialog_desc_always),
-                        onClick = { showQueueDialogSettingDialog = true }
+                        when {
+                            clearQueueOnNewSong -> context.getString(R.string.settings_queue_action_dialog_desc_disabled)
+                            showQueueDialog -> context.getString(R.string.settings_queue_action_dialog_desc_ask)
+                            else -> context.getString(R.string.settings_queue_action_dialog_desc_always)
+                        },
+                        onClick = { showQueueDialogSettingDialog = true },
+                        enabled = !clearQueueOnNewSong
                     ),
                     SettingItem(
                         androidx.compose.material.icons.Icons.AutoMirrored.Filled.QueueMusic,
@@ -602,6 +631,13 @@ fun QueuePlaybackSettingsScreen(onBackClick: () -> Unit) {
                 title = context.getString(R.string.settings_audio_effects),
                 items = listOf(
                     SettingItem(
+                        Icons.Default.GraphicEq,
+                        context.getString(R.string.settings_gapless_playback),
+                        context.getString(R.string.settings_gapless_playback_desc),
+                        toggleState = gaplessEnabled,
+                        onToggleChange = { appSettings.setGaplessPlayback(it) }
+                    ),
+                    SettingItem(
                         RhythmIcons.Tune,
                         context.getString(R.string.settings_crossfade),
                         context.getString(R.string.settings_crossfade_desc),
@@ -611,6 +647,14 @@ fun QueuePlaybackSettingsScreen(onBackClick: () -> Unit) {
                         data = if (crossfadeEnabled) crossfadeDuration else null
                     ),
                     SettingItem(
+                        RhythmIcons.Repeat,
+                        context.getString(R.string.settings_crossfade_repeat_one),
+                        context.getString(R.string.settings_crossfade_repeat_one_desc),
+                        toggleState = crossfadeRepeatOne,
+                        onToggleChange = { appSettings.setCrossfadeRepeatOne(it) },
+                        enabled = crossfadeEnabled
+                    ),
+                    SettingItem(
                         Icons.Default.HighQuality,
                         context.getString(R.string.settings_bit_perfect_mode),
                         if (audioRoutingMode == "app") context.getString(R.string.settings_bit_perfect_mode_desc_dac) else context.getString(R.string.settings_bit_perfect_mode_desc_native),
@@ -618,7 +662,7 @@ fun QueuePlaybackSettingsScreen(onBackClick: () -> Unit) {
                         onToggleChange = { 
                             appSettings.setBitPerfectMode(it)
                             showRestartDialog = true
-                            restartDialogMessage = "Bit-perfect mode changed. Restart the app to apply the new audio settings."
+                            restartDialogMessage = "High-resolution audio mode changed. Restart the app to apply the new audio settings."
                         }
                     )
                 )
@@ -737,7 +781,7 @@ fun QueuePlaybackSettingsScreen(onBackClick: () -> Unit) {
                                     }
                                 }
                             }
-                            // Add divider between crossfade and bit-perfect settings
+                            // Add divider between crossfade and high-resolution settings
                             if (index < group.items.lastIndex) {
                                 HorizontalDivider(
                                     modifier = Modifier.padding(horizontal = 20.dp),
@@ -824,7 +868,7 @@ fun QueuePlaybackSettingsScreen(onBackClick: () -> Unit) {
                                     }
                                     1 -> {
                                         appSettings.setAudioRoutingMode("app")
-                                        // App routing enables bit-perfect mode for direct DAC output
+                                        // App routing enables high-resolution mode for direct DAC output
                                         if (!appSettings.bitPerfectMode.value) {
                                             appSettings.setBitPerfectMode(true)
                                         }
@@ -3075,7 +3119,7 @@ fun ArtistSeparatorsSettingsScreen(onBackClick: () -> Unit) {
                             )
                             Spacer(modifier = Modifier.width(12.dp))
                             Text(
-                                text = "About Multi-Artist Parsing",
+                                text = context.getString(R.string.settings_about_multi_artist),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -3083,7 +3127,7 @@ fun ArtistSeparatorsSettingsScreen(onBackClick: () -> Unit) {
                         }
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
-                            text = "When enabled, Rhythm will automatically split artist tags containing multiple artists. This is useful for songs downloaded with yt-dlp or other tools that use delimiters like '/' to separate artists.\n\nBackslash (\\\\) can be used to escape delimiters.",
+                            text = context.getString(R.string.settings_multi_artist_parsing_info),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                         )
@@ -3115,7 +3159,7 @@ fun ArtistSeparatorsSettingsScreen(onBackClick: () -> Unit) {
                             )
                             Spacer(modifier = Modifier.width(12.dp))
                             Text(
-                                text = "Examples",
+                                text = context.getString(R.string.settings_examples),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSecondaryContainer
@@ -3196,7 +3240,7 @@ fun ArtistSeparatorsSettingsScreen(onBackClick: () -> Unit) {
                 ) {
                     Column {
                         Text(
-                            text = "Configure Delimiters",
+                            text = context.getString(R.string.settings_configure_delimiters),
                             style = MaterialTheme.typography.displayMedium,
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onSurface
@@ -3212,7 +3256,7 @@ fun ArtistSeparatorsSettingsScreen(onBackClick: () -> Unit) {
                             Text(
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                                 style = MaterialTheme.typography.labelLarge,
-                                text = "Select artist separators",
+                                text = context.getString(R.string.settings_select_artist_separators),
                                 overflow = TextOverflow.Ellipsis,
                                 maxLines = 1,
                                 color = MaterialTheme.colorScheme.onSurface
@@ -3224,11 +3268,11 @@ fun ArtistSeparatorsSettingsScreen(onBackClick: () -> Unit) {
                 Spacer(modifier = Modifier.height(16.dp))
 
                 val commonDelimiters = listOf(
-                    '/' to "Slash",
-                    ';' to "Semicolon",
-                    ',' to "Comma",
-                    '+' to "Plus",
-                    '&' to "Ampersand"
+                    '/' to context.getString(R.string.delimiter_slash),
+                    ';' to context.getString(R.string.delimiter_semicolon),
+                    ',' to context.getString(R.string.delimiter_comma),
+                    '+' to context.getString(R.string.delimiter_plus),
+                    '&' to context.getString(R.string.delimiter_ampersand)
                 )
 
                 // Delimiter options in a grid
@@ -5606,6 +5650,8 @@ fun ExperimentalFeaturesScreen(onBackClick: () -> Unit) {
     val discordRichPresenceEnabled by appSettings.discordRichPresenceEnabled.collectAsState()
     val broadcastStatusEnabled by appSettings.broadcastStatusEnabled.collectAsState()
     
+    val forcePlayerCompactMode by appSettings.forcePlayerCompactMode.collectAsState()
+    
     val updaterViewModel: AppUpdaterViewModel = viewModel()
     val latestVersion by updaterViewModel.latestVersion.collectAsState()
 
@@ -5673,6 +5719,13 @@ fun ExperimentalFeaturesScreen(onBackClick: () -> Unit) {
                             context.getString(R.string.exp_test_crash),
                             context.getString(R.string.exp_test_crash_desc),
                             onClick = { chromahub.rhythm.app.util.CrashReporter.testCrash() }
+                        ),
+                        SettingItem(
+                            Icons.Default.Smartphone,
+                            context.getString(R.string.exp_force_player_compact_mode),
+                            context.getString(R.string.exp_force_player_compact_mode_desc),
+                            toggleState = forcePlayerCompactMode,
+                            onToggleChange = { appSettings.setForcePlayerCompactMode(it) }
                         )
                     )
                 )
@@ -6098,6 +6151,8 @@ private fun FestivalSelectionBottomSheet(
         },
         containerColor = MaterialTheme.colorScheme.surfaceContainer
     ) {
+        val contentHorizontalPadding = 20.dp
+
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -6106,8 +6161,8 @@ private fun FestivalSelectionBottomSheet(
                 .graphicsLayer(alpha = contentAlpha)
         ) {
             StandardBottomSheetHeader(
-                title = "Select Festival",
-                subtitle = "Choose festive theme",
+                title = context.getString(R.string.settings_select_festival),
+                subtitle = context.getString(R.string.settings_choose_festive_theme),
                 visible = showContent,
                 modifier = Modifier.padding(horizontal = 0.dp, vertical = 0.dp)
             )
@@ -6116,13 +6171,13 @@ private fun FestivalSelectionBottomSheet(
 
             // Festival Options
             val festivals = listOf(
-                Triple("CHRISTMAS", "Christmas", Icons.Default.AcUnit),
-                Triple("NEW_YEAR", "New Year", Icons.Default.Celebration)
+                Triple("CHRISTMAS", context.getString(R.string.settings_festival_christmas), Icons.Default.AcUnit),
+                Triple("NEW_YEAR", context.getString(R.string.settings_festival_new_year), Icons.Default.Celebration)
             )
 
             Column(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.padding(horizontal = 20.dp)
+                modifier = Modifier.padding(horizontal = contentHorizontalPadding)
             ) {
                 festivals.forEach { (value, name, icon) ->
                     val isSelected = currentFestival == value
@@ -6184,7 +6239,7 @@ private fun FestivalSelectionBottomSheet(
                             if (isSelected) {
                                 Icon(
                                     imageVector = Icons.Default.CheckCircle,
-                                    contentDescription = "Selected",
+                                    contentDescription = context.getString(R.string.ui_selected),
                                     
                                     modifier = Modifier.size(24.dp)
                                 )
@@ -6202,7 +6257,9 @@ private fun FestivalSelectionBottomSheet(
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
                 ),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = contentHorizontalPadding)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -6216,7 +6273,7 @@ private fun FestivalSelectionBottomSheet(
                     )
                     Spacer(modifier = Modifier.width(12.dp))
                     Text(
-                        text = "More festivals will be added in future updates",
+                        text = context.getString(R.string.settings_more_festivals),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -10424,13 +10481,13 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
             ) { modifier ->
         val settingGroups = listOf(
             SettingGroup(
-                title = context.getString(R.string.theme_display_mode),
+                title = context.getString(R.string.settings_display_mode),
                 items = listOf(
                     // Display Mode Button Group
                     SettingItem(
                         Icons.Default.Settings,
-                        "Theme Mode",
-                        "Choose your preferred theme",
+                        context.getString(R.string.settings_theme_mode),
+                        context.getString(R.string.settings_theme_mode_desc),
                         onClick = {
                             // This will be replaced with button group below
                         }
@@ -10438,23 +10495,23 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
                     // AMOLED Theme - always in list, rendered conditionally via AnimatedVisibility
                     SettingItem(
                         Icons.Default.Brightness2,
-                        "AMOLED Theme",
-                        "Pure black theme for OLED displays",
+                        context.getString(R.string.settings_amoled_theme),
+                        context.getString(R.string.settings_amoled_theme_desc),
                         toggleState = amoledTheme,
                         onToggleChange = { appSettings.setAmoledTheme(it) }
                     )
                 )
             ),
             SettingGroup(
-                title = context.getString(R.string.theme_color_customization),
+                title = context.getString(R.string.settings_color_customization),
                 items = listOf(
                     SettingItem(
                         Icons.Default.Palette,
-                        "Color Source",
+                        context.getString(R.string.settings_color_source),
                         when (selectedColorSource) {
-                            ColorSource.ALBUM_ART -> "Album Art - Extracts from artwork"
-                            ColorSource.MONET -> "System Colors - Material You"
-                            ColorSource.CUSTOM -> "Custom Scheme - ${customColorScheme}"
+                            ColorSource.ALBUM_ART -> context.getString(R.string.settings_color_source_album)
+                            ColorSource.MONET -> context.getString(R.string.settings_color_source_monet)
+                            ColorSource.CUSTOM -> context.getString(R.string.settings_color_source_custom, customColorScheme)
                         },
                         onClick = {
                             HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
@@ -10463,11 +10520,11 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
                     ),
                     SettingItem(
                         Icons.Default.ColorLens,
-                        "Color Schemes",
+                        context.getString(R.string.settings_color_schemes),
                         if (selectedColorSource == ColorSource.CUSTOM)
-                            "Browse and select predefined color palettes"
+                            context.getString(R.string.settings_color_schemes_desc)
                         else
-                            "Available only with Custom color source",
+                            context.getString(R.string.settings_custom_only),
                         onClick = {
                             HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
                             showColorSchemesDialog = true
@@ -10475,11 +10532,11 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
                     ),
                     SettingItem(
                         Icons.Default.Brush,
-                        "Custom Colors",
+                        context.getString(R.string.settings_custom_colors),
                         if (selectedColorSource == ColorSource.CUSTOM)
-                            "Create your own unique color palette"
+                            context.getString(R.string.settings_custom_colors_desc)
                         else
-                            "Available only with Custom color source",
+                            context.getString(R.string.settings_custom_only),
                         onClick = {
                             HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
                             showCustomColorsDialog = true
@@ -10488,14 +10545,17 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
                 )
             ),
             SettingGroup(
-                title = context.getString(R.string.theme_font_customization),
+                title = context.getString(R.string.settings_font_customization),
                 items = listOf(
                     SettingItem(
                         Icons.Default.TextFields,
-                        "Font Source",
+                        context.getString(R.string.settings_font_source),
                         when (selectedFontSource) {
-                            FontSource.SYSTEM -> "System Font - ${currentFont}"
-                            FontSource.CUSTOM -> "Custom Font - ${customFontFamily ?: "Not imported"}"
+                            FontSource.SYSTEM -> context.getString(R.string.settings_font_source_system, currentFont)
+                            FontSource.CUSTOM -> context.getString(
+                                R.string.settings_font_source_custom,
+                                customFontFamily
+                            )
                         },
                         onClick = {
                             HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
@@ -10504,11 +10564,11 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
                     ),
                     SettingItem(
                         Icons.Default.TextFields,
-                        "Font Selection",
+                        context.getString(R.string.settings_font_selection),
                         if (selectedFontSource == FontSource.SYSTEM)
-                            "Choose from built-in font options"
+                            context.getString(R.string.settings_font_selection_desc)
                         else
-                            "Available only with System font source",
+                            context.getString(R.string.settings_system_font_only),
                         onClick = {
                             HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
                             showFontSelectionDialog = true
@@ -10516,11 +10576,11 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
                     ),
                     SettingItem(
                         Icons.Default.FileUpload,
-                        "Import Custom Font",
+                        context.getString(R.string.settings_import_custom_font),
                         if (customFontPath != null)
-                            "Imported: ${customFontFamily}"
+                            context.getString(R.string.settings_font_imported_name, customFontFamily)
                         else
-                            "Import your own font file (.ttf, .otf)",
+                            context.getString(R.string.settings_import_font_desc),
                         onClick = {
                             HapticUtils.performHapticFeedback(
                                 context,
@@ -10533,13 +10593,13 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
                 )
             ),
             SettingGroup(
-                title = context.getString(R.string.theme_festive_themes),
+                title = context.getString(R.string.settings_festive_themes),
                 items = buildList {
                     add(
                         SettingItem(
                             Icons.Default.Celebration,
-                            "Enable Festive Theme",
-                            "Show festive decorations across the app",
+                            context.getString(R.string.settings_enable_festive),
+                            context.getString(R.string.settings_enable_festive_desc),
                             toggleState = festiveThemeEnabled,
                             onToggleChange = { appSettings.setFestiveThemeEnabled(it) }
                         )
@@ -10548,8 +10608,8 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
                         add(
                             SettingItem(
                                 Icons.Default.EventAvailable,
-                                context.getString(R.string.theme_auto_detect),
-                                context.getString(R.string.theme_auto_detect_desc),
+                                context.getString(R.string.settings_auto_detect_holidays),
+                                context.getString(R.string.settings_auto_detect_holidays_desc),
                                 toggleState = festiveThemeAutoDetect,
                                 onToggleChange = { appSettings.setFestiveThemeAutoDetect(it) }
                             )
@@ -10558,7 +10618,7 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
                             add(
                                 SettingItem(
                                     Icons.Default.AutoAwesome,
-                                    "Select Festival",
+                                    context.getString(R.string.settings_select_festival),
                                     getFestivalDisplayName(festiveThemeType),
                                     onClick = {
                                         HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
@@ -10596,7 +10656,7 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
                 ) {
                     Column {
                         when (group.title) {
-                            "Display Mode" -> {
+                            context.getString(R.string.settings_display_mode) -> {
                                 // Display Mode Button Group
                                 Column(modifier = Modifier.padding(20.dp)) {
                                     Row(
@@ -10624,13 +10684,13 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
                                         }
                                         Column {
                                             Text(
-                                                text = "Theme Mode",
+                                                text = context.getString(R.string.settings_theme_mode),
                                                 style = MaterialTheme.typography.titleMedium,
                                                 fontWeight = FontWeight.Medium,
                                                 color = MaterialTheme.colorScheme.onSurface
                                             )
                                             Text(
-                                                text = "Choose your preferred theme",
+                                                text = context.getString(R.string.settings_theme_mode_desc),
                                                 style = MaterialTheme.typography.bodyMedium,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
@@ -10640,7 +10700,11 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
                                     Spacer(modifier = Modifier.height(16.dp))
 
                                     ExpressiveButtonGroup(
-                                        items = listOf("System", "Light", "Dark"),
+                                        items = listOf(
+                                            context.getString(R.string.settings_theme_system),
+                                            context.getString(R.string.settings_theme_light),
+                                            context.getString(R.string.settings_theme_dark)
+                                        ),
                                         selectedIndex = when {
                                             useSystemTheme -> 0
                                             !darkMode -> 1
@@ -10853,16 +10917,17 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
             shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
             containerColor = MaterialTheme.colorScheme.surfaceContainer
         ) {
+            val festiveContentPadding = 20.dp
+
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 0.dp)
                     .padding(bottom = 24.dp)
             ) {
                 item {
                     StandardBottomSheetHeader(
                         title = context.getString(R.string.theme_festive_settings),
-                        subtitle = "Choose festive theme",
+                        subtitle = context.getString(R.string.settings_choose_festive_theme),
                         visible = true,
                         modifier = Modifier.padding(horizontal = 0.dp, vertical = 0.dp)
                     )
@@ -10871,25 +10936,25 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
                 // Festival Selection
                 item {
                     Text(
-                        text = "Select Festival",
+                        text = context.getString(R.string.settings_select_festival),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier
-                            .padding(horizontal = 20.dp)
+                            .padding(horizontal = festiveContentPadding)
                             .padding(bottom = 8.dp)
                     )
                 }
                 
                 item {
                     val festivals = listOf(
-                        "CHRISTMAS" to "Christmas",
-                        "NEW_YEAR" to "New Year"
+                        "CHRISTMAS" to context.getString(R.string.settings_festival_christmas),
+                        "NEW_YEAR" to context.getString(R.string.settings_festival_new_year)
                     )
                     
                     Column(
                         verticalArrangement = Arrangement.spacedBy(4.dp),
-                        modifier = Modifier.padding(horizontal = 20.dp)
+                        modifier = Modifier.padding(horizontal = festiveContentPadding)
                     ) {
                         festivals.forEach { (id, name) ->
                             val isSelected = id == festiveThemeType
@@ -10927,7 +10992,7 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
                                     if (isSelected) {
                                         Icon(
                                             imageVector = Icons.Filled.CheckCircle,
-                                            contentDescription = "Selected",
+                                            contentDescription = context.getString(R.string.ui_selected),
                                             
                                             modifier = Modifier.size(24.dp)
                                         )
@@ -10942,23 +11007,23 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
                 item {
                     Spacer(modifier = Modifier.height(24.dp))
                     Text(
-                        text = "Decoration Intensity",
+                        text = context.getString(R.string.settings_decoration_intensity),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier
-                            .padding(horizontal = 20.dp)
+                            .padding(horizontal = festiveContentPadding)
                             .padding(bottom = 12.dp)
                     )
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 20.dp),
+                            .padding(horizontal = festiveContentPadding),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "Intensity",
+                            text = context.getString(R.string.settings_intensity),
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.Medium
                         )
@@ -10975,7 +11040,7 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
                         valueRange = 0.1f..1f,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 20.dp)
+                            .padding(horizontal = festiveContentPadding)
                     )
                 }
                 
@@ -10985,12 +11050,12 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 20.dp),
+                            .padding(horizontal = festiveContentPadding),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "Snowflake Size",
+                            text = context.getString(R.string.settings_snowflake_size),
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.Medium
                         )
@@ -11007,7 +11072,7 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
                         valueRange = 0.5f..2.0f,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 20.dp)
+                            .padding(horizontal = festiveContentPadding)
                     )
                 }
                 
@@ -11015,34 +11080,34 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
                 item {
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
-                        text = "Snowflake Display Area",
+                        text = context.getString(R.string.settings_snowflake_display_area),
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium,
-                        modifier = Modifier.padding(horizontal = 20.dp)
+                        modifier = Modifier.padding(horizontal = festiveContentPadding)
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 20.dp),
+                            .padding(horizontal = festiveContentPadding),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         FilterChip(
                             selected = festiveSnowflakeArea == "FULL_SCREEN",
                             onClick = { appSettings.setFestiveSnowflakeArea("FULL_SCREEN") },
-                            label = { Text("Full") },
+                            label = { Text(context.getString(R.string.settings_area_full)) },
                             modifier = Modifier.weight(1f)
                         )
                         FilterChip(
                             selected = festiveSnowflakeArea == "LEFT_RIGHT_ONLY",
                             onClick = { appSettings.setFestiveSnowflakeArea("LEFT_RIGHT_ONLY") },
-                            label = { Text("Sides") },
+                            label = { Text(context.getString(R.string.settings_area_sides)) },
                             modifier = Modifier.weight(1f)
                         )
                         FilterChip(
                             selected = festiveSnowflakeArea == "TOP_ONE_THIRD",
                             onClick = { appSettings.setFestiveSnowflakeArea("TOP_ONE_THIRD") },
-                            label = { Text("Top ⅓") },
+                            label = { Text(context.getString(R.string.settings_area_top_third)) },
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -11052,12 +11117,12 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
                 item {
                     Spacer(modifier = Modifier.height(24.dp))
                     Text(
-                        text = "Decoration Elements",
+                        text = context.getString(R.string.settings_decoration_elements),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier
-                            .padding(horizontal = 20.dp)
+                            .padding(horizontal = festiveContentPadding)
                             .padding(bottom = 8.dp)
                     )
                 }
@@ -11065,32 +11130,32 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
                 item {
                     Column(
                         verticalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.padding(horizontal = 20.dp)
+                        modifier = Modifier.padding(horizontal = festiveContentPadding)
                     ) {
                         DecorationToggleCard(
-                            title = "Snowfall",
-                            description = "Animated falling snowflakes",
+                            title = context.getString(R.string.settings_snowfall),
+                            description = context.getString(R.string.settings_snowfall_desc),
                             icon = Icons.Rounded.AcUnit,
                             isEnabled = festiveShowSnowfall,
                             onToggle = { appSettings.setFestiveShowSnowfall(it) }
                         )
                         DecorationToggleCard(
-                            title = "Top Lights",
-                            description = "Christmas lights at the top",
+                            title = context.getString(R.string.settings_top_lights),
+                            description = context.getString(R.string.settings_top_lights_desc),
                             icon = Icons.Rounded.Lightbulb,
                             isEnabled = festiveShowTopLights,
                             onToggle = { appSettings.setFestiveShowTopLights(it) }
                         )
                         DecorationToggleCard(
-                            title = "Side Garland",
-                            description = "Ornaments on sides",
+                            title = context.getString(R.string.settings_side_garland),
+                            description = context.getString(R.string.settings_side_garland_desc),
                             icon = Icons.Rounded.Park,
                             isEnabled = festiveShowSideGarland,
                             onToggle = { appSettings.setFestiveShowSideGarland(it) }
                         )
                         DecorationToggleCard(
-                            title = "Snow Pile",
-                            description = "Snow at the bottom",
+                            title = context.getString(R.string.settings_snow_pile),
+                            description = context.getString(R.string.settings_snow_pile_desc),
                             icon = Icons.Rounded.Terrain,
                             isEnabled = festiveShowBottomSnow,
                             onToggle = { appSettings.setFestiveShowBottomSnow(it) }
@@ -13583,7 +13648,7 @@ fun CrashLogHistorySettingsScreen(onBackClick: () -> Unit, appSettings: AppSetti
                             )
                             Spacer(modifier = Modifier.height(16.dp))
                             Text(
-                                text = "No crash logs found. Good job!",
+                                text = context.getString(R.string.settings_no_crash_logs),
                                 style = MaterialTheme.typography.titleMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

@@ -343,6 +343,7 @@ fun PlayerScreen(
     val showLyricsTranslation by appSettingsInstance.showLyricsTranslation.collectAsState()
     val showLyricsRomanization by appSettingsInstance.showLyricsRomanization.collectAsState()
     val keepScreenOnLyrics by appSettingsInstance.keepScreenOnLyrics.collectAsState()
+    val forcePlayerCompactMode by appSettingsInstance.forcePlayerCompactMode.collectAsState()
     
     // Enhanced seeking state - shows preview during scrubbing
     var isScrubbing by remember { mutableStateOf(false) }
@@ -370,6 +371,7 @@ fun PlayerScreen(
 
     // System volume state
     var systemVolume by remember { mutableFloatStateOf(0.5f) }
+    var wasPausedByZeroVolume by remember { mutableStateOf(false) }
 
     // Monitor system volume changes using ContentObserver instead of polling
     LaunchedEffect(useSystemVolume) {
@@ -402,10 +404,16 @@ fun PlayerScreen(
         }
     }
 
-    // Stop playback when system volume reaches 0 if setting is enabled
+    // Stop playback when system volume reaches 0 if setting is enabled, and resume when volume > 0
     LaunchedEffect(systemVolume, stopPlaybackOnZeroVolume, isPlaying) {
-        if (useSystemVolume && stopPlaybackOnZeroVolume && systemVolume == 0f && isPlaying) {
-            onPlayPause()
+        if (useSystemVolume && stopPlaybackOnZeroVolume) {
+            if (systemVolume == 0f && isPlaying) {
+                onPlayPause()
+                wasPausedByZeroVolume = true
+            } else if (systemVolume > 0f && !isPlaying && wasPausedByZeroVolume) {
+                onPlayPause()
+                wasPausedByZeroVolume = false
+            }
         }
     }
 
@@ -414,12 +422,12 @@ fun PlayerScreen(
     val screenWidth = with(density) { configuration.screenWidthDp.dp.toPx() }
 
     // Enhanced screen size detection for better responsiveness
-    val isCompactHeight = configuration.screenHeightDp < 600
+    val isCompactHeight = forcePlayerCompactMode || configuration.screenHeightDp < 600
     val isLargeHeight = configuration.screenHeightDp > 800
     val isTablet = configuration.screenWidthDp >= 600 // Tablet detection
     val isLandscapeTablet = isTablet && configuration.screenWidthDp > configuration.screenHeightDp
     val isExtraSmallWidth = configuration.screenWidthDp < 360 // Extra small width (< 360dp)
-    val isCompactWidth = configuration.screenWidthDp < 400 // Compact width (< 400dp)
+    val isCompactWidth = forcePlayerCompactMode || configuration.screenWidthDp < 400 // Compact width (< 400dp)
     val isMidWidth = configuration.screenWidthDp in 400..499 // Mid-range width (400-499dp)
     
     // Bottom sheet states
@@ -786,6 +794,8 @@ fun PlayerScreen(
             currentSong = song,
             queue = queue,
             currentQueueIndex = queuePosition - 1,
+            isShuffleEnabled = isShuffleEnabled,
+            repeatMode = repeatMode,
             onSongClick = { selectedSong ->
                 onSongClick(selectedSong)
                 showQueueSheet = false
@@ -810,6 +820,7 @@ fun PlayerScreen(
                 onClearQueue()
                 showQueueSheet = false
             },
+            onToggleShuffle = onToggleShuffle,
             sheetState = queueSheetState
         )
     }

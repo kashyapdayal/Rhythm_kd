@@ -1,5 +1,6 @@
 package chromahub.rhythm.app.features.local.presentation.components.bottomsheets
 
+import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
@@ -34,6 +35,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.DragHandle
@@ -78,6 +80,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.media3.common.Player
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import kotlinx.coroutines.delay
@@ -103,6 +106,8 @@ fun QueueBottomSheet(
     currentSong: Song?,
     queue: List<Song>,
     currentQueueIndex: Int = 0,
+    isShuffleEnabled: Boolean = false,
+    repeatMode: Int = Player.REPEAT_MODE_OFF,
     onSongClick: (Song) -> Unit,
     onSongClickAtIndex: (Int) -> Unit = { _ -> }, // New parameter for index-based clicking
     onDismiss: () -> Unit,
@@ -110,6 +115,7 @@ fun QueueBottomSheet(
     onMoveQueueItem: (Int, Int) -> Unit = { _, _ -> },
     onAddSongsClick: () -> Unit = {},
     onClearQueue: () -> Unit = {},
+    onToggleShuffle: () -> Unit = {},
     sheetState: SheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 ) {
     val haptic = LocalHapticFeedback.current
@@ -143,9 +149,19 @@ fun QueueBottomSheet(
         showContent = true
     }
 
-    // Create a mutable queue for reordering that updates when the queue changes
-    val mutableQueue = remember(queue) { 
-        if (queue.isNotEmpty()) queue.toMutableStateList() else mutableStateListOf()
+    // Use the queue directly for display, create mutable version only for reordering operations
+    val displayQueue = queue
+    val mutableQueue = remember { mutableStateListOf<Song>() }
+    
+    // Update mutableQueue when displayQueue changes
+    LaunchedEffect(displayQueue) {
+        mutableQueue.clear()
+        mutableQueue.addAll(displayQueue)
+        Log.d("QueueBottomSheet", "Updated displayQueue with ${displayQueue.size} songs")
+        Log.d("QueueBottomSheet", "First 5 songs in displayQueue:")
+        displayQueue.take(5).forEachIndexed { idx, song ->
+            Log.d("QueueBottomSheet", "  $idx: ${song.title} by ${song.artist}")
+        }
     }
 
     ModalBottomSheet(
@@ -172,15 +188,35 @@ fun QueueBottomSheet(
                 exit = fadeOut() + slideOutVertically { it }
             ) {
                 QueueHeader(
-                    queueSize = mutableQueue.size,
+                    queueSize = displayQueue.size,
+                    isShuffleEnabled = isShuffleEnabled,
                     onAddSongsClick = onAddSongsClick,
-                    onClearQueue = if (mutableQueue.isNotEmpty()) onClearQueue else null
+                    onClearQueue = if (displayQueue.isNotEmpty()) onClearQueue else null,
+                    onToggleShuffle = onToggleShuffle
                 )
             }
             
             Spacer(modifier = Modifier.height(16.dp))
             
-            if (mutableQueue.isEmpty()) {
+            // Queue settings info and warnings
+            if (displayQueue.isNotEmpty()) {
+                AnimatedVisibility(
+                    visible = showContent,
+                    enter = fadeIn() + slideInVertically { it },
+                    exit = fadeOut() + slideOutVertically { it }
+                ) {
+                    QueueSettingsInfo(
+                        isShuffleEnabled = isShuffleEnabled,
+                        repeatMode = repeatMode,
+                        hidePlayedSongs = hidePlayedQueueSongs,
+                        queueSize = displayQueue.size
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+            
+            if (displayQueue.isEmpty()) {
                 // Empty queue state
                 AnimatedVisibility(
                     visible = showContent,
@@ -209,11 +245,32 @@ fun QueueBottomSheet(
                     Spacer(modifier = Modifier.height(16.dp))
                 }
                 
-                val currentSongIndexInQueue = currentQueueIndex.coerceIn(0, mutableQueue.lastIndex)
-                // Show full queue (except current song card) so finished songs remain visible.
-                val visibleQueue = mutableQueue.mapIndexedNotNull { index, song ->
-                    if (!showAlreadyPlayedSongsInQueue && index < currentSongIndexInQueue) return@mapIndexedNotNull null
-                    if (index == currentSongIndexInQueue) null else index to song
+                val currentSongIndexInQueue = currentSong
+                    ?.let { song -> displayQueue.indexOfFirst { it.id == song.id }.takeIf { it >= 0 } }
+                    ?.coerceIn(0, displayQueue.lastIndex)
+                    ?: currentQueueIndex.coerceIn(0, displayQueue.lastIndex)
+                val isRepeatAll = repeatMode == Player.REPEAT_MODE_ALL
+                val shouldHidePlayedSongs = !showAlreadyPlayedSongsInQueue && !isShuffleEnabled
+                // Build visible queue according to current playback behavior.
+                val visibleQueue = if (isShuffleEnabled) {
+                    val upcomingInCurrentCycle =
+                        ((currentSongIndexInQueue + 1)..displayQueue.lastIndex).map { index ->
+                            index to displayQueue[index]
+                        }
+                    val wrappedForRepeatAll =
+                        if (isRepeatAll && currentSongIndexInQueue > 0) {
+                            (0 until currentSongIndexInQueue).map { index ->
+                                index to displayQueue[index]
+                            }
+                        } else {
+                            emptyList()
+                        }
+                    upcomingInCurrentCycle + wrappedForRepeatAll
+                } else {
+                    displayQueue.mapIndexedNotNull { index, song ->
+                        if (shouldHidePlayedSongs && index < currentSongIndexInQueue) return@mapIndexedNotNull null
+                        if (index == currentSongIndexInQueue) null else index to song
+                    }
                 }
 
                 if (visibleQueue.isNotEmpty()) {
@@ -260,51 +317,98 @@ fun QueueBottomSheet(
                         }
                     }
                     
-                    // Queue list with reordering using custom drag and drop
+                    // Queue list with reordering using custom drag and drop (disabled when shuffle is enabled)
                     val lazyListState = rememberLazyListState()
                     
-                    DragDropLazyColumn(
-                        items = visibleQueue,
-                        modifier = Modifier.fillMaxWidth(),
-                        lazyListState = lazyListState,
-                        onMove = { fromIndex, toIndex ->
-                            val actualFromIndex = visibleQueue[fromIndex].first
-                            val actualToIndex = visibleQueue[toIndex].first
-                            onMoveQueueItem(actualFromIndex, actualToIndex)
-                        },
-                        itemKey = { queueItem -> "${queueItem.first}_${queueItem.second.id}" }
-                    ) { queueItem, isDragging, _ ->
-                        val actualQueuePosition = queueItem.first
-                        val song = queueItem.second
-                        val isPlayed = actualQueuePosition < currentSongIndexInQueue
-                        
-                        Box(
-                            modifier = Modifier
-                                .padding(horizontal = 16.dp, vertical = 4.dp)
-                                .clip(RoundedCornerShape(16.dp))
+                    if (isShuffleEnabled) {
+                        // When shuffle is enabled, show queue but disable reordering
+                        LazyColumn(
+                            state = lazyListState,
+                            modifier = Modifier.fillMaxWidth(),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
                         ) {
-                            AnimateIn {
-                                QueueItem(
-                                    song = song,
-                                    index = actualQueuePosition,
-                                    isPlayed = isPlayed,
-                                    isDragging = isDragging,
-                                    onSongClick = { 
-                                        // Use index-based click to handle duplicate songs correctly
-                                        onSongClickAtIndex(actualQueuePosition)
-                                    },
-                                    onRemove = { 
-                                        try {
-                                            val indexToRemove = mutableQueue.indexOf(song)
-                                            if (indexToRemove >= 0 && indexToRemove < mutableQueue.size) {
-                                                mutableQueue.removeAt(indexToRemove)
-                                            }
-                                            onRemoveSong(song)
-                                        } catch (e: Exception) {
-                                            // Handle error silently
-                                        }
+                            itemsIndexed(visibleQueue) { index, queueItem ->
+                                val actualQueuePosition = queueItem.first
+                                val song = queueItem.second
+                                val isPlayed = !isShuffleEnabled && actualQueuePosition < currentSongIndexInQueue
+                                
+                                Box(
+                                    modifier = Modifier
+                                        .padding(vertical = 4.dp)
+                                        .clip(RoundedCornerShape(16.dp))
+                                ) {
+                                    AnimateIn {
+                                        QueueItem(
+                                            song = song,
+                                            index = actualQueuePosition,
+                                            isPlayed = isPlayed,
+                                            isDragging = false, // Never dragging when shuffle is enabled
+                                            onSongClick = { 
+                                                // Use index-based click to handle duplicate songs correctly
+                                                onSongClickAtIndex(actualQueuePosition)
+                                            },
+                                            onRemove = { 
+                                                try {
+                                                    val indexToRemove = mutableQueue.indexOf(song)
+                                                    if (indexToRemove >= 0 && indexToRemove < mutableQueue.size) {
+                                                        mutableQueue.removeAt(indexToRemove)
+                                                    }
+                                                    onRemoveSong(song)
+                                                } catch (e: Exception) {
+                                                    // Handle error silently
+                                                }
+                                            },
+                                            showDragHandle = false // Hide drag handle when shuffle is enabled
+                                        )
                                     }
-                                )
+                                }
+                            }
+                        }
+                    } else {
+                        // Normal drag and drop when shuffle is disabled
+                        DragDropLazyColumn(
+                            items = visibleQueue,
+                            modifier = Modifier.fillMaxWidth(),
+                            lazyListState = lazyListState,
+                            onMove = { fromIndex, toIndex ->
+                                val actualFromIndex = visibleQueue[fromIndex].first
+                                val actualToIndex = visibleQueue[toIndex].first
+                                onMoveQueueItem(actualFromIndex, actualToIndex)
+                            },
+                            itemKey = { queueItem -> "${queueItem.first}_${queueItem.second.id}" }
+                        ) { queueItem, isDragging, _ ->
+                            val actualQueuePosition = queueItem.first
+                            val song = queueItem.second
+                            val isPlayed = !isShuffleEnabled && actualQueuePosition < currentSongIndexInQueue
+                            
+                            Box(
+                                modifier = Modifier
+                                    .padding(horizontal = 16.dp, vertical = 4.dp)
+                                    .clip(RoundedCornerShape(16.dp))
+                            ) {
+                                AnimateIn {
+                                    QueueItem(
+                                        song = song,
+                                        index = actualQueuePosition,
+                                        isPlayed = isPlayed,
+                                        isDragging = isDragging,
+                                        onSongClick = { 
+                                            // Use index-based click to handle duplicate songs correctly
+                                            onSongClickAtIndex(actualQueuePosition)
+                                        },
+                                        onRemove = { 
+                                            try {
+                                                val indexToRemove = mutableQueue.indexOf(song)
+                                                if (indexToRemove >= 0 && indexToRemove < mutableQueue.size) {
+                                                    mutableQueue.removeAt(indexToRemove)
+                                                }
+                                                onRemoveSong(song)
+                                            } catch (e: Exception) {
+                                                // Handle error silently
+                                            }
+                                        }
+                                    )
+                                }
                             }
                         }
                     }
@@ -325,8 +429,10 @@ fun QueueBottomSheet(
 @Composable
 private fun QueueHeader(
     queueSize: Int,
+    isShuffleEnabled: Boolean,
     onAddSongsClick: () -> Unit,
     onClearQueue: (() -> Unit)? = null,
+    onToggleShuffle: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -339,12 +445,18 @@ private fun QueueHeader(
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Column {
-            Text(
-                text = context.getString(R.string.bottomsheet_queue),
-                style = MaterialTheme.typography.displayMedium,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = context.getString(R.string.bottomsheet_queue),
+                    style = MaterialTheme.typography.displayMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+            
             if (queueSize > 0) {
                 Box(
                     modifier = Modifier
@@ -369,21 +481,28 @@ private fun QueueHeader(
         Row(
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Add songs button
+            // Shuffle toggle button
             FilledTonalIconButton(
-                onClick = onAddSongsClick,
+                onClick = onToggleShuffle,
                 colors = IconButtonDefaults.filledTonalIconButtonColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    containerColor = if (isShuffleEnabled) 
+                        MaterialTheme.colorScheme.primaryContainer 
+                    else 
+                        MaterialTheme.colorScheme.surfaceContainerHigh,
+                    contentColor = if (isShuffleEnabled) 
+                        MaterialTheme.colorScheme.onPrimaryContainer 
+                    else 
+                        MaterialTheme.colorScheme.onSurfaceVariant
                 ),
                 modifier = Modifier.size(48.dp)
             ) {
                 Icon(
-                    imageVector = Icons.Rounded.VideoLibrary,
-                    contentDescription = "Add songs",
+                    imageVector = RhythmIcons.Shuffle,
+                    contentDescription = if (isShuffleEnabled) "Disable shuffle" else "Enable shuffle",
                     modifier = Modifier.size(20.dp)
                 )
             }
+            
             
             // Clear queue button (only show if queue is not empty)
             onClearQueue?.let { clearAction ->
@@ -396,7 +515,7 @@ private fun QueueHeader(
                     modifier = Modifier.size(48.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Delete,
+                    imageVector = Icons.Default.Delete,
                         contentDescription = "Clear queue",
                         modifier = Modifier.size(20.dp)
                     )
@@ -517,7 +636,8 @@ private fun QueueItem(
     isPlayed: Boolean,
     isDragging: Boolean,
     onSongClick: () -> Unit,
-    onRemove: () -> Unit
+    onRemove: () -> Unit,
+    showDragHandle: Boolean = true
 ) {
     val context = LocalContext.current
 
@@ -664,34 +784,36 @@ private fun QueueItem(
                 )
             }
             
-            // Drag handle with improved visual feedback
-            val handleScale by animateFloatAsState(
-                targetValue = if (isDragging) 1.3f else 1f,
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                    stiffness = Spring.StiffnessMedium
-                ),
-                label = "handleScale"
-            )
-            
-            Icon(
-                imageVector = Icons.Default.DragHandle,
-                contentDescription = "Drag to reorder",
-                tint = if (isDragging)
-                    MaterialTheme.colorScheme.onSecondaryContainer
-                else if (isPlayed)
-                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
-                else 
-                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                modifier = Modifier
-                    .size(20.dp)
-                    .graphicsLayer {
-                        scaleX = handleScale
-                        scaleY = handleScale
-                    }
-            )
+            // Drag handle with improved visual feedback (only show if enabled)
+            if (showDragHandle) {
+                val handleScale by animateFloatAsState(
+                    targetValue = if (isDragging) 1.3f else 1f,
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                        stiffness = Spring.StiffnessMedium
+                    ),
+                    label = "handleScale"
+                )
+                
+                Icon(
+                    imageVector = Icons.Default.DragHandle,
+                    contentDescription = "Drag to reorder",
+                    tint = if (isDragging)
+                        MaterialTheme.colorScheme.onSecondaryContainer
+                    else if (isPlayed)
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+                    else 
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    modifier = Modifier
+                        .size(20.dp)
+                        .graphicsLayer {
+                            scaleX = handleScale
+                            scaleY = handleScale
+                        }
+                )
                         
-            Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+            }
             
             // Remove button with hover effect
             var isPressed by remember { mutableStateOf(false) }
@@ -725,6 +847,82 @@ private fun QueueItem(
                     contentDescription = "Remove from queue",
                     modifier = Modifier.size(18.dp)
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun QueueSettingsInfo(
+    isShuffleEnabled: Boolean,
+    repeatMode: Int,
+    hidePlayedSongs: Boolean,
+    queueSize: Int,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        // Shuffle warning/info
+        if (isShuffleEnabled) {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = RhythmIcons.Shuffle,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        text = if (repeatMode == Player.REPEAT_MODE_ALL) {
+                            "Shuffle is enabled - up next wraps to the start when the current cycle ends"
+                        } else {
+                            "Shuffle is enabled - showing next songs in current shuffle order"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        }
+        
+        // Hide played songs info
+        if (hidePlayedSongs && queueSize > 0) {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.tertiaryContainer,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Warning,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        text = "Played songs are hidden from the queue",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
         }
     }

@@ -32,12 +32,12 @@
 
 ## 🎵 About Rhythm
 
-Rhythm is a modern, open-source music player for Android built with **Material 3 Expressive** design and powered by Media3 ExoPlayer 1.9.2. Now at **v4.2**, Rhythm delivers professional-grade audio with Bit Perfect playback, EAC3-JOC/Dolby Atmos via FFmpeg, a refined expressive UI, multi-select batch library actions, and complete privacy.
+Rhythm is a modern, open-source music player for Android built with **Material 3 Expressive** design and powered by Media3 ExoPlayer 1.9.2. Now at **v4.2**, Rhythm delivers professional-grade audio with High-Resolution playback, EAC3-JOC/Dolby Atmos via FFmpeg, a refined expressive UI, multi-select batch library actions, and complete privacy.
 
 ### ✨ Key Features
 
 - 🎨 **Material You** - Dynamic theming with wallpaper colors (Android 12+)
-- 🎵 **Professional Audio** - Media3 ExoPlayer with gapless playback, Bit Perfect mode & EAC3-JOC support
+- 🎵 **Professional Audio** - Media3 ExoPlayer with gapless playback, High-Resolution mode & EAC3-JOC support
 - 🎤 **Synced Lyrics** - LRCLib integration with word-by-word highlighting
 - 🎛️ **10-Band EQ** - Professional equalizer with 6032+ AutoEQ device presets
 - 📊 **Playback Stats** - Comprehensive listening statistics and insights
@@ -139,7 +139,7 @@ Complete documentation is available in our [**Wiki**](https://github.com/cromagu
 | Category | Technology |
 |:---|:---|
 | **UI Framework** | Jetpack Compose + Material 3 + Glance Widgets |
-| **Audio Engine** | Media3 ExoPlayer 1.9.2 + FFmpeg Decoder + Bit Perfect |
+| **Audio Engine** | Media3 ExoPlayer 1.9.2 + FFmpeg Decoder + High-Resolution |
 | **Build System** | AGP 8.13.2 + Kotlin 2.3.10 |
 | **Database** | Room + SQLite |
 | **Networking** | Retrofit + OkHttp + Ktor |

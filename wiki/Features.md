@@ -10,7 +10,7 @@ Complete guide to all features and capabilities in Rhythm Music Player.
 - **Gapless Playback**: Seamless transitions between tracks
 - **High-Resolution Audio**: Support for FLAC, ALAC, WAV up to 192kHz/24-bit
 - **Format Support**: MP3, AAC, Opus, Vorbis, EAC3-JOC (Dolby Atmos) via FFmpeg, and more
-- **Bit Perfect Mode**: Bypass Android audio processing for purest output to DAC/amp
+- **High-Resolution Audio Mode**: Preserve native sample rates and bit depths, bypassing Android processing
 - **Smart Buffering**: Optimized for smooth playback
 
 ### Advanced Playback Controls

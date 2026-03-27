@@ -1,5 +1,8 @@
 package chromahub.rhythm.app.ui.theme
 
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /**
@@ -29,8 +32,19 @@ object MusicDimensions {
     val playerControlSize = 56.dp
     val playerControlSizeSmall = 40.dp
     
-    // Navigation and layout
-    val bottomNavigationHeight = 80.dp
+    // Navigation and layout - responsive to DPI
+    val bottomNavigationHeight: Dp
+        @Composable
+        get() = with(LocalDensity.current) {
+            // Dynamic sizing based on screen density for optimal touch targets and screen usage
+            val scaleFactor = when {
+                density < 1.5f -> 1.3f  // Low density devices: larger for better touch targets
+                density < 2.5f -> 1.1f  // Medium density devices: moderately larger
+                else -> 0.9f            // High density devices: slightly smaller to save screen space
+            }
+            (80f * scaleFactor).dp
+        }
+    
     val topAppBarHeight = 64.dp
     val listItemHeight = 72.dp
     val listItemHeightCompact = 56.dp

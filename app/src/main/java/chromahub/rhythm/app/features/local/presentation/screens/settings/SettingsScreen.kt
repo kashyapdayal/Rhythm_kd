@@ -166,7 +166,8 @@ data class SettingItem(
     val onClick: (() -> Unit)? = null,
     val toggleState: Boolean? = null,
     val onToggleChange: ((Boolean) -> Unit)? = null,
-    val data: Any? = null
+    val data: Any? = null,
+    val enabled: Boolean = true
 )
 
 data class SettingGroup(
@@ -488,7 +489,7 @@ fun SettingsScreen(
                         )
                         TipItem(
                             icon = Icons.Default.Folder,
-                            text = "Use media scan to hide unwanted files from your library"
+                            text = context.getString(R.string.settings_tip_media_scan)
                         )
                     }
                 }

@@ -128,6 +128,13 @@ class TransitionController(
 
             val player = engine.masterPlayer
             val repeatMode = player.repeatMode
+
+            if (repeatMode == Player.REPEAT_MODE_ONE && !appSettings.crossfadeRepeatOne.value) {
+                Log.d(TAG, "Repeat-one active and crossfade-for-repeat-one disabled. Skipping transition.")
+                engine.cancelNext()
+                engine.setPauseAtEndOfMediaItems(false)
+                return@launch
+            }
             
             // Use ExoPlayer's timeline to get the next track correctly (respects shuffle mode)
             val currentWindowIndex = player.currentMediaItemIndex

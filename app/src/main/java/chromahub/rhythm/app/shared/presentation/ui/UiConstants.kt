@@ -11,8 +11,8 @@ object UiConstants {
     /** Height of the global Mini-player card itself (not including spacing) */
     val MiniPlayerHeight = 72.dp // Reduced from 88dp for better proportions
     
-    /** Height of the bottom navigation bar */
-    val NavBarHeight = 64.dp
+    /** Height of the bottom navigation bar - now responsive to DPI */
+    val NavBarHeight = 80.dp // Base height, will be scaled by density
     
     /** Standard spacing between UI elements */
     val MiniPlayerSpacing = 8.dp

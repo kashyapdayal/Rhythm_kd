@@ -512,6 +512,106 @@ fun buildSettingsSearchIndex(context: Context): List<SearchableSettingItem> {
             route = SettingsRoutes.THEME_CUSTOMIZATION,
             parentScreen = "Theme"
         ))
+        add(SearchableSettingItem(
+            id = "theme_festive_enabled",
+            title = context.getString(R.string.settings_enable_festive),
+            description = context.getString(R.string.settings_enable_festive_desc),
+            keywords = listOf("festive", "holiday", "christmas", "new year", "decorations", "theme"),
+            icon = Icons.Default.Celebration,
+            route = SettingsRoutes.THEME_CUSTOMIZATION,
+            parentScreen = "Theme",
+            settingKey = "festiveThemeEnabled"
+        ))
+        add(SearchableSettingItem(
+            id = "theme_festive_auto_detect",
+            title = context.getString(R.string.settings_auto_detect_holidays),
+            description = context.getString(R.string.settings_auto_detect_holidays_desc),
+            keywords = listOf("auto detect", "holiday", "seasonal", "automatic", "festive"),
+            icon = Icons.Default.AutoAwesome,
+            route = SettingsRoutes.THEME_CUSTOMIZATION,
+            parentScreen = "Theme",
+            settingKey = "festiveThemeAutoDetect"
+        ))
+        add(SearchableSettingItem(
+            id = "theme_festival_type",
+            title = context.getString(R.string.settings_select_festival),
+            description = context.getString(R.string.settings_choose_festive_theme),
+            keywords = listOf("festival", "christmas", "new year", "holiday theme", "festive type"),
+            icon = Icons.Default.Celebration,
+            route = SettingsRoutes.THEME_CUSTOMIZATION,
+            parentScreen = "Theme",
+            settingKey = "festiveThemeType"
+        ))
+        add(SearchableSettingItem(
+            id = "theme_festive_intensity",
+            title = context.getString(R.string.settings_decoration_intensity),
+            description = context.getString(R.string.settings_adjust_festive_decorations),
+            keywords = listOf("intensity", "decoration", "festive", "amount", "strength"),
+            icon = Icons.Default.LinearScale,
+            route = SettingsRoutes.THEME_CUSTOMIZATION,
+            parentScreen = "Theme",
+            settingKey = "festiveThemeIntensity"
+        ))
+        add(SearchableSettingItem(
+            id = "theme_festive_snowflake_size",
+            title = context.getString(R.string.settings_snowflake_size),
+            description = context.getString(R.string.settings_adjust_snowflake_size),
+            keywords = listOf("snowflake", "size", "snow", "festive", "particle size"),
+            icon = Icons.Default.LinearScale,
+            route = SettingsRoutes.THEME_CUSTOMIZATION,
+            parentScreen = "Theme",
+            settingKey = "festiveSnowflakeSize"
+        ))
+        add(SearchableSettingItem(
+            id = "theme_festive_snowflake_area",
+            title = context.getString(R.string.settings_snowflake_display_area),
+            description = context.getString(R.string.settings_toggle_decoration_elements),
+            keywords = listOf("snowflake area", "full", "sides", "top", "coverage", "festive"),
+            icon = Icons.Default.GraphicEq,
+            route = SettingsRoutes.THEME_CUSTOMIZATION,
+            parentScreen = "Theme",
+            settingKey = "festiveSnowflakeArea"
+        ))
+        add(SearchableSettingItem(
+            id = "theme_festive_snowfall",
+            title = context.getString(R.string.settings_snowfall),
+            description = context.getString(R.string.settings_snowfall_desc),
+            keywords = listOf("snowfall", "snow", "animation", "festive", "decoration"),
+            icon = Icons.Default.Visibility,
+            route = SettingsRoutes.THEME_CUSTOMIZATION,
+            parentScreen = "Theme",
+            settingKey = "festiveShowSnowfall"
+        ))
+        add(SearchableSettingItem(
+            id = "theme_festive_top_lights",
+            title = context.getString(R.string.settings_top_lights),
+            description = context.getString(R.string.settings_top_lights_desc),
+            keywords = listOf("top lights", "lights", "christmas lights", "festive", "decoration"),
+            icon = Icons.Default.Visibility,
+            route = SettingsRoutes.THEME_CUSTOMIZATION,
+            parentScreen = "Theme",
+            settingKey = "festiveShowTopLights"
+        ))
+        add(SearchableSettingItem(
+            id = "theme_festive_side_garland",
+            title = context.getString(R.string.settings_side_garland),
+            description = context.getString(R.string.settings_side_garland_desc),
+            keywords = listOf("side garland", "garland", "ornaments", "festive", "decoration"),
+            icon = Icons.Default.Visibility,
+            route = SettingsRoutes.THEME_CUSTOMIZATION,
+            parentScreen = "Theme",
+            settingKey = "festiveShowSideGarland"
+        ))
+        add(SearchableSettingItem(
+            id = "theme_festive_snow_pile",
+            title = context.getString(R.string.settings_snow_pile),
+            description = context.getString(R.string.settings_snow_pile_desc),
+            keywords = listOf("snow pile", "bottom snow", "festive", "decoration"),
+            icon = Icons.Default.Visibility,
+            route = SettingsRoutes.THEME_CUSTOMIZATION,
+            parentScreen = "Theme",
+            settingKey = "festiveShowBottomSnow"
+        ))
         
         // ======================== PLAYER CUSTOMIZATION SCREEN ========================
         add(SearchableSettingItem(
@@ -849,6 +949,16 @@ fun buildSettingsSearchIndex(context: Context): List<SearchableSettingItem> {
             parentScreen = "Queue & Playback"
         ))
         add(SearchableSettingItem(
+            id = "gapless_playback",
+            title = context.getString(R.string.settings_gapless_playback),
+            description = context.getString(R.string.settings_gapless_playback_desc),
+            keywords = listOf("gapless", "transition", "silence", "playback", "next track"),
+            icon = Icons.Default.GraphicEq,
+            route = SettingsRoutes.QUEUE_PLAYBACK,
+            parentScreen = "Queue & Playback",
+            settingKey = "gaplessPlayback"
+        ))
+        add(SearchableSettingItem(
             id = "crossfade",
             title = context.getString(R.string.settings_crossfade),
             description = context.getString(R.string.settings_crossfade_desc),
@@ -857,6 +967,16 @@ fun buildSettingsSearchIndex(context: Context): List<SearchableSettingItem> {
             route = SettingsRoutes.QUEUE_PLAYBACK,
             parentScreen = "Queue & Playback",
             settingKey = "crossfade"
+        ))
+        add(SearchableSettingItem(
+            id = "crossfade_repeat_one",
+            title = context.getString(R.string.settings_crossfade_repeat_one),
+            description = context.getString(R.string.settings_crossfade_repeat_one_desc),
+            keywords = listOf("crossfade", "repeat one", "loop one", "transition", "single track"),
+            icon = RhythmIcons.Repeat,
+            route = SettingsRoutes.QUEUE_PLAYBACK,
+            parentScreen = "Queue & Playback",
+            settingKey = "crossfadeRepeatOne"
         ))
         add(SearchableSettingItem(
             id = "crossfade_duration",
@@ -891,12 +1011,12 @@ fun buildSettingsSearchIndex(context: Context): List<SearchableSettingItem> {
         
         // ======================== EXPERIMENTAL FEATURES SCREEN ========================
         
-        // Bit-Perfect Audio
+        // High-Resolution Audio
         add(SearchableSettingItem(
             id = "bit_perfect_mode",
             title = context.getString(R.string.settings_bit_perfect_mode),
             description = context.getString(R.string.settings_bit_perfect_mode_desc_native),
-            keywords = listOf("bit perfect", "bit-perfect", "audio", "sample rate", "resampling", "hi-res", "quality", "lossless", "44.1khz", "48khz", "96khz", "192khz", "native", "dac"),
+            keywords = listOf("high-resolution", "hi-res", "bit perfect", "bit-perfect", "audio", "sample rate", "resampling", "hi-res", "quality", "lossless", "44.1khz", "48khz", "96khz", "192khz", "native", "dac"),
             icon = Icons.Default.HighQuality,
             route = null,
             parentScreen = "Queue & Playback",

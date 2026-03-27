@@ -63,30 +63,34 @@
     <string name="settings_custom_notifications_desc">Use app\'s custom notification style instead of system media notification</string>
     
     <!-- Settings - Queue & Playback -->
-    <string name="settings_queue_playback">Queue &amp; Playback</string>
-    <string name="settings_queue_behavior">Queue Behavior</string>
-    <string name="settings_use_exoplayer_shuffle">Use ExoPlayer Shuffle</string>
-    <string name="settings_use_exoplayer_shuffle_desc">Let the media player handle shuffle (recommended: OFF for manual shuffle)</string>
-    <string name="settings_auto_queue">Auto Queue</string>
-    <string name="settings_auto_queue_desc">Automatically add related songs to queue when playing</string>
-    <string name="settings_clear_queue_on_new_song">Replace Queue on New Song</string>
-    <string name="settings_clear_queue_on_new_song_desc">Playing a song directly clears the current queue.</string>
-    <string name="settings_playback_persistence">Playback Persistence</string>
-    <string name="settings_remember_repeat_mode">Remember Repeat Mode</string>
-    <string name="settings_remember_repeat_mode_desc">Save repeat mode (Off/All/One) between app restarts</string>
-    <string name="settings_remember_shuffle_mode">Remember Shuffle Mode</string>
-    <string name="settings_remember_shuffle_mode_desc">Save shuffle on/off state between app restarts</string>
-    <string name="settings_audio_effects">Audio Effects</string>
+    <string name="settings_queue_playback">Queue and Playback</string>
+    <string name="settings_queue_behavior">Queue and Shuffle</string>
+    <string name="settings_use_exoplayer_shuffle">Shuffle Engine</string>
+    <string name="settings_use_exoplayer_shuffle_desc">Use the player timeline for shuffle order.</string>
+    <string name="settings_auto_queue">Context Queue</string>
+    <string name="settings_auto_queue_desc">Build a related queue when playback starts.</string>
+    <string name="settings_clear_queue_on_new_song">Replace Queue on Play</string>
+    <string name="settings_clear_queue_on_new_song_desc">Starting a track replaces the current queue.</string>
+    <string name="settings_playback_persistence">Playback State</string>
+    <string name="settings_remember_repeat_mode">Persist Repeat Mode</string>
+    <string name="settings_remember_repeat_mode_desc">Restore repeat mode after restart.</string>
+    <string name="settings_remember_shuffle_mode">Persist Shuffle Mode</string>
+    <string name="settings_remember_shuffle_mode_desc">Restore shuffle mode after restart.</string>
+    <string name="settings_audio_effects">Transitions and Output</string>
     <string name="settings_resume_on_device_reconnect">Auto Resume</string>
     <string name="settings_resume_on_device_reconnect_desc">Auto-resume when audio devices reconnect</string>
-    <string name="settings_crossfade">Crossfade</string>
-    <string name="settings_crossfade_desc">Smooth transition between songs</string>
-    <string name="settings_crossfade_duration">Crossfade Duration</string>
+    <string name="settings_gapless_playback">Gapless Playback</string>
+    <string name="settings_gapless_playback_desc">Switch tracks without silence.</string>
+    <string name="settings_crossfade">Track Crossfade</string>
+    <string name="settings_crossfade_desc">Blend outgoing and incoming tracks.</string>
+    <string name="settings_crossfade_duration">Fade Duration</string>
     <string name="settings_crossfade_duration_desc">%1$.1f seconds</string>
-    <string name="settings_stop_playback_on_close">Stop Playback on App Close</string>
-    <string name="settings_stop_playback_on_close_desc">Stop music when the app is closed from recent apps</string>
-    <string name="settings_time_display">Time Display</string>
-    <string name="settings_use_hours">Use Hours in Time Format</string>
+    <string name="settings_crossfade_repeat_one">Crossfade in Repeat One</string>
+    <string name="settings_crossfade_repeat_one_desc">Allow crossfade when repeating one track.</string>
+    <string name="settings_stop_playback_on_close">Stop on App Close</string>
+    <string name="settings_stop_playback_on_close_desc">Stop music when the app is closed.</string>
+    <string name="settings_time_display">Time Format</string>
+    <string name="settings_use_hours">Use Hour Format</string>
     <string name="settings_use_hours_enabled">Shows 1:32:26 for long tracks</string>
     <string name="settings_use_hours_disabled">Shows 92:26 for long tracks</string>
     
@@ -980,20 +984,20 @@
     <string name="external_services_desc">Control which external API services are active to enhance your music experience. Toggle services on/off to manage data usage and functionality.</string>
     <string name="lyrics_source_priority_title">Lyrics Source Priority</string>
     <string name="lyrics_source_priority_desc_placeholder">Choose where Rhythm should look for lyrics first</string>
-    <string name="playlist_action_title">Playlist Action</string>
-    <string name="playlist_action_desc">Choose what happens when you tap a song in a playlist</string>
-    <string name="playlist_action_choose">Choose default behavior when tapping songs in playlists</string>
+    <string name="playlist_action_title">Playlist Tap Action</string>
+    <string name="playlist_action_desc">Default behavior for playlist taps</string>
+    <string name="playlist_action_choose">Select the default playlist tap action</string>
     <string name="playlist_action_ask_title">Ask each time</string>
-    <string name="playlist_action_ask_desc">Show dialog with options to choose</string>
+    <string name="playlist_action_ask_desc">Show an action chooser each time</string>
     <string name="playlist_action_load_title">Load entire playlist</string>
-    <string name="playlist_action_load_desc">Replace queue and play from selected song</string>
+    <string name="playlist_action_load_desc">Load playlist and start from selected track</string>
     <string name="playlist_action_single_title">Play only this song</string>
-    <string name="playlist_action_single_desc">Don\'t change the queue</string>
-    <string name="queue_action_title">Queue Action</string>
-    <string name="queue_action_desc">Choose what happens when you play a song while the queue is not empty</string>
-    <string name="queue_action_choose">Choose what happens when playing a song while queue is not empty</string>
+    <string name="playlist_action_single_desc">Play only selected track</string>
+    <string name="queue_action_title">Queue Conflict Action</string>
+    <string name="queue_action_desc">Default behavior when queue already has tracks</string>
+    <string name="queue_action_choose">Select the default queue conflict action</string>
     <string name="queue_action_ask_title">Ask each time</string>
-    <string name="queue_action_ask_desc">Show dialog with Clear &amp; Play and Add to Queue options</string>
+    <string name="queue_action_ask_desc">Show an action chooser each time</string>
     <string name="queue_action_replace_title">Replace queue</string>
     <string name="queue_action_replace_desc">Clear queue and play selected song</string>
     <string name="queue_action_next_title">Play next</string>
@@ -1001,7 +1005,7 @@
     <string name="queue_action_add_title">Add to queue</string>
     <string name="queue_action_add_desc">Add song at the end of queue</string>
     <string name="queue_action_always_add_title">Always add to queue</string>
-    <string name="queue_action_always_add_desc">Automatically add songs to queue without asking</string>
+    <string name="queue_action_always_add_desc">Always add selected track to queue</string>
     
     <!-- Additional UI Elements -->
     <string name="now_playing">NOW PLAYING</string>
@@ -1196,8 +1200,8 @@
     <string name="settings_section_audio_playback">Audio &amp; Playback</string>
     <string name="settings_system_volume">System Volume</string>
     <string name="settings_system_volume_desc">System audio</string>
-    <string name="settings_stop_playback_on_zero_volume">Stop on Zero Volume</string>
-    <string name="settings_stop_playback_on_zero_volume_desc">Stop playback when volume reaches zero</string>
+    <string name="settings_stop_playback_on_zero_volume">Pause on Zero Volume</string>
+    <string name="settings_stop_playback_on_zero_volume_desc">Pause playback when volume reaches zero</string>
     <string name="settings_show_lyrics">Show Lyrics</string>
     <string name="settings_show_lyrics_desc">Lyrics display</string>
     <string name="settings_queue_playback_title">Queue &amp; Playback</string>
@@ -2187,15 +2191,16 @@
     <string name="ui_done">Done</string>
 
     <!-- Queue &amp; Playback - hardcoded strings -->
-    <string name="settings_queue_action_dialog">Queue Action Dialog</string>
-    <string name="settings_queue_action_dialog_desc_ask">Ask what to do when queue is not empty</string>
-    <string name="settings_queue_action_dialog_desc_always">Always add to queue when playing songs</string>
-    <string name="settings_playlist_action_dialog">Playlist Action Dialog</string>
-    <string name="settings_playlist_action_play_all">Load entire playlist to queue</string>
-    <string name="settings_playlist_action_play_one">Play only selected song</string>
+    <string name="settings_queue_action_dialog">Queue Conflict Action</string>
+    <string name="settings_queue_action_dialog_desc_ask">Ask before replacing or extending the queue.</string>
+    <string name="settings_queue_action_dialog_desc_always">Always place the selected track in queue.</string>
+    <string name="settings_queue_action_dialog_desc_disabled">Disabled while Replace Queue on Play is on.</string>
+    <string name="settings_playlist_action_dialog">Playlist Tap Action</string>
+    <string name="settings_playlist_action_play_all">Load full playlist into queue</string>
+    <string name="settings_playlist_action_play_one">Play only selected track</string>
     <string name="settings_playlist_action_ask">Ask each time</string>
-    <string name="settings_remember_queue">Remember Queue</string>
-    <string name="settings_remember_queue_desc">Save and restore queue when restarting app</string>
+    <string name="settings_remember_queue">Persist Queue</string>
+    <string name="settings_remember_queue_desc">Restore queue and position after restart.</string>
     <string name="settings_crossfade_min">0.5s</string>
     <string name="settings_crossfade_max">12s</string>
 
@@ -2206,7 +2211,7 @@
     <string name="settings_audio_routing_default">Default</string>
     <string name="settings_audio_routing_app">App</string>
     <string name="settings_audio_routing_system">System</string>
-    <string name="settings_audio_routing_app_desc">Rhythm handles audio directly — bit-perfect mode enabled for native sample rate output to your DAC. Restart required.</string>
+    <string name="settings_audio_routing_app_desc">Rhythm handles audio directly — high-resolution mode enabled for native sample rate output to your DAC. Restart required.</string>
     <string name="settings_audio_routing_system_desc">Uses Android system audio routing. Audio may be resampled to 48 kHz by the OS mixer.</string>
     <string name="settings_audio_routing_default_desc">Android decides how to route audio. Resampling depends on system settings.</string>
 
@@ -2537,9 +2542,9 @@
     <string name="settings_header_title">Settings</string>
     <string name="settings_shapes">Shapes</string>
     <string name="settings_shapes_desc">Expressive Shapes</string>
-    <string name="settings_bit_perfect_mode">Bit-Perfect Mode</string>
-    <string name="settings_bit_perfect_mode_desc_dac">Enabled via DAC/USB Audio routing. Restart required.</string>
-    <string name="settings_bit_perfect_mode_desc_native">Native sample rate, no resampling. Restart required.</string>
+    <string name="settings_bit_perfect_mode">High-Resolution Audio Mode</string>
+    <string name="settings_bit_perfect_mode_desc_dac">Preserve native sample rate and bit depth via DAC/USB. Restart required.</string>
+    <string name="settings_bit_perfect_mode_desc_native">Preserve native sample rate and bit depth, no resampling. Restart required.</string>
     <string name="settings_song_ratings">Song Ratings</string>
     <string name="settings_song_ratings_desc">Enable or disable song rating system</string>
     <!-- Gestures Search Strings -->
@@ -2553,27 +2558,27 @@
     <string name="settings_gesture_double_tap_desc">Double tap play/pause</string>
 
     <!-- Queue & Playback Search Strings -->
-    <string name="settings_queue_auto_add">Auto Add to Queue</string>
-    <string name="settings_queue_auto_add_desc">Auto-add songs</string>
-    <string name="settings_queue_clear_on_new">Clear Queue on New Song</string>
-    <string name="settings_queue_clear_on_new_desc">Clear on new song</string>
-    <string name="settings_show_played_queue_songs">Show Already Played Songs in Queue</string>
-    <string name="settings_show_played_queue_songs_desc">Show songs that were already played in queue</string>
+    <string name="settings_queue_auto_add">Context Queue</string>
+    <string name="settings_queue_auto_add_desc">Build related queue on play</string>
+    <string name="settings_queue_clear_on_new">Replace Queue on Play</string>
+    <string name="settings_queue_clear_on_new_desc">Replace queue for direct play</string>
+    <string name="settings_show_played_queue_songs">Show Played Tracks</string>
+    <string name="settings_show_played_queue_songs_desc">Keep played tracks visible in queue</string>
 
-    <string name="settings_queue_action_dialog_desc">Prompt when queue full</string>
-    <string name="settings_queue_repeat_persistence">Remember Repeat Mode</string>
+    <string name="settings_queue_action_dialog_desc">Queue conflict policy</string>
+    <string name="settings_queue_repeat_persistence">Persist Repeat Mode</string>
     <string name="settings_queue_repeat_persistence_desc">Save repeat mode</string>
-    <string name="settings_queue_shuffle_persistence">Remember Shuffle Mode</string>
+    <string name="settings_queue_shuffle_persistence">Persist Shuffle Mode</string>
     <string name="settings_queue_shuffle_persistence_desc">Save shuffle mode</string>
-    <string name="settings_queue_stop_on_close">Stop Playback on App Close</string>
+    <string name="settings_queue_stop_on_close">Stop on App Close</string>
     <string name="settings_queue_stop_on_close_desc">Stop on app close</string>
     <string name="settings_sleep_timer_search">Sleep Timer</string>
     <string name="settings_sleep_timer_search_desc">Auto-stop playback</string>
     <string name="settings_queue_hours_format">Use Hours in Time Format</string>
     <string name="settings_queue_hours_format_desc">Hours in time format</string>
-    <string name="settings_queue_persistence">Remember Queue</string>
+    <string name="settings_queue_persistence">Persist Queue</string>
     <string name="settings_queue_persistence_desc">Restore queue on start</string>
-    <string name="settings_playlist_action_dialog_desc">Playlist click action</string>
+    <string name="settings_playlist_action_dialog_desc">Playlist tap policy</string>
 
 
     <!-- Experimental Features Search Strings -->
@@ -2737,6 +2742,8 @@
     <string name="exp_streaming_services">Streaming Services</string>
     <string name="exp_test_crash">Test Crash</string>
     <string name="exp_test_crash_desc">Forcibly crash the app to test crash handling and reporting</string>
+    <string name="exp_force_player_compact_mode">Force Player Compact Mode</string>
+    <string name="exp_force_player_compact_mode_desc">Force the player screen to use compact mode</string>
     <string name="exp_third_party_integrations">Third-Party Integrations</string>
     <string name="settings_backup_created">Backup Created Successfully</string>
     <string name="settings_backup_created_body">Your complete Rhythm backup has been created.</string>
