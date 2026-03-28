@@ -23,7 +23,6 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import chromahub.rhythm.app.R
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -42,6 +41,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.*
+import androidx.compose.material.icons.automirrored.rounded.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material.icons.rounded.*
@@ -80,15 +80,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import chromahub.rhythm.app.BuildConfig
 import chromahub.rhythm.app.shared.data.model.AppSettings
 import chromahub.rhythm.app.shared.data.model.Playlist
 import chromahub.rhythm.app.shared.data.model.Song
-import chromahub.rhythm.app.shared.data.repository.PlaybackStatsRepository
-import chromahub.rhythm.app.shared.data.repository.StatsTimeRange
 import chromahub.rhythm.app.util.GsonUtils
 import chromahub.rhythm.app.util.HapticUtils
 import coil.compose.AsyncImage
@@ -123,7 +120,6 @@ import androidx.compose.ui.viewinterop.AndroidView
 import android.widget.TextView
 import androidx.compose.foundation.Image
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.stringResource
 import androidx.core.text.HtmlCompat
 import chromahub.rhythm.app.shared.presentation.components.common.M3FourColorCircularLoader
 import chromahub.rhythm.app.features.local.presentation.components.player.PlayingEqIcon
@@ -157,7 +153,6 @@ fun TunerSettingRow(item: SettingItem) {
     
     val iconBackgroundColor by animateColorAsState(
         targetValue = when {
-            !item.enabled -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
             item.toggleState == true -> MaterialTheme.colorScheme.primaryContainer
             isPressed -> MaterialTheme.colorScheme.secondaryContainer
             else -> MaterialTheme.colorScheme.surfaceContainerHighest
@@ -171,7 +166,6 @@ fun TunerSettingRow(item: SettingItem) {
     
     val iconTintColor by animateColorAsState(
         targetValue = when {
-            !item.enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
             item.toggleState == true -> MaterialTheme.colorScheme.onPrimaryContainer
             else -> MaterialTheme.colorScheme.onSurfaceVariant
         },
@@ -186,14 +180,11 @@ fun TunerSettingRow(item: SettingItem) {
         modifier = Modifier
             .fillMaxWidth()
             .graphicsLayer {
-                alpha = if (item.enabled) 1f else 0.6f
-            }
-            .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
             }
             .then(
-                if (item.enabled && item.onClick != null && item.toggleState == null) {
+                if (item.onClick != null && item.toggleState == null) {
                     Modifier.clickable(onClick = {
                         isPressed = true
                         HapticUtils.performHapticFeedback(context, hapticFeedback, HapticFeedbackType.LongPress)
@@ -234,22 +225,14 @@ fun TunerSettingRow(item: SettingItem) {
                 text = item.title,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
-                color = if (item.enabled) {
-                    MaterialTheme.colorScheme.onSurface
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                }
+                color = MaterialTheme.colorScheme.onSurface
             )
             item.description?.let {
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = it,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = if (item.enabled) {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                    },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     lineHeight = MaterialTheme.typography.bodyMedium.lineHeight
                 )
             }
@@ -267,32 +250,24 @@ fun TunerSettingRow(item: SettingItem) {
             TunerAnimatedSwitch(
                 checked = item.toggleState,
                 onCheckedChange = {
-                    if (!item.enabled) return@TunerAnimatedSwitch
                     HapticUtils.performHapticFeedback(context, hapticFeedback, HapticFeedbackType.TextHandleMove)
                     item.onToggleChange?.invoke(it)
-                },
-                enabled = item.enabled
+                }
             )
         } else if (item.toggleState != null) {
             TunerAnimatedSwitch(
                 checked = item.toggleState,
                 onCheckedChange = {
-                    if (!item.enabled) return@TunerAnimatedSwitch
                     HapticUtils.performHapticFeedback(context, hapticFeedback, HapticFeedbackType.TextHandleMove)
                     item.onToggleChange?.invoke(it)
-                },
-                enabled = item.enabled
+                }
             )
         } else if (item.onClick != null) {
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
                 contentDescription = context.getString(R.string.cd_navigate),
                 modifier = Modifier.size(20.dp),
-                tint = if (item.enabled) {
-                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
-                }
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
             )
         }
     }
@@ -302,15 +277,13 @@ fun TunerSettingRow(item: SettingItem) {
 fun TunerAnimatedSwitch(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
-    enabled: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     val thumbColor by animateColorAsState(
-        targetValue = when {
-            checked && !enabled -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
-            checked -> MaterialTheme.colorScheme.onPrimary
-            else -> Color.White
-        },
+        targetValue = if (checked) 
+            MaterialTheme.colorScheme.onPrimary
+        else 
+            MaterialTheme.colorScheme.outline,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioMediumBouncy,
             stiffness = Spring.StiffnessMedium
@@ -319,36 +292,20 @@ fun TunerAnimatedSwitch(
     )
     
     val trackColor by animateColorAsState(
-        targetValue = when {
-            !enabled && checked -> MaterialTheme.colorScheme.primary.copy(alpha = 0.38f)
-            !enabled -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f)
-            checked -> MaterialTheme.colorScheme.primary
-            else -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.82f)
-        },
+        targetValue = if (checked) 
+            MaterialTheme.colorScheme.primary
+        else 
+            MaterialTheme.colorScheme.surfaceContainerHighest,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioMediumBouncy,
             stiffness = Spring.StiffnessMedium
         ),
         label = "tuner_track_color"
     )
-
-    val iconTint by animateColorAsState(
-        targetValue = if (checked) {
-            MaterialTheme.colorScheme.primary
-        } else {
-            MaterialTheme.colorScheme.onPrimary.copy(alpha = if (enabled) 1f else 0.55f)
-        },
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioNoBouncy,
-            stiffness = Spring.StiffnessMedium
-        ),
-        label = "tuner_switch_icon_tint"
-    )
     
     Switch(
         checked = checked,
         onCheckedChange = onCheckedChange,
-        enabled = enabled,
         modifier = modifier,
         colors = SwitchDefaults.colors(
             checkedThumbColor = thumbColor,
@@ -357,25 +314,18 @@ fun TunerAnimatedSwitch(
             uncheckedThumbColor = thumbColor,
             uncheckedTrackColor = trackColor,
             uncheckedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
-            disabledCheckedThumbColor = thumbColor,
-            disabledCheckedTrackColor = trackColor,
-            disabledUncheckedThumbColor = thumbColor,
-            disabledUncheckedTrackColor = trackColor,
         ),
         thumbContent = {
-            AnimatedContent(
-                targetState = checked,
-                transitionSpec = {
-                    (fadeIn(animationSpec = tween(140)) + scaleIn(initialScale = 0.85f)) togetherWith
-                        (fadeOut(animationSpec = tween(120)) + scaleOut(targetScale = 0.85f))
-                },
-                label = "tuner_switch_icon"
-            ) { isChecked ->
+            AnimatedVisibility(
+                visible = checked,
+                enter = scaleIn(spring(dampingRatio = Spring.DampingRatioMediumBouncy)) + fadeIn(),
+                exit = scaleOut(spring(dampingRatio = Spring.DampingRatioMediumBouncy)) + fadeOut()
+            ) {
                 Icon(
-                    imageVector = if (isChecked) Icons.Default.Check else Icons.Default.Close,
+                    imageVector = Icons.Default.CheckCircle,
                     contentDescription = null,
-                    modifier = Modifier.size(14.dp),
-                    tint = iconTint
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.primary
                 )
             }
         }
@@ -484,7 +434,6 @@ fun NotificationsSettingsScreen(onBackClick: () -> Unit) {
         )
 
         val lazyListState = rememberSaveable(
-            key = "notifications_settings_scroll_state",
             saver = LazyListStateSaver
         ) {
             androidx.compose.foundation.lazy.LazyListState()
@@ -541,18 +490,15 @@ fun QueuePlaybackSettingsScreen(onBackClick: () -> Unit) {
     val shuffleUsesExoplayer by appSettings.shuffleUsesExoplayer.collectAsState()
     val autoAddToQueue by appSettings.autoAddToQueue.collectAsState()
     val clearQueueOnNewSong by appSettings.clearQueueOnNewSong.collectAsState()
-    val hidePlayedQueueSongs by appSettings.hidePlayedQueueSongs.collectAsState()
-    val showAlreadyPlayedSongsInQueue = !hidePlayedQueueSongs
     val showQueueDialog by appSettings.showQueueDialog.collectAsState()
     val repeatModePersistence by appSettings.repeatModePersistence.collectAsState()
     val shuffleModePersistence by appSettings.shuffleModePersistence.collectAsState()
     val queuePersistenceEnabled by appSettings.queuePersistenceEnabled.collectAsState()
+    val useSystemVolume by appSettings.useSystemVolume.collectAsState()
     val playlistClickBehavior by appSettings.playlistClickBehavior.collectAsState(initial = "ask")
     val useHoursInTimeFormat by appSettings.useHoursInTimeFormat.collectAsState()
-    val gaplessEnabled by appSettings.gaplessPlayback.collectAsState()
     val crossfadeEnabled by appSettings.crossfade.collectAsState()
     val crossfadeDuration by appSettings.crossfadeDuration.collectAsState()
-    val crossfadeRepeatOne by appSettings.crossfadeRepeatOne.collectAsState()
     val stopPlaybackOnAppClose by appSettings.stopPlaybackOnAppClose.collectAsState()
     val audioRoutingMode by appSettings.audioRoutingMode.collectAsState()
     val bitPerfectMode by appSettings.bitPerfectMode.collectAsState()
@@ -594,24 +540,12 @@ fun QueuePlaybackSettingsScreen(onBackClick: () -> Unit) {
                     ),
                     SettingItem(
                         RhythmIcons.Queue,
-                        context.getString(R.string.settings_show_played_queue_songs),
-                        context.getString(R.string.settings_show_played_queue_songs_desc),
-                        toggleState = showAlreadyPlayedSongsInQueue,
-                        onToggleChange = { appSettings.setHidePlayedQueueSongs(!it) }
-                    ),
-                    SettingItem(
-                        RhythmIcons.Queue,
                         context.getString(R.string.settings_queue_action_dialog),
-                        when {
-                            clearQueueOnNewSong -> context.getString(R.string.settings_queue_action_dialog_desc_disabled)
-                            showQueueDialog -> context.getString(R.string.settings_queue_action_dialog_desc_ask)
-                            else -> context.getString(R.string.settings_queue_action_dialog_desc_always)
-                        },
-                        onClick = { showQueueDialogSettingDialog = true },
-                        enabled = !clearQueueOnNewSong
+                        if (showQueueDialog) context.getString(R.string.settings_queue_action_dialog_desc_ask) else context.getString(R.string.settings_queue_action_dialog_desc_always),
+                        onClick = { showQueueDialogSettingDialog = true }
                     ),
                     SettingItem(
-                        androidx.compose.material.icons.Icons.AutoMirrored.Filled.QueueMusic,
+                        Icons.AutoMirrored.Rounded.QueueMusic,
                         context.getString(R.string.settings_playlist_action_dialog),
                         when (playlistClickBehavior) {
                             "play_all" -> context.getString(R.string.settings_playlist_action_play_all)
@@ -655,46 +589,7 @@ fun QueuePlaybackSettingsScreen(onBackClick: () -> Unit) {
                     )
                 )
             ),
-            SettingGroup(
-                title = context.getString(R.string.settings_audio_effects),
-                items = listOf(
-                    SettingItem(
-                        Icons.Default.GraphicEq,
-                        context.getString(R.string.settings_gapless_playback),
-                        context.getString(R.string.settings_gapless_playback_desc),
-                        toggleState = gaplessEnabled,
-                        onToggleChange = { appSettings.setGaplessPlayback(it) }
-                    ),
-                    SettingItem(
-                        RhythmIcons.Tune,
-                        context.getString(R.string.settings_crossfade),
-                        context.getString(R.string.settings_crossfade_desc),
-                        toggleState = crossfadeEnabled,
-                        onToggleChange = { appSettings.setCrossfade(it) },
-                        // Pass the crossfade duration as extra data for rendering
-                        data = if (crossfadeEnabled) crossfadeDuration else null
-                    ),
-                    SettingItem(
-                        RhythmIcons.Repeat,
-                        context.getString(R.string.settings_crossfade_repeat_one),
-                        context.getString(R.string.settings_crossfade_repeat_one_desc),
-                        toggleState = crossfadeRepeatOne,
-                        onToggleChange = { appSettings.setCrossfadeRepeatOne(it) },
-                        enabled = crossfadeEnabled
-                    ),
-                    SettingItem(
-                        Icons.Default.HighQuality,
-                        context.getString(R.string.settings_bit_perfect_mode),
-                        if (audioRoutingMode == "app") context.getString(R.string.settings_bit_perfect_mode_desc_dac) else context.getString(R.string.settings_bit_perfect_mode_desc_native),
-                        toggleState = bitPerfectMode,
-                        onToggleChange = { 
-                            appSettings.setBitPerfectMode(it)
-                            showRestartDialog = true
-                            restartDialogMessage = "High-resolution audio mode changed. Restart the app to apply the new audio settings."
-                        }
-                    )
-                )
-            ),
+
             SettingGroup(
                 title = context.getString(R.string.settings_time_display),
                 items = listOf(
@@ -737,79 +632,7 @@ fun QueuePlaybackSettingsScreen(onBackClick: () -> Unit) {
                         group.items.forEachIndexed { index, item ->
                             TunerSettingRow(item = item)
                             
-                            // If this is a crossfade setting with enabled state and data (duration), show the slider
-                            if (item.data != null && item.data is Float && item.toggleState == true) {
-                                val duration = item.data as Float
-                                // Remove divider between crossfade and duration slider
-                                // Master animation for crossfade duration slider
-                                AnimatedVisibility(
-                                    visible = crossfadeEnabled,
-                                    enter = fadeIn(tween(500, delayMillis = 200)) +
-                                            slideInVertically(
-                                                animationSpec = spring(
-                                                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                                                    stiffness = Spring.StiffnessLow
-                                                ),
-                                                initialOffsetY = { 40 }
-                                            ),
-                                    exit = fadeOut(tween(300)) +
-                                           shrinkVertically(
-                                               animationSpec = spring(
-                                                   dampingRatio = Spring.DampingRatioMediumBouncy,
-                                                   stiffness = Spring.StiffnessLow
-                                               ),
-                                               shrinkTowards = Alignment.Top
-                                           )
-                                ) {
-                                    // Crossfade duration slider integrated within the same card
-                                    Column(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 20.dp, vertical = 16.dp)
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                text = context.getString(R.string.settings_crossfade_duration),
-                                                style = MaterialTheme.typography.bodyLarge,
-                                                fontWeight = FontWeight.Medium
-                                            )
-                                            Text(
-                                                text = context.getString(R.string.settings_crossfade_duration_desc, crossfadeDuration),
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                color = MaterialTheme.colorScheme.primary
-                                            )
-                                        }
-                                        Spacer(modifier = Modifier.height(8.dp))
-                                        Slider(
-                                            value = crossfadeDuration,
-                                            onValueChange = { appSettings.setCrossfadeDuration(it) },
-                                            valueRange = 0.5f..12f,
-                                            steps = 22,
-                                            modifier = Modifier.fillMaxWidth()
-                                        )
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween
-                                        ) {
-                                            Text(
-                                                text = context.getString(R.string.settings_crossfade_min),
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                            Text(
-                                                text = context.getString(R.string.settings_crossfade_max),
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                            // Add divider between crossfade and high-resolution settings
+                            // Add divider between crossfade and bit-perfect settings
                             if (index < group.items.lastIndex) {
                                 HorizontalDivider(
                                     modifier = Modifier.padding(horizontal = 20.dp),
@@ -821,114 +644,7 @@ fun QueuePlaybackSettingsScreen(onBackClick: () -> Unit) {
                 }
             }
             
-            item(key = "audio_routing_section") {
-                Spacer(modifier = Modifier.height(24.dp))
-                Text(
-                    text = context.getString(R.string.settings_audio_routing),
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
-                )
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(20.dp)
-                    ) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Surface(
-                                modifier = Modifier.size(40.dp),
-                                shape = RoundedCornerShape(34.dp),
-                                color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                tonalElevation = 0.dp
-                            ) {
-                                Box(
-                                    contentAlignment = Alignment.Center,
-                                    modifier = Modifier.fillMaxSize()
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Headphones,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(24.dp),
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                            Column {
-                                Text(
-                                    text = context.getString(R.string.settings_dac_usb_audio),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Medium,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = context.getString(R.string.settings_dac_usb_audio_desc),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        ExpressiveButtonGroup(
-                            items = listOf(context.getString(R.string.settings_audio_routing_default), context.getString(R.string.settings_audio_routing_app), context.getString(R.string.settings_audio_routing_system)),
-                            selectedIndex = when (audioRoutingMode) {
-                                "default" -> 0
-                                "app" -> 1
-                                "system" -> 2
-                                else -> 0
-                            },
-                            onItemClick = { index ->
-                                when (index) {
-                                    0 -> {
-                                        appSettings.setAudioRoutingMode("default")
-                                        showRestartDialog = true
-                                        restartDialogMessage = "Audio routing changed to Default. Restart the app to apply the changes."
-                                    }
-                                    1 -> {
-                                        appSettings.setAudioRoutingMode("app")
-                                        // App routing enables high-resolution mode for direct DAC output
-                                        if (!appSettings.bitPerfectMode.value) {
-                                            appSettings.setBitPerfectMode(true)
-                                        }
-                                        showRestartDialog = true
-                                        restartDialogMessage = "Audio routing changed to App mode. Restart the app to apply the changes."
-                                    }
-                                    2 -> {
-                                        appSettings.setAudioRoutingMode("system")
-                                        showRestartDialog = true
-                                        restartDialogMessage = "Audio routing changed to System. Restart the app to apply the changes."
-                                    }
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Text(
-                            text = when (audioRoutingMode) {
-                                "app" -> context.getString(R.string.settings_audio_routing_app_desc)
-                                "system" -> context.getString(R.string.settings_audio_routing_system_desc)
-                                else -> context.getString(R.string.settings_audio_routing_default_desc)
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-
-            item(key = "queue_playback_bottom_spacer") { Spacer(modifier = Modifier.height(100.dp)) }
+            item() { Spacer(modifier = Modifier.height(100.dp)) }
         }
     }
 
@@ -1548,7 +1264,7 @@ fun QueuePlaybackSettingsScreen(onBackClick: () -> Unit) {
     }
 }
 
-// ✅ FULLY MERGED Playlists Screen (simplified playlist management)
+// âœ… FULLY MERGED Playlists Screen (simplified playlist management)
 @Composable
 fun PlaylistsSettingsScreen(onBackClick: () -> Unit) {
     val context = LocalContext.current
@@ -1710,7 +1426,6 @@ fun PlaylistsSettingsScreen(onBackClick: () -> Unit) {
         }
     ) { modifier ->
         val lazyListState = rememberSaveable(
-            key = "playlists_settings_scroll_state",
             saver = LazyListStateSaver
         ) {
             androidx.compose.foundation.lazy.LazyListState()
@@ -2099,7 +1814,7 @@ private fun PlaylistSettingRow(
     }
 }
 
-// ✅ REDESIGNED Media Scan Screen with improved UI
+// âœ… REDESIGNED Media Scan Screen with improved UI
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MediaScanSettingsScreen(onBackClick: () -> Unit) {
@@ -2300,7 +2015,6 @@ fun MediaScanSettingsScreen(onBackClick: () -> Unit) {
         onBackClick = onBackClick
     ) { modifier ->
         val lazyListState = rememberSaveable(
-            key = "media_scan_settings_scroll_state",
             saver = LazyListStateSaver
         ) {
             androidx.compose.foundation.lazy.LazyListState()
@@ -3055,7 +2769,6 @@ fun ArtistSeparatorsSettingsScreen(onBackClick: () -> Unit) {
         )
 
         val lazyListState = rememberSaveable(
-            key = "artist_separators_scroll_state",
             saver = LazyListStateSaver
         ) {
             androidx.compose.foundation.lazy.LazyListState()
@@ -3147,7 +2860,7 @@ fun ArtistSeparatorsSettingsScreen(onBackClick: () -> Unit) {
                             )
                             Spacer(modifier = Modifier.width(12.dp))
                             Text(
-                                text = context.getString(R.string.settings_about_multi_artist),
+                                text = "About Multi-Artist Parsing",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -3155,7 +2868,7 @@ fun ArtistSeparatorsSettingsScreen(onBackClick: () -> Unit) {
                         }
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
-                            text = context.getString(R.string.settings_multi_artist_parsing_info),
+                            text = "When enabled, Rhythm will automatically split artist tags containing multiple artists. This is useful for songs downloaded with yt-dlp or other tools that use delimiters like '/' to separate artists.\n\nBackslash (\\\\) can be used to escape delimiters.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                         )
@@ -3187,7 +2900,7 @@ fun ArtistSeparatorsSettingsScreen(onBackClick: () -> Unit) {
                             )
                             Spacer(modifier = Modifier.width(12.dp))
                             Text(
-                                text = context.getString(R.string.settings_examples),
+                                text = "Examples",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSecondaryContainer
@@ -3268,7 +2981,7 @@ fun ArtistSeparatorsSettingsScreen(onBackClick: () -> Unit) {
                 ) {
                     Column {
                         Text(
-                            text = context.getString(R.string.settings_configure_delimiters),
+                            text = "Configure Delimiters",
                             style = MaterialTheme.typography.displayMedium,
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onSurface
@@ -3284,7 +2997,7 @@ fun ArtistSeparatorsSettingsScreen(onBackClick: () -> Unit) {
                             Text(
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                                 style = MaterialTheme.typography.labelLarge,
-                                text = context.getString(R.string.settings_select_artist_separators),
+                                text = "Select artist separators",
                                 overflow = TextOverflow.Ellipsis,
                                 maxLines = 1,
                                 color = MaterialTheme.colorScheme.onSurface
@@ -3296,11 +3009,11 @@ fun ArtistSeparatorsSettingsScreen(onBackClick: () -> Unit) {
                 Spacer(modifier = Modifier.height(16.dp))
 
                 val commonDelimiters = listOf(
-                    '/' to context.getString(R.string.delimiter_slash),
-                    ';' to context.getString(R.string.delimiter_semicolon),
-                    ',' to context.getString(R.string.delimiter_comma),
-                    '+' to context.getString(R.string.delimiter_plus),
-                    '&' to context.getString(R.string.delimiter_ampersand)
+                    '/' to "Slash",
+                    ';' to "Semicolon",
+                    ',' to "Comma",
+                    '+' to "Plus",
+                    '&' to "Ampersand"
                 )
 
                 // Delimiter options in a grid
@@ -3491,7 +3204,7 @@ fun ArtistSeparatorsSettingsScreen(onBackClick: () -> Unit) {
                             colors = ButtonDefaults.outlinedButtonColors(
                                 contentColor = MaterialTheme.colorScheme.primary
                             ),
-                            border = ButtonDefaults.outlinedButtonBorder.copy(
+                            border = ButtonDefaults.outlinedButtonBorder(enabled = true).copy(
                                 width = 1.5.dp
                             )
                         ) {
@@ -3720,7 +3433,6 @@ fun AboutScreen(
         onBackClick = onBackClick
     ) { modifier ->
         val lazyListState = rememberSaveable(
-            key = "about_screen_scroll_state",
             saver = LazyListStateSaver
         ) {
             androidx.compose.foundation.lazy.LazyListState()
@@ -3964,10 +3676,10 @@ fun AboutScreen(
                         )
 
                         Text(
-                            text = "• Google Material Design Team for design principles\n" +
-                                  "• Android Open Source Project contributors\n" +
-                                  "• Jetpack Compose development team\n" +
-                                  "• Open source community for inspiration and libraries",
+                            text = "â€¢ Google Material Design Team for design principles\n" +
+                                  "â€¢ Android Open Source Project contributors\n" +
+                                  "â€¢ Jetpack Compose development team\n" +
+                                  "â€¢ Open source community for inspiration and libraries",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             lineHeight = 18.sp
@@ -4386,7 +4098,7 @@ fun AboutScreen(
                                 modifier = Modifier.padding(vertical = 6.dp)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Rounded.Chat,
+                                    imageVector = Icons.AutoMirrored.Rounded.Chat,
                                     contentDescription = "Discord",
                                     modifier = Modifier.size(18.dp)
                                 )
@@ -4418,7 +4130,7 @@ fun AboutScreen(
                                 modifier = Modifier.padding(vertical = 6.dp)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Rounded.Send,
+                                    imageVector = Icons.AutoMirrored.Rounded.Send,
                                     contentDescription = "Telegram",
                                     modifier = Modifier.size(18.dp)
                                 )
@@ -4638,7 +4350,7 @@ private fun TechStackItem(
             modifier = Modifier.padding(top = 2.dp)
         ) {
             Text(
-                text = "•",
+                text = "â€¢",
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -4763,7 +4475,6 @@ fun UpdatesSettingsScreen(onBackClick: () -> Unit) {
 //        }
     ) { modifier ->
         val lazyListState = rememberSaveable(
-            key = "updates_settings_scroll_state",
             saver = LazyListStateSaver
         ) {
             androidx.compose.foundation.lazy.LazyListState()
@@ -5678,8 +5389,6 @@ fun ExperimentalFeaturesScreen(onBackClick: () -> Unit) {
     val discordRichPresenceEnabled by appSettings.discordRichPresenceEnabled.collectAsState()
     val broadcastStatusEnabled by appSettings.broadcastStatusEnabled.collectAsState()
     
-    val forcePlayerCompactMode by appSettings.forcePlayerCompactMode.collectAsState()
-    
     val updaterViewModel: AppUpdaterViewModel = viewModel()
     val latestVersion by updaterViewModel.latestVersion.collectAsState()
 
@@ -5747,13 +5456,6 @@ fun ExperimentalFeaturesScreen(onBackClick: () -> Unit) {
                             context.getString(R.string.exp_test_crash),
                             context.getString(R.string.exp_test_crash_desc),
                             onClick = { chromahub.rhythm.app.util.CrashReporter.testCrash() }
-                        ),
-                        SettingItem(
-                            Icons.Default.Smartphone,
-                            context.getString(R.string.exp_force_player_compact_mode),
-                            context.getString(R.string.exp_force_player_compact_mode_desc),
-                            toggleState = forcePlayerCompactMode,
-                            onToggleChange = { appSettings.setForcePlayerCompactMode(it) }
                         )
                     )
                 )
@@ -6179,37 +5881,64 @@ private fun FestivalSelectionBottomSheet(
         },
         containerColor = MaterialTheme.colorScheme.surfaceContainer
     ) {
-        val contentHorizontalPadding = 24.dp
-
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 0.dp, vertical = 0.dp)
+                .padding(horizontal = 24.dp)
                 .padding(bottom = 24.dp)
                 .graphicsLayer(alpha = contentAlpha)
         ) {
-            StandardBottomSheetHeader(
-                title = context.getString(R.string.settings_select_festival),
-                subtitle = context.getString(R.string.settings_choose_festive_theme),
-                visible = showContent,
-                modifier = Modifier.padding(horizontal = 0.dp, vertical = 0.dp)
-            )
+            // Header
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 0.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column {
+                    Text(
+                        text = "Select Festival",
+                        style = MaterialTheme.typography.displayMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Box(
+                        modifier = Modifier
+                            .padding(top = 6.dp)
+                            .background(
+                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                shape = CircleShape
+                            )
+                    ) {
+                        Text(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            style = MaterialTheme.typography.labelLarge,
+                            text = "Choose festive theme",
+                            overflow = TextOverflow.Ellipsis,
+                            maxLines = 1,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            }
 
             Spacer(modifier = Modifier.height(24.dp))
 
             // Festival Options
             val festivals = listOf(
-                Triple("CHRISTMAS", context.getString(R.string.settings_festival_christmas), Icons.Default.AcUnit),
-                Triple("NEW_YEAR", context.getString(R.string.settings_festival_new_year), Icons.Default.Celebration)
+                Triple("CHRISTMAS", "Christmas", Icons.Default.AcUnit),
+                Triple("NEW_YEAR", "New Year", Icons.Default.Celebration),
+                Triple("VALENTINES", "Valentine's Day", Icons.Default.Favorite),
+                Triple("HALLOWEEN", "Halloween", Icons.Default.Nightlight)
             )
 
             Column(
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.padding(horizontal = contentHorizontalPadding)
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 festivals.forEach { (value, name, icon) ->
                     val isSelected = currentFestival == value
-                    val isAvailable = true
+                    val isAvailable = value == "CHRISTMAS" || value == "NEW_YEAR"
 
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -6261,13 +5990,20 @@ private fun FestivalSelectionBottomSheet(
                                             else -> MaterialTheme.colorScheme.onSurface
                                         }
                                     )
+                                    if (!isAvailable) {
+                                        Text(
+                                            text = "Coming soon",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                        )
+                                    }
                                 }
                             }
 
                             if (isSelected) {
                                 Icon(
                                     imageVector = Icons.Default.CheckCircle,
-                                    contentDescription = context.getString(R.string.ui_selected),
+                                    contentDescription = "Selected",
                                     
                                     modifier = Modifier.size(24.dp)
                                 )
@@ -6285,9 +6021,7 @@ private fun FestivalSelectionBottomSheet(
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
                 ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = contentHorizontalPadding)
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -6301,7 +6035,7 @@ private fun FestivalSelectionBottomSheet(
                     )
                     Spacer(modifier = Modifier.width(12.dp))
                     Text(
-                        text = context.getString(R.string.settings_more_festivals),
+                        text = "More festivals will be added in future updates",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -6315,6 +6049,8 @@ private fun getFestivalDisplayName(festivalType: String): String {
     return when (festivalType) {
         "CHRISTMAS" -> "Christmas"
         "NEW_YEAR" -> "New Year"
+        "VALENTINES" -> "Valentine's Day"
+        "HALLOWEEN" -> "Halloween"
         "NONE" -> "None"
         "CUSTOM" -> "Custom"
         else -> "Not selected"
@@ -6393,17 +6129,17 @@ fun LyricsSourceDialog(
             val sourceOptions = listOf(
                 chromahub.rhythm.app.shared.data.model.LyricsSourcePreference.EMBEDDED_FIRST to Triple(
                     "Embedded First",
-                    "Try audio file metadata → Online APIs → .lrc files",
+                    "Try audio file metadata â†’ Online APIs â†’ .lrc files",
                     Icons.Default.MusicNote
                 ),
                 chromahub.rhythm.app.shared.data.model.LyricsSourcePreference.API_FIRST to Triple(
                     "API First",
-                    "Try online services → Audio metadata → .lrc files",
+                    "Try online services â†’ Audio metadata â†’ .lrc files",
                     Icons.Default.CloudDownload
                 ),
                 chromahub.rhythm.app.shared.data.model.LyricsSourcePreference.LOCAL_FIRST to Triple(
                     "Local .lrc First",
-                    "Try .lrc files → Audio metadata → Online APIs",
+                    "Try .lrc files â†’ Audio metadata â†’ Online APIs",
                     Icons.Default.Folder
                 )
             )
@@ -6518,7 +6254,6 @@ fun LibrarySettingsScreen(onBackClick: () -> Unit) {
     val appSettings = AppSettings.getInstance(context)
 
     val enableRatingSystem by appSettings.enableRatingSystem.collectAsState()
-    val groupByAlbumArtist by appSettings.groupByAlbumArtist.collectAsState()
     val ignoreMediaStoreCovers by appSettings.ignoreMediaStoreCovers.collectAsState()
     val losslessArtwork by appSettings.losslessArtwork.collectAsState()
     val albumBottomSheetGradientBlur by appSettings.albumBottomSheetGradientBlur.collectAsState()
@@ -6530,7 +6265,7 @@ fun LibrarySettingsScreen(onBackClick: () -> Unit) {
     ) { modifier ->
         val settingGroups = listOf(
             SettingGroup(
-                title = context.getString(R.string.settings_library_group_organization),
+                title = context.getString(R.string.settings_section_library_content),
                 items = listOf(
                     SettingItem(
                         Icons.Default.Star,
@@ -6538,18 +6273,11 @@ fun LibrarySettingsScreen(onBackClick: () -> Unit) {
                         context.getString(R.string.settings_song_ratings_desc),
                         toggleState = enableRatingSystem,
                         onToggleChange = { appSettings.setEnableRatingSystem(it) }
-                    ),
-                    SettingItem(
-                        Icons.Default.Person,
-                        context.getString(R.string.settings_group_by_album_artist),
-                        context.getString(R.string.settings_group_by_album_artist_desc),
-                        toggleState = groupByAlbumArtist,
-                        onToggleChange = { appSettings.setGroupByAlbumArtist(it) }
                     )
                 )
             ),
             SettingGroup(
-                title = context.getString(R.string.settings_library_group_artwork),
+                title = context.getString(R.string.settings_section_appearance),
                 items = listOf(
                     SettingItem(
                         RhythmIcons.Album,
@@ -6614,1168 +6342,7 @@ fun LibrarySettingsScreen(onBackClick: () -> Unit) {
     }
 }
 
-@Composable
-fun RhythmGuardSettingsScreen(onBackClick: () -> Unit) {
-    val context = LocalContext.current
-    val appSettings = AppSettings.getInstance(context)
-
-    val auraMode by appSettings.rhythmGuardMode.collectAsState()
-    val auraAge by appSettings.rhythmGuardAge.collectAsState()
-    val manualWarningsEnabled by appSettings.rhythmGuardManualWarningsEnabled.collectAsState()
-    val manualVolumeThreshold by appSettings.rhythmGuardManualVolumeThreshold.collectAsState()
-    val alertThresholdMinutes by appSettings.rhythmGuardAlertThresholdMinutes.collectAsState()
-    val warningTimeoutMinutes by appSettings.rhythmGuardWarningTimeoutMinutes.collectAsState()
-    val breakResumeMinutes by appSettings.rhythmGuardBreakResumeMinutes.collectAsState()
-
-    val dailyListeningStats by appSettings.dailyListeningStats.collectAsState()
-
-    val stopPlaybackOnZeroVolume by appSettings.stopPlaybackOnZeroVolume.collectAsState()
-
-    val currentSystemVolume = rememberSystemMusicVolumeFraction(context)
-    val playbackStatsRepository = remember(context) { PlaybackStatsRepository.getInstance(context) }
-
-    var todayExposureMs by remember { mutableLongStateOf(0L) }
-    var weeklyAverageSessions by remember { mutableFloatStateOf(0f) }
-
-    LaunchedEffect(dailyListeningStats) {
-        val todaySummary = runCatching {
-            playbackStatsRepository.loadSummary(StatsTimeRange.TODAY)
-        }.getOrNull()
-        val weekSummary = runCatching {
-            playbackStatsRepository.loadSummary(StatsTimeRange.WEEK)
-        }.getOrNull()
-
-        todayExposureMs = todaySummary?.totalDurationMs ?: 0L
-        weeklyAverageSessions = weekSummary?.averageSessionsPerDay
-            ?: rhythmGuardWeeklyAverageSessions(dailyListeningStats)
-    }
-
-    val activePolicy = remember(auraAge) { appSettings.getRhythmGuardPolicy(auraAge) }
-    val policyTable = remember { appSettings.getRhythmGuardPolicyBands() }
-    val isRhythmGuardEnabled = auraMode != AppSettings.RHYTHM_GUARD_MODE_OFF
-    val recommendedVolumeThreshold = activePolicy.maxVolumeThreshold
-    val recommendedDailyMinutes = activePolicy.recommendedDailyMinutes
-    val effectiveExposureLimitMinutes = if (auraMode == AppSettings.RHYTHM_GUARD_MODE_AUTO) {
-        recommendedDailyMinutes
-    } else if (alertThresholdMinutes > 0) {
-        alertThresholdMinutes
-    } else {
-        recommendedDailyMinutes
-    }
-    val totalExposureMinutes = (todayExposureMs / 60000L).toInt().coerceAtLeast(0)
-
-    val currentVolumePercent = (currentSystemVolume * 100f).toInt().coerceIn(0, 100)
-    val manualThresholdPercent = (manualVolumeThreshold * 100f).toInt().coerceIn(0, 100)
-    val recommendedThresholdPercent = (recommendedVolumeThreshold * 100f).toInt().coerceIn(0, 100)
-    val formattedTotalExposure = remember(todayExposureMs) {
-        rhythmGuardFormatDurationFromMillis(todayExposureMs)
-    }
-    val formattedDailyTarget = remember(effectiveExposureLimitMinutes) {
-        rhythmGuardFormatDurationFromMinutes(effectiveExposureLimitMinutes)
-    }
-    val formattedTimeout = remember(warningTimeoutMinutes) {
-        rhythmGuardFormatDurationFromMinutes(warningTimeoutMinutes)
-    }
-    val formattedResumeInterval = remember(breakResumeMinutes) {
-        rhythmGuardFormatDurationFromMinutes(breakResumeMinutes)
-    }
-    val activeVolumeThreshold = if (auraMode == AppSettings.RHYTHM_GUARD_MODE_AUTO) {
-        recommendedVolumeThreshold
-    } else {
-        manualVolumeThreshold
-    }
-    val activeThresholdPercent = if (auraMode == AppSettings.RHYTHM_GUARD_MODE_AUTO) {
-        recommendedThresholdPercent
-    } else {
-        manualThresholdPercent
-    }
-
-    val showVolumeWarning = isRhythmGuardEnabled &&
-        auraMode == AppSettings.RHYTHM_GUARD_MODE_MANUAL &&
-        manualWarningsEnabled &&
-        currentSystemVolume > manualVolumeThreshold
-    val showExposureWarning = isRhythmGuardEnabled &&
-        auraMode == AppSettings.RHYTHM_GUARD_MODE_MANUAL &&
-        totalExposureMinutes > effectiveExposureLimitMinutes
-    val volumeLoadRatio = (currentSystemVolume / maxOf(activeVolumeThreshold, 0.01f)).coerceAtLeast(0f)
-    val exposureLoadRatio = (totalExposureMinutes / maxOf(effectiveExposureLimitMinutes, 1).toFloat()).coerceAtLeast(0f)
-    val sessionLoadRatio = (weeklyAverageSessions / 8f).coerceAtLeast(0f)
-    val healthRiskScore = if (isRhythmGuardEnabled) {
-        (
-            (volumeLoadRatio * 0.45f) +
-                (exposureLoadRatio * 0.45f) +
-                (sessionLoadRatio * 0.10f) +
-                if (auraMode == AppSettings.RHYTHM_GUARD_MODE_MANUAL && !manualWarningsEnabled) 0.08f else 0f
-            ).coerceIn(0f, 1.5f)
-    } else {
-        0f
-    }
-    val overallHealthLevel = when {
-        !isRhythmGuardEnabled -> RhythmGuardOverallHealthLevel.OFF
-        healthRiskScore < 0.72f -> RhythmGuardOverallHealthLevel.GOOD
-        healthRiskScore < 1.0f -> RhythmGuardOverallHealthLevel.FAIR
-        else -> RhythmGuardOverallHealthLevel.RISK
-    }
-    val overallHealthProgress = if (isRhythmGuardEnabled) {
-        (1f - healthRiskScore.coerceIn(0f, 1f)).coerceIn(0f, 1f)
-    } else {
-        0f
-    }
-    val formattedWeeklyDensity = remember(weeklyAverageSessions) {
-        String.format(Locale.getDefault(), "%.1f", weeklyAverageSessions)
-    }
-    val overallHealthSummary = remember(
-        currentVolumePercent,
-        activeThresholdPercent,
-        formattedTotalExposure,
-        formattedDailyTarget,
-        formattedWeeklyDensity
-    ) {
-        context.getString(
-            R.string.settings_rhythm_guard_overall_health_summary,
-            currentVolumePercent,
-            activeThresholdPercent,
-            formattedTotalExposure,
-            formattedDailyTarget,
-            formattedWeeklyDensity
-        )
-    }
-
-    LaunchedEffect(auraMode, auraAge) {
-        if (auraMode == AppSettings.RHYTHM_GUARD_MODE_AUTO) {
-            appSettings.applyRhythmGuardAutoProfileForAge(auraAge)
-        }
-    }
-
-    CollapsibleHeaderScreen(
-        title = context.getString(R.string.settings_rhythm_guard),
-        showBackButton = true,
-        onBackClick = onBackClick
-    ) { modifier ->
-        LazyColumn(
-            modifier = modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
-                .padding(horizontal = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            item {
-                Spacer(modifier = Modifier.height(8.dp))
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(26.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
-                ) {
-                    Column(modifier = Modifier.padding(20.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = context.getString(R.string.settings_rhythm_guard_health_overview_title),
-                                    style = MaterialTheme.typography.titleLarge,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = context.getString(R.string.settings_rhythm_guard_health_overview_subtitle),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Icon(
-                                imageVector = Icons.Default.Security,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(26.dp)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(18.dp))
-
-                        RhythmGuardOverallHealthCard(
-                            level = overallHealthLevel,
-                            progress = overallHealthProgress,
-                            summary = overallHealthSummary,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        // Hero-style metrics inspired by Pixel Player stats
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            RhythmGuardHeroCard(
-                                title = context.getString(R.string.settings_rhythm_guard_snapshot_exposure_title),
-                                value = formattedTotalExposure,
-                                subtitle = "/$formattedDailyTarget",
-                                progress = (totalExposureMinutes / maxOf(effectiveExposureLimitMinutes, 1).toFloat()).coerceIn(0f, 1f),
-                                icon = Icons.Default.Schedule,
-                                isWarning = showExposureWarning,
-                                modifier = Modifier.weight(1f)
-                            )
-
-                            RhythmGuardHeroCard(
-                                title = context.getString(R.string.settings_rhythm_guard_snapshot_volume_title),
-                                value = "$currentVolumePercent%",
-                                subtitle = "of ${activeThresholdPercent}%",
-                                progress = (currentSystemVolume / maxOf(activeVolumeThreshold, 0.01f)).coerceIn(0f, 1f),
-                                icon = Icons.Default.GraphicEq,
-                                isWarning = showVolumeWarning,
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = context.getString(R.string.settings_rhythm_guard_desc),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Surface(
-                                modifier = Modifier.size(40.dp),
-                                shape = RoundedCornerShape(34.dp),
-                                color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                tonalElevation = 0.dp
-                            ) {
-                                Box(
-                                    contentAlignment = Alignment.Center,
-                                    modifier = Modifier.fillMaxSize()
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Security,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(24.dp),
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = context.getString(R.string.settings_rhythm_guard_mode_title),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Medium,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = context.getString(R.string.settings_rhythm_guard_mode_desc),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Text(
-                                    text = if (isRhythmGuardEnabled) {
-                                        context.getString(R.string.label_enabled)
-                                    } else {
-                                        context.getString(R.string.label_disabled)
-                                    },
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
-
-                            TunerAnimatedSwitch(
-                                checked = isRhythmGuardEnabled,
-                                onCheckedChange = { enabled ->
-                                    if (enabled) {
-                                        val restoredMode = if (auraMode == AppSettings.RHYTHM_GUARD_MODE_MANUAL) {
-                                            AppSettings.RHYTHM_GUARD_MODE_MANUAL
-                                        } else {
-                                            AppSettings.RHYTHM_GUARD_MODE_AUTO
-                                        }
-                                        appSettings.setRhythmGuardMode(restoredMode)
-                                    } else {
-                                        appSettings.setRhythmGuardMode(AppSettings.RHYTHM_GUARD_MODE_OFF)
-                                    }
-                                }
-                            )
-                        }
-
-                        if (isRhythmGuardEnabled) {
-                            Spacer(modifier = Modifier.height(16.dp))
-
-                            ExpressiveButtonGroup(
-                                items = listOf(
-                                    context.getString(R.string.settings_rhythm_guard_mode_auto),
-                                    context.getString(R.string.settings_rhythm_guard_mode_manual)
-                                ),
-                                selectedIndex = if (auraMode == AppSettings.RHYTHM_GUARD_MODE_MANUAL) 1 else 0,
-                                onItemClick = { index ->
-                                    when (index) {
-                                        0 -> appSettings.setRhythmGuardMode(AppSettings.RHYTHM_GUARD_MODE_AUTO)
-                                        else -> appSettings.setRhythmGuardMode(AppSettings.RHYTHM_GUARD_MODE_MANUAL)
-                                    }
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                    }
-                }
-            }
-
-            if (isRhythmGuardEnabled) {
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = context.getString(R.string.settings_rhythm_guard_age_label, auraAge),
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                Text(
-                                    text = context.getString(
-                                        R.string.settings_rhythm_guard_age_desc,
-                                        recommendedThresholdPercent,
-                                        recommendedDailyMinutes
-                                    ),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Slider(
-                            value = auraAge.toFloat(),
-                            onValueChange = { appSettings.setRhythmGuardAge(it.toInt()) },
-                            valueRange = 8f..80f,
-                            steps = 71
-                        )
-                    }
-                }
-            }
-
-            if (auraMode == AppSettings.RHYTHM_GUARD_MODE_MANUAL) {
-                item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        Text(
-                            text = context.getString(R.string.settings_rhythm_guard_alert_controls_title),
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold
-                        )
-
-                        // Threshold control
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(
-                                text = context.getString(
-                                    R.string.settings_rhythm_guard_alert_threshold_title,
-                                    if (alertThresholdMinutes > 0) {
-                                        rhythmGuardFormatDurationFromMinutes(alertThresholdMinutes)
-                                    } else {
-                                        context.getString(R.string.settings_rhythm_guard_alert_threshold_policy_default)
-                                    }
-                                ),
-                                style = MaterialTheme.typography.labelLarge
-                            )
-                            Row(
-                                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                listOf(-1, 60, 90, 120).forEach { option ->
-                                    FilterChip(
-                                        selected = alertThresholdMinutes == option,
-                                        onClick = { appSettings.setRhythmGuardAlertThresholdMinutes(option) },
-                                        label = {
-                                            Text(
-                                                if (option > 0) {
-                                                    rhythmGuardFormatDurationFromMinutes(option)
-                                                } else {
-                                                    context.getString(R.string.settings_rhythm_guard_alert_threshold_policy_default)
-                                                }
-                                            )
-                                        }
-                                    )
-                                }
-                            }
-                            Slider(
-                                value = maxOf(alertThresholdMinutes, 15).toFloat(),
-                                onValueChange = { appSettings.setRhythmGuardAlertThresholdMinutes(it.toInt()) },
-                                valueRange = 15f..360f,
-                                steps = 344
-                            )
-                        }
-
-                        // Timeout control
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(
-                                text = context.getString(
-                                    R.string.settings_rhythm_guard_alert_timeout_title,
-                                    formattedTimeout
-                                ),
-                                style = MaterialTheme.typography.labelLarge
-                            )
-                            Row(
-                                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                listOf(2, 5, 10, 15).forEach { option ->
-                                    FilterChip(
-                                        selected = warningTimeoutMinutes == option,
-                                        onClick = { appSettings.setRhythmGuardWarningTimeoutMinutes(option) },
-                                        label = { Text(rhythmGuardFormatDurationFromMinutes(option)) }
-                                    )
-                                }
-                            }
-                            Slider(
-                                value = warningTimeoutMinutes.toFloat(),
-                                onValueChange = { appSettings.setRhythmGuardWarningTimeoutMinutes(it.toInt()) },
-                                valueRange = 1f..30f,
-                                steps = 28
-                            )
-                        }
-
-                        // Break interval control
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(
-                                text = context.getString(
-                                    R.string.settings_rhythm_guard_break_resume_default_title,
-                                    formattedResumeInterval
-                                ),
-                                style = MaterialTheme.typography.labelLarge
-                            )
-                            Row(
-                                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                listOf(10, 15, 30, 60).forEach { option ->
-                                    FilterChip(
-                                        selected = breakResumeMinutes == option,
-                                        onClick = { appSettings.setRhythmGuardBreakResumeMinutes(option) },
-                                        label = { Text(rhythmGuardFormatDurationFromMinutes(option)) }
-                                    )
-                                }
-                            }
-                            Slider(
-                                value = breakResumeMinutes.toFloat(),
-                                onValueChange = { appSettings.setRhythmGuardBreakResumeMinutes(it.toInt()) },
-                                valueRange = 1f..120f,
-                                steps = 118
-                            )
-                        }
-                    }
-                }
-            }
-            }
-
-            if (auraMode == AppSettings.RHYTHM_GUARD_MODE_AUTO) {
-                item {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(18.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Text(
-                                text = context.getString(R.string.settings_rhythm_guard_auto_policy_table_title),
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Spacer(modifier = Modifier.height(10.dp))
-                            policyTable.forEachIndexed { index, band ->
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = context.getString(
-                                            R.string.settings_rhythm_guard_auto_policy_band,
-                                            band.minAge,
-                                            band.maxAge
-                                        ),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Text(
-                                        text = context.getString(
-                                            R.string.settings_rhythm_guard_auto_policy_value,
-                                            (band.maxVolumeThreshold * 100f).toInt(),
-                                            band.recommendedDailyMinutes
-                                        ),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = if (auraAge in band.minAge..band.maxAge) {
-                                            MaterialTheme.colorScheme.primary
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurfaceVariant
-                                        },
-                                        fontWeight = if (auraAge in band.minAge..band.maxAge) {
-                                            FontWeight.SemiBold
-                                        } else {
-                                            FontWeight.Normal
-                                        }
-                                    )
-                                }
-                                if (index < policyTable.lastIndex) {
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (auraMode == AppSettings.RHYTHM_GUARD_MODE_MANUAL) {
-                item {
-                    val manualSettingItems = listOf(
-                        SettingItem(
-                            Icons.Default.Warning,
-                            context.getString(R.string.settings_rhythm_guard_manual_warning_toggle),
-                            context.getString(R.string.settings_rhythm_guard_manual_warning_toggle_desc),
-                            toggleState = manualWarningsEnabled,
-                            onToggleChange = { appSettings.setRhythmGuardManualWarningsEnabled(it) }
-                        ),
-                        SettingItem(
-                            Icons.Default.Stop,
-                            context.getString(R.string.settings_stop_playback_on_zero_volume),
-                            context.getString(R.string.settings_stop_playback_on_zero_volume_desc),
-                            toggleState = stopPlaybackOnZeroVolume,
-                            onToggleChange = { appSettings.setStopPlaybackOnZeroVolume(it) }
-                        )
-                    )
-
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(18.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
-                        ) {
-                            Column(modifier = Modifier.padding(16.dp)) {
-                                Text(
-                                    text = context.getString(R.string.settings_rhythm_guard_manual_threshold_title, manualThresholdPercent),
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text(
-                                    text = context.getString(R.string.settings_rhythm_guard_manual_threshold_desc),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Spacer(modifier = Modifier.height(10.dp))
-                                Slider(
-                                    value = manualVolumeThreshold,
-                                    onValueChange = { appSettings.setRhythmGuardManualVolumeThreshold(it) },
-                                    valueRange = 0.40f..0.95f
-                                )
-                            }
-                        }
-
-                        Text(
-                            text = context.getString(R.string.settings_rhythm_guard_manual_controls_title),
-                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(start = 12.dp)
-                        )
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(18.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                        ) {
-                            Column {
-                                manualSettingItems.forEachIndexed { index, item ->
-                                    TunerSettingRow(item = item)
-                                    if (index < manualSettingItems.lastIndex) {
-                                        HorizontalDivider(
-                                            modifier = Modifier.padding(horizontal = 20.dp),
-                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (showVolumeWarning || showExposureWarning) {
-                item {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(18.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest)
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Text(
-                                text = context.getString(R.string.settings_rhythm_guard_warning_title),
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(
-                                text = when {
-                                    showExposureWarning -> context.getString(
-                                        R.string.settings_rhythm_guard_warning_daily_exposure,
-                                        formattedTotalExposure,
-                                        formattedDailyTarget
-                                    )
-                                    else -> context.getString(
-                                        R.string.settings_rhythm_guard_warning_high_volume,
-                                        activeThresholdPercent
-                                    )
-                                },
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-            }
-            }
-
-            item { Spacer(modifier = Modifier.height(100.dp)) }
-        }
-    }
-}
-
-private fun rhythmGuardWeeklyAverageSessions(stats: Map<String, Long>): Float {
-    if (stats.isEmpty()) return 0f
-    val recentDays = stats.toList()
-        .sortedByDescending { it.first }
-        .take(7)
-        .map { it.second }
-
-    if (recentDays.isEmpty()) return 0f
-    return recentDays.average().toFloat()
-}
-
-@Composable
-private fun rememberSystemMusicVolumeFraction(context: Context): Float {
-    var systemVolume by remember { mutableFloatStateOf(0f) }
-
-    DisposableEffect(context) {
-        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
-
-        fun refreshVolume() {
-            val maxVolume = audioManager.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC)
-            val currentVolume = audioManager.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
-            systemVolume = if (maxVolume > 0) currentVolume.toFloat() / maxVolume.toFloat() else 0f
-        }
-
-        refreshVolume()
-
-        val observer = object : android.database.ContentObserver(
-            android.os.Handler(android.os.Looper.getMainLooper())
-        ) {
-            override fun onChange(selfChange: Boolean) {
-                refreshVolume()
-            }
-        }
-
-        context.contentResolver.registerContentObserver(
-            android.provider.Settings.System.CONTENT_URI,
-            true,
-            observer
-        )
-
-        onDispose {
-            context.contentResolver.unregisterContentObserver(observer)
-        }
-    }
-
-    return systemVolume
-}
-
-private fun rhythmGuardFormatDurationFromMinutes(minutes: Int): String {
-    val safeMinutes = minutes.coerceAtLeast(0)
-    val days = safeMinutes / (24 * 60)
-    val hours = (safeMinutes % (24 * 60)) / 60
-    val mins = safeMinutes % 60
-
-    return when {
-        days > 0 && hours > 0 && mins > 0 -> "${days}d ${hours}h ${mins}m"
-        days > 0 && hours > 0 -> "${days}d ${hours}h"
-        days > 0 && mins > 0 -> "${days}d ${mins}m"
-        days > 0 -> "${days}d"
-        hours > 0 && mins > 0 -> "${hours}h ${mins}m"
-        hours > 0 -> "${hours}h"
-        else -> "${mins}m"
-    }
-}
-
-private fun rhythmGuardFormatDurationFromMillis(durationMs: Long): String {
-    return rhythmGuardFormatDurationFromMinutes((durationMs / 60000L).toInt())
-}
-
-@Composable
-private fun RhythmGuardOverviewGauge(
-    modifier: Modifier = Modifier,
-    title: String,
-    value: String,
-    progress: Float,
-    isWarning: Boolean,
-    icon: ImageVector
-) {
-    val progressValue = progress.coerceIn(0f, 1f)
-    val progressPercent = (progressValue * 100f).toInt()
-    val containerColor = if (isWarning) {
-        MaterialTheme.colorScheme.tertiaryContainer
-    } else {
-        MaterialTheme.colorScheme.surfaceContainerHighest
-    }
-    val contentColor = if (isWarning) {
-        MaterialTheme.colorScheme.onTertiaryContainer
-    } else {
-        MaterialTheme.colorScheme.onSurface
-    }
-
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(20.dp),
-        color = containerColor,
-        border = BorderStroke(1.dp, contentColor.copy(alpha = 0.14f))
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    modifier = Modifier.weight(1f),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        tint = contentColor,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.labelLarge,
-                        color = contentColor.copy(alpha = 0.92f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-
-                Surface(
-                    shape = RoundedCornerShape(999.dp),
-                    color = contentColor.copy(alpha = 0.14f)
-                ) {
-                    Text(
-                        text = if (isWarning) "Risk" else "Safe",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = contentColor,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                    )
-                }
-            }
-
-            Text(
-                text = value,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = contentColor,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-
-            LinearWavyProgressIndicator(
-                progress = { progressValue },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(8.dp)
-                    .clip(RoundedCornerShape(14.dp)),
-                color = if (isWarning) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary,
-                trackColor = contentColor.copy(alpha = 0.16f)
-            )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = if (isWarning) {
-                        stringResource(R.string.settings_rhythm_guard_snapshot_widget_above_limit)
-                    } else {
-                        stringResource(R.string.settings_rhythm_guard_snapshot_widget_within_limit)
-                    },
-                    style = MaterialTheme.typography.labelMedium,
-                    color = contentColor.copy(alpha = 0.8f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
-                )
-                Text(
-                    text = "$progressPercent%",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = contentColor
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun RhythmGuardMetricCard(
-    modifier: Modifier = Modifier,
-    title: String,
-    value: String,
-    icon: ImageVector,
-    progress: Float,
-    containerColor: Color,
-    contentColor: Color
-) {
-    val progressValue = progress.coerceIn(0f, 1f)
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(20.dp),
-        color = containerColor,
-        border = BorderStroke(1.dp, contentColor.copy(alpha = 0.14f))
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        tint = contentColor,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.labelLarge,
-                        color = contentColor.copy(alpha = 0.92f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-                Text(
-                    text = "${(progressValue * 100f).toInt()}%",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = contentColor
-                )
-            }
-
-            Text(
-                text = value,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = contentColor,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-
-            LinearWavyProgressIndicator(
-                progress = { progressValue },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(8.dp)
-                    .clip(RoundedCornerShape(14.dp)),
-                color = contentColor.copy(alpha = 0.78f),
-                trackColor = contentColor.copy(alpha = 0.2f)
-            )
-
-            Text(
-                text = stringResource(R.string.settings_rhythm_guard_snapshot_widget_load_label),
-                style = MaterialTheme.typography.labelMedium,
-                color = contentColor.copy(alpha = 0.76f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-    }
-}
-
-@Composable
-private fun RhythmGuardHeroCard(
-    title: String,
-    value: String,
-    subtitle: String,
-    progress: Float,
-    icon: ImageVector,
-    isWarning: Boolean,
-    modifier: Modifier = Modifier
-) {
-    val progressValue = progress.coerceIn(0f, 1.5f)
-    val visualLevel = when {
-        isWarning || progressValue >= 1f -> RhythmGuardWidgetVisualLevel.CRITICAL
-        progressValue >= 0.82f -> RhythmGuardWidgetVisualLevel.ELEVATED
-        progressValue >= 0.56f -> RhythmGuardWidgetVisualLevel.WATCH
-        else -> RhythmGuardWidgetVisualLevel.STABLE
-    }
-    val iconColor = when (visualLevel) {
-        RhythmGuardWidgetVisualLevel.STABLE -> Color(0xFF2E7D32)
-        RhythmGuardWidgetVisualLevel.WATCH -> Color(0xFFB26A00)
-        RhythmGuardWidgetVisualLevel.ELEVATED -> Color(0xFFD86E00)
-        RhythmGuardWidgetVisualLevel.CRITICAL -> Color(0xFFC62828)
-    }
-    val containerColor = when (visualLevel) {
-        RhythmGuardWidgetVisualLevel.STABLE -> iconColor.copy(alpha = 0.16f)
-        RhythmGuardWidgetVisualLevel.WATCH -> iconColor.copy(alpha = 0.18f)
-        RhythmGuardWidgetVisualLevel.ELEVATED -> iconColor.copy(alpha = 0.2f)
-        RhythmGuardWidgetVisualLevel.CRITICAL -> iconColor.copy(alpha = 0.24f)
-    }
-    val contentColor = MaterialTheme.colorScheme.onSurface
-    val dynamicValueFontSize = rememberRhythmGuardHeroValueFontSize(value)
-
-    Column(
-        modifier = modifier
-            .height(184.dp)
-            .clip(RoundedCornerShape(24.dp))
-            .background(containerColor)
-            .padding(20.dp),
-        verticalArrangement = Arrangement.Top
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Start,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                modifier = Modifier.size(28.dp),
-                tint = iconColor
-            )
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Text(
-            text = title,
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.Medium,
-            color = contentColor.copy(alpha = 0.85f),
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Text(
-            text = value,
-            style = MaterialTheme.typography.headlineSmall.copy(
-                fontSize = dynamicValueFontSize,
-                lineHeight = (dynamicValueFontSize.value + 3f).sp
-            ),
-            fontWeight = FontWeight.Bold,
-            color = contentColor,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis
-        )
-
-        Spacer(modifier = Modifier.weight(1f))
-
-        Text(
-            text = subtitle,
-            style = MaterialTheme.typography.bodySmall,
-            color = contentColor.copy(alpha = 0.7f),
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        LinearWavyProgressIndicator(
-            progress = { progress.coerceIn(0f, 1f) },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(6.dp)
-                .clip(RoundedCornerShape(3.dp)),
-            color = iconColor,
-            trackColor = contentColor.copy(alpha = 0.2f)
-        )
-    }
-}
-
-@Composable
-private fun rememberRhythmGuardHeroValueFontSize(value: String): TextUnit {
-    val targetSize = when {
-        value.length <= 5 -> 34.sp
-        value.length <= 8 -> 30.sp
-        value.length <= 11 -> 26.sp
-        value.length <= 15 -> 22.sp
-        else -> 20.sp
-    }
-    val animatedSize by animateFloatAsState(
-        targetValue = targetSize.value,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioNoBouncy,
-            stiffness = Spring.StiffnessMedium
-        ),
-        label = "rhythm_guard_hero_value_font_size"
-    )
-    return animatedSize.sp
-}
-
-private enum class RhythmGuardOverallHealthLevel {
-    OFF,
-    GOOD,
-    FAIR,
-    RISK
-}
-
-private enum class RhythmGuardWidgetVisualLevel {
-    STABLE,
-    WATCH,
-    ELEVATED,
-    CRITICAL
-}
-
-@Composable
-private fun RhythmGuardOverallHealthCard(
-    level: RhythmGuardOverallHealthLevel,
-    progress: Float,
-    summary: String,
-    modifier: Modifier = Modifier
-) {
-    val indicatorColor = when (level) {
-        RhythmGuardOverallHealthLevel.GOOD -> Color(0xFF2E7D32)
-        RhythmGuardOverallHealthLevel.FAIR -> Color(0xFFB26A00)
-        RhythmGuardOverallHealthLevel.RISK -> Color(0xFFC62828)
-        RhythmGuardOverallHealthLevel.OFF -> MaterialTheme.colorScheme.outline
-    }
-    val containerColor = if (level == RhythmGuardOverallHealthLevel.OFF) {
-        MaterialTheme.colorScheme.surfaceContainerHighest
-    } else {
-        indicatorColor.copy(alpha = 0.2f)
-    }
-    val contentColor = MaterialTheme.colorScheme.onSurface
-    val statusLabel = when (level) {
-        RhythmGuardOverallHealthLevel.GOOD -> stringResource(R.string.settings_rhythm_guard_health_good)
-        RhythmGuardOverallHealthLevel.FAIR -> stringResource(R.string.settings_rhythm_guard_health_fair)
-        RhythmGuardOverallHealthLevel.RISK -> stringResource(R.string.settings_rhythm_guard_health_risk)
-        RhythmGuardOverallHealthLevel.OFF -> stringResource(R.string.settings_rhythm_guard_health_off)
-    }
-
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(24.dp),
-        color = containerColor,
-        border = BorderStroke(1.dp, indicatorColor.copy(alpha = if (level == RhythmGuardOverallHealthLevel.OFF) 0.16f else 0.3f))
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    modifier = Modifier.weight(1f),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Security,
-                        contentDescription = null,
-                        tint = indicatorColor,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Text(
-                        text = stringResource(R.string.settings_rhythm_guard_overall_health_title),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = contentColor,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-
-                Surface(
-                    shape = RoundedCornerShape(999.dp),
-                    color = if (level == RhythmGuardOverallHealthLevel.OFF) {
-                        contentColor.copy(alpha = 0.14f)
-                    } else {
-                        indicatorColor.copy(alpha = 0.2f)
-                    }
-                ) {
-                    Text(
-                        text = statusLabel,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (level == RhythmGuardOverallHealthLevel.OFF) contentColor else indicatorColor,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                    )
-                }
-            }
-
-            Text(
-                text = summary,
-                style = MaterialTheme.typography.bodySmall,
-                color = contentColor.copy(alpha = 0.86f),
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis
-            )
-
-            LinearWavyProgressIndicator(
-                progress = { progress.coerceIn(0f, 1f) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(7.dp)
-                    .clip(RoundedCornerShape(8.dp)),
-                color = indicatorColor,
-                trackColor = contentColor.copy(alpha = 0.18f)
-            )
-        }
-    }
-}
+// Cache Management Screen (merged from CacheManagementBottomSheet)
 @Composable
 fun CacheManagementSettingsScreen(onBackClick: () -> Unit) {
     val context = LocalContext.current
@@ -7920,7 +6487,7 @@ fun CacheManagementSettingsScreen(onBackClick: () -> Unit) {
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Text(
-                                            text = "  • $label:",
+                                            text = "  â€¢ $label:",
                                             style = MaterialTheme.typography.bodyMedium,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
@@ -8477,35 +7044,12 @@ fun BackupRestoreSettingsScreen(onBackClick: () -> Unit) {
 
     // Local states
     var isCreatingBackup by remember { mutableStateOf(false) }
-    var isPreparingRestore by remember { mutableStateOf(false) }
     var isRestoringFromFile by remember { mutableStateOf(false) }
     var isRestoringFromClipboard by remember { mutableStateOf(false) }
-    var showBackupSelectionSheet by remember { mutableStateOf(false) }
-    var showRestoreSelectionSheet by remember { mutableStateOf(false) }
-    var pendingRestorePayload by remember { mutableStateOf<String?>(null) }
-    var pendingBackupSections by remember { mutableStateOf(AppSettings.BackupRestoreSections()) }
-    var backupSections by remember { mutableStateOf(AppSettings.BackupRestoreSections()) }
-    var restoreSections by remember { mutableStateOf(AppSettings.BackupRestoreSections()) }
-    var resultSheetState by remember { mutableStateOf<BackupRestoreResultState?>(null) }
-
-    val isBusy = isCreatingBackup || isPreparingRestore || isRestoringFromFile || isRestoringFromClipboard
-
-    fun selectedSectionsSummary(sections: AppSettings.BackupRestoreSections): String {
-        val lines = mutableListOf<String>()
-        if (sections.includeGeneralSettings) lines += "• General app settings"
-        if (sections.includeLibraryData) lines += "• Playlists, favorites, and folder lists"
-        if (sections.includeStatsAndRhythmGuard) lines += "• Listening stats and Rhythm Guard data"
-        return lines.joinToString("\n")
-    }
-
-    fun showError(message: String) {
-        resultSheetState = BackupRestoreResultState(
-            title = context.getString(R.string.ui_error),
-            message = message,
-            isError = true,
-            requiresRestart = false
-        )
-    }
+    var showBackupSuccess by remember { mutableStateOf(false) }
+    var showRestoreSuccess by remember { mutableStateOf(false) }
+    var showError by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf("") }
 
     // File picker launcher for backup export
     val backupLocationLauncher = rememberLauncherForActivityResult(
@@ -8519,37 +7063,29 @@ fun BackupRestoreSettingsScreen(onBackClick: () -> Unit) {
                         HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
 
                         musicViewModel.ensurePlaylistsSaved()
-                        val backupJson = appSettings.createBackup(pendingBackupSections)
+                        val backupJson = appSettings.createBackup()
 
-                        val outputStream = context.contentResolver.openOutputStream(uri)
-                            ?: throw IllegalStateException("Unable to open backup destination")
-                        outputStream.use { stream ->
-                            stream.write(backupJson.toByteArray())
-                            stream.flush()
+                        context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+                            outputStream.write(backupJson.toByteArray())
+                            outputStream.flush()
                         }
 
                         appSettings.setLastBackupTimestamp(System.currentTimeMillis())
                         appSettings.setBackupLocation(uri.toString())
 
-                        resultSheetState = BackupRestoreResultState(
-                            title = context.getString(R.string.settings_backup_created),
-                            message = "Backup completed successfully.\n\nIncluded sections:\n${selectedSectionsSummary(pendingBackupSections)}",
-                            isError = false,
-                            requiresRestart = false
-                        )
+                        showBackupSuccess = true
 
                         // Also copy to clipboard
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         val clip = ClipData.newPlainText("Rhythm Backup", backupJson)
                         clipboard.setPrimaryClip(clip)
                     } catch (e: Exception) {
-                        showError("Failed to create backup: ${e.message}")
+                        errorMessage = "Failed to create backup: ${e.message}"
+                        showError = true
                     } finally {
                         isCreatingBackup = false
                     }
                 }
-            } ?: run {
-                isCreatingBackup = false
             }
         } else {
             isCreatingBackup = false
@@ -8571,20 +7107,24 @@ fun BackupRestoreSettingsScreen(onBackClick: () -> Unit) {
                         val backupJson = inputStream?.bufferedReader()?.use { it.readText() }
 
                         if (!backupJson.isNullOrEmpty()) {
-                            pendingRestorePayload = backupJson
-                            restoreSections = AppSettings.BackupRestoreSections()
-                            showRestoreSelectionSheet = true
+                            if (appSettings.restoreFromBackup(backupJson)) {
+                                musicViewModel.reloadPlaylistsFromSettings()
+                                showRestoreSuccess = true
+                            } else {
+                                errorMessage = "Invalid backup format or corrupted data"
+                                showError = true
+                            }
                         } else {
-                            showError("Unable to read the backup file")
+                            errorMessage = "Unable to read the backup file"
+                            showError = true
                         }
                     } catch (e: Exception) {
-                        showError("Failed to restore from file: ${e.message}")
+                        errorMessage = "Failed to restore from file: ${e.message}"
+                        showError = true
                     } finally {
                         isRestoringFromFile = false
                     }
                 }
-            } ?: run {
-                isRestoringFromFile = false
             }
         } else {
             isRestoringFromFile = false
@@ -8602,46 +7142,25 @@ fun BackupRestoreSettingsScreen(onBackClick: () -> Unit) {
                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                 val clip = clipboard.primaryClip
                 if (clip != null && clip.itemCount > 0) {
-                    val backupJson = clip.getItemAt(0).coerceToText(context)?.toString()
-                    if (!backupJson.isNullOrBlank()) {
-                        pendingRestorePayload = backupJson
-                        restoreSections = AppSettings.BackupRestoreSections()
-                        showRestoreSelectionSheet = true
+                    val backupJson = clip.getItemAt(0).text.toString()
+
+                    if (appSettings.restoreFromBackup(backupJson)) {
+                        // Reload playlists from restored settings
+                        musicViewModel.reloadPlaylistsFromSettings()
+                        showRestoreSuccess = true
                     } else {
-                        showError("Clipboard does not contain readable backup text")
+                        errorMessage = "Invalid backup format or corrupted data"
+                        showError = true
                     }
                 } else {
-                    showError("No backup data found in clipboard. Please copy a backup first.")
+                    errorMessage = "No backup data found in clipboard. Please copy a backup first."
+                    showError = true
                 }
             } catch (e: Exception) {
-                showError("Failed to restore backup: ${e.message}")
+                errorMessage = "Failed to restore backup: ${e.message}"
+                showError = true
             } finally {
                 isRestoringFromClipboard = false
-            }
-        }
-    }
-
-    fun applyRestoreWithSections(backupJson: String, sections: AppSettings.BackupRestoreSections) {
-        scope.launch {
-            try {
-                isPreparingRestore = true
-                HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
-
-                if (appSettings.restoreFromBackup(backupJson, sections)) {
-                    musicViewModel.reloadPlaylistsFromSettings()
-                    resultSheetState = BackupRestoreResultState(
-                        title = context.getString(R.string.settings_restore_completed),
-                        message = "Restore completed successfully.\n\nRestored sections:\n${selectedSectionsSummary(sections)}",
-                        isError = false,
-                        requiresRestart = true
-                    )
-                } else {
-                    showError("Invalid backup format, no sections selected, or corrupted data")
-                }
-            } catch (e: Exception) {
-                showError("Failed to restore backup: ${e.message}")
-            } finally {
-                isPreparingRestore = false
             }
         }
     }
@@ -8818,10 +7337,14 @@ fun BackupRestoreSettingsScreen(onBackClick: () -> Unit) {
                             context.getString(R.string.settings_create_backup),
                             context.getString(R.string.settings_create_backup_desc),
                             onClick = {
-                                if (!isBusy) {
+                                if (!isCreatingBackup) {
                                     HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
-                                    backupSections = AppSettings.BackupRestoreSections()
-                                    showBackupSelectionSheet = true
+                                    val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                                        addCategory(Intent.CATEGORY_OPENABLE)
+                                        type = "application/json"
+                                        putExtra(Intent.EXTRA_TITLE, "rhythm_backup_${SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.getDefault()).format(Date())}.json")
+                                    }
+                                    backupLocationLauncher.launch(intent)
                                 }
                             }
                         )
@@ -8835,7 +7358,7 @@ fun BackupRestoreSettingsScreen(onBackClick: () -> Unit) {
                             context.getString(R.string.settings_restore_clipboard),
                             context.getString(R.string.settings_restore_clipboard_desc),
                             onClick = {
-                                if (!isBusy) {
+                                if (!isRestoringFromClipboard && !isRestoringFromFile && !isCreatingBackup) {
                                     HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
                                     restoreFromClipboard()
                                 }
@@ -8846,9 +7369,8 @@ fun BackupRestoreSettingsScreen(onBackClick: () -> Unit) {
                             context.getString(R.string.settings_restore_file),
                             context.getString(R.string.settings_restore_file_desc),
                             onClick = {
-                                if (!isBusy) {
+                                if (!isRestoringFromFile && !isRestoringFromClipboard && !isCreatingBackup) {
                                     HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
-                                    isRestoringFromFile = true
                                     val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                                         addCategory(Intent.CATEGORY_OPENABLE)
                                         type = "application/json"
@@ -8941,72 +7463,72 @@ fun BackupRestoreSettingsScreen(onBackClick: () -> Unit) {
         }
     }
 
-    if (showBackupSelectionSheet) {
-        BackupRestoreSectionPickerBottomSheet(
-            title = "Choose Backup Sections",
-            subtitle = "Select what to include in this backup file.",
-            confirmLabel = context.getString(R.string.settings_backup_action_short),
-            confirmIcon = Icons.Default.Backup,
-            sections = backupSections,
-            isProcessing = isCreatingBackup,
-            onSectionsChange = { backupSections = it },
-            onDismiss = { showBackupSelectionSheet = false },
-            onConfirm = { selectedSections ->
-                if (!selectedSections.hasAtLeastOneSectionSelected) {
-                    showError("Choose at least one section to create a backup")
-                    return@BackupRestoreSectionPickerBottomSheet
-                }
-
-                pendingBackupSections = selectedSections
-                showBackupSelectionSheet = false
-
-                val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
-                    addCategory(Intent.CATEGORY_OPENABLE)
-                    type = "application/json"
-                    putExtra(
-                        Intent.EXTRA_TITLE,
-                        "rhythm_backup_${SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.getDefault()).format(Date())}.json"
-                    )
-                }
-                backupLocationLauncher.launch(intent)
-            }
-        )
-    }
-
-    if (showRestoreSelectionSheet && pendingRestorePayload != null) {
-        BackupRestoreSectionPickerBottomSheet(
-            title = "Choose Restore Sections",
-            subtitle = "Select which sections from the backup should be restored.",
-            confirmLabel = context.getString(R.string.settings_restore_action_short),
-            confirmIcon = Icons.Default.SystemUpdateAlt,
-            sections = restoreSections,
-            isProcessing = isPreparingRestore,
-            onSectionsChange = { restoreSections = it },
-            onDismiss = {
-                showRestoreSelectionSheet = false
-                pendingRestorePayload = null
+    // Success/Error Dialogs
+    if (showBackupSuccess) {
+        AlertDialog(
+            onDismissRequest = { showBackupSuccess = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Filled.CheckCircle,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
             },
-            onConfirm = { selectedSections ->
-                if (!selectedSections.hasAtLeastOneSectionSelected) {
-                    showError("Choose at least one section to restore")
-                    return@BackupRestoreSectionPickerBottomSheet
+            title = { Text(context.getString(R.string.settings_backup_created)) },
+            text = {
+                Text("Your complete Rhythm backup has been created including:\n\n" +
+                     "â€¢ All app settings and preferences\n" +
+                     "â€¢ Your playlists and favorite songs\n" +
+                     "â€¢ Blacklisted/whitelisted songs and folders\n" +
+                     "â€¢ Pinned folders and library customization\n" +
+                     "â€¢ Theme settings (colors, fonts, album art colors)\n" +
+                     "â€¢ Audio preferences and API settings\n" +
+                     "â€¢ Recently played history and statistics\n\n" +
+                     "The backup has been saved and copied to your clipboard for easy sharing.")
+            },
+            confirmButton = {
+                Button(onClick = {
+                    HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
+                    showBackupSuccess = false
+                }) {
+                    Icon(
+                        imageVector = Icons.Filled.CheckCircle,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(context.getString(R.string.ui_ok))
                 }
-
-                val backupJson = pendingRestorePayload ?: return@BackupRestoreSectionPickerBottomSheet
-                showRestoreSelectionSheet = false
-                pendingRestorePayload = null
-                applyRestoreWithSections(backupJson, selectedSections)
-            }
+            },
+            shape = RoundedCornerShape(24.dp)
         )
     }
 
-    resultSheetState?.let { state ->
-        BackupRestoreResultBottomSheet(
-            state = state,
-            onDismiss = { resultSheetState = null },
-            onPrimaryAction = {
-                resultSheetState = null
-                if (state.requiresRestart) {
+    if (showRestoreSuccess) {
+        AlertDialog(
+            onDismissRequest = { showRestoreSuccess = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Filled.CheckCircle,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            },
+            title = { Text(context.getString(R.string.settings_restore_completed)) },
+            text = {
+                Text("Your Rhythm data has been restored successfully including:\n\n" +
+                     "â€¢ All app settings and preferences\n" +
+                     "â€¢ Your playlists and favorite songs\n" +
+                     "â€¢ Blacklisted songs and folders\n" +
+                     "â€¢ Theme and audio preferences\n\n" +
+                     "Please restart the app for all changes to take full effect.")
+            },
+            confirmButton = {
+                Button(onClick = {
+                    HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
+                    showRestoreSuccess = false
+
+                    // Restart the app
                     val packageManager = context.packageManager
                     val intent = packageManager.getLaunchIntentForPackage(context.packageName)
                     val componentName = intent?.component
@@ -9014,490 +7536,48 @@ fun BackupRestoreSettingsScreen(onBackClick: () -> Unit) {
                     context.startActivity(mainIntent)
                     (context as? Activity)?.finish()
                     Runtime.getRuntime().exit(0)
-                }
-            }
-        )
-    }
-}
-
-private data class BackupRestoreResultState(
-    val title: String,
-    val message: String,
-    val isError: Boolean,
-    val requiresRestart: Boolean
-)
-
-@Composable
-private fun BackupRestoreSectionPickerBottomSheet(
-    title: String,
-    subtitle: String,
-    confirmLabel: String,
-    confirmIcon: ImageVector,
-    sections: AppSettings.BackupRestoreSections,
-    isProcessing: Boolean,
-    onSectionsChange: (AppSettings.BackupRestoreSections) -> Unit,
-    onDismiss: () -> Unit,
-    onConfirm: (AppSettings.BackupRestoreSections) -> Unit
-) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val context = LocalContext.current
-    var showContent by remember { mutableStateOf(false) }
-    val contentAlpha by animateFloatAsState(
-        targetValue = if (showContent) 1f else 0f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessLow
-        ),
-        label = "backup_restore_picker_alpha"
-    )
-
-    LaunchedEffect(Unit) {
-        delay(80)
-        showContent = true
-    }
-
-    val selectedSectionCount = listOf(
-        sections.includeGeneralSettings,
-        sections.includeLibraryData,
-        sections.includeStatsAndRhythmGuard
-    ).count { it }
-
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        dragHandle = { BottomSheetDefaults.DragHandle(color = MaterialTheme.colorScheme.primary) },
-        containerColor = MaterialTheme.colorScheme.surfaceContainer,
-        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(bottom = 20.dp)
-                .graphicsLayer(alpha = contentAlpha)
-        ) {
-            StandardBottomSheetHeader(
-                title = title,
-                subtitle = subtitle,
-                visible = showContent,
-                modifier = Modifier.padding(horizontal = 0.dp, vertical = 0.dp)
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-                )
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Surface(
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.primaryContainer,
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Default.Tune,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
-                        Column {
-                            Text(
-                                text = "Choose sections",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Text(
-                                text = "$selectedSectionCount of 3 enabled",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilledTonalButton(
-                            onClick = {
-                                onSectionsChange(
-                                    sections.copy(
-                                        includeGeneralSettings = true,
-                                        includeLibraryData = true,
-                                        includeStatsAndRhythmGuard = true
-                                    )
-                                )
-                            },
-                            enabled = !isProcessing,
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)
-                        ) {
-                            Text("All", style = MaterialTheme.typography.labelLarge)
-                        }
-                        FilledTonalButton(
-                            onClick = {
-                                onSectionsChange(
-                                    sections.copy(
-                                        includeGeneralSettings = false,
-                                        includeLibraryData = false,
-                                        includeStatsAndRhythmGuard = false
-                                    )
-                                )
-                            },
-                            enabled = !isProcessing,
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)
-                        ) {
-                            Text("None", style = MaterialTheme.typography.labelLarge)
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Column(
-                modifier = Modifier.padding(horizontal = 20.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                BackupRestoreSectionRow(
-                    icon = Icons.Default.Settings,
-                    title = "General Settings",
-                    description = "Theme, player, UI, API, and app preferences.",
-                    checked = sections.includeGeneralSettings,
-                    badge = "Core",
-                    onCheckedChange = { onSectionsChange(sections.copy(includeGeneralSettings = it)) }
-                )
-
-                BackupRestoreSectionRow(
-                    icon = Icons.Default.LibraryMusic,
-                    title = "Library Data",
-                    description = "Playlists, favorites, blacklist/whitelist, pinned folders.",
-                    checked = sections.includeLibraryData,
-                    badge = "Collection",
-                    onCheckedChange = { onSectionsChange(sections.copy(includeLibraryData = it)) }
-                )
-
-                BackupRestoreSectionRow(
-                    icon = Icons.Default.AutoGraph,
-                    title = "Stats & Rhythm Guard",
-                    description = "Play counts, daily stats, genres, and Rhythm Guard configuration.",
-                    checked = sections.includeStatsAndRhythmGuard,
-                    badge = "Insight",
-                    onCheckedChange = { onSectionsChange(sections.copy(includeStatsAndRhythmGuard = it)) }
-                )
-            }
-
-            Spacer(modifier = Modifier.height(18.dp))
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                OutlinedButton(
-                    onClick = onDismiss,
-                    modifier = Modifier.weight(1f),
-                    enabled = !isProcessing,
-                    shape = RoundedCornerShape(14.dp)
-                ) {
+                }) {
                     Icon(
-                        imageVector = Icons.Default.Close,
+                        imageVector = Icons.Rounded.RestartAlt,
                         contentDescription = null,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(context.getString(R.string.ui_cancel))
+                    Text(context.getString(R.string.settings_restart_now))
                 }
-
-                Button(
-                    onClick = { onConfirm(sections) },
-                    modifier = Modifier.weight(1f),
-                    enabled = sections.hasAtLeastOneSectionSelected && !isProcessing,
-                    shape = RoundedCornerShape(14.dp)
-                ) {
-                    if (isProcessing) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.onPrimary
-                        )
-                    } else {
-                        Icon(
-                            imageVector = confirmIcon,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(confirmLabel)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun BackupRestoreSectionRow(
-    icon: ImageVector,
-    title: String,
-    description: String,
-    checked: Boolean,
-    badge: String,
-    onCheckedChange: (Boolean) -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onCheckedChange(!checked) },
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+            },
+            shape = RoundedCornerShape(24.dp)
         )
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Surface(
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(38.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = description,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                Spacer(modifier = Modifier.height(6.dp))
-                Surface(
-                    shape = RoundedCornerShape(999.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant
-                ) {
-                    Text(
-                        text = badge,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            Column(horizontalAlignment = Alignment.End) {
-                TunerAnimatedSwitch(
-                    checked = checked,
-                    onCheckedChange = onCheckedChange
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = if (checked) "Included" else "Excluded",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun BackupRestoreResultBottomSheet(
-    state: BackupRestoreResultState,
-    onDismiss: () -> Unit,
-    onPrimaryAction: () -> Unit
-) {
-    val context = LocalContext.current
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var showContent by remember { mutableStateOf(false) }
-    val contentAlpha by animateFloatAsState(
-        targetValue = if (showContent) 1f else 0f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessLow
-        ),
-        label = "backup_restore_result_alpha"
-    )
-
-    LaunchedEffect(Unit) {
-        delay(80)
-        showContent = true
     }
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        dragHandle = { BottomSheetDefaults.DragHandle(color = MaterialTheme.colorScheme.primary) },
-        containerColor = MaterialTheme.colorScheme.surfaceContainer,
-        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(bottom = 20.dp)
-                .graphicsLayer(alpha = contentAlpha)
-        ) {
-            StandardBottomSheetHeader(
-                title = state.title,
-                subtitle = if (state.requiresRestart) {
-                    "Restart is required to finish applying changes"
-                } else if (state.isError) {
-                    "Action could not be completed"
-                } else {
-                    "Backup and restore status"
-                },
-                visible = showContent,
-                modifier = Modifier.padding(horizontal = 0.dp, vertical = 0.dp)
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp),
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (state.isError) {
-                        MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.55f)
-                    } else {
-                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-                    }
-                ),
-                border = BorderStroke(
-                    1.dp,
-                    if (state.isError) {
-                        MaterialTheme.colorScheme.error.copy(alpha = 0.35f)
-                    } else {
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)
-                    }
+    if (showError) {
+        AlertDialog(
+            onDismissRequest = { showError = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Filled.Error,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error
                 )
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Surface(
-                        shape = CircleShape,
-                        color = if (state.isError) {
-                            MaterialTheme.colorScheme.error
-                        } else {
-                            MaterialTheme.colorScheme.primary
-                        },
-                        modifier = Modifier.size(38.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = if (state.isError) Icons.Default.Close else Icons.Default.Check,
-                                contentDescription = null,
-                                tint = if (state.isError) {
-                                    MaterialTheme.colorScheme.onError
-                                } else {
-                                    MaterialTheme.colorScheme.onPrimary
-                                },
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
-
-                    Text(
-                        text = state.message,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (state.isError) {
-                            MaterialTheme.colorScheme.onErrorContainer
-                        } else {
-                            MaterialTheme.colorScheme.onPrimaryContainer
-                        }
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                if (!state.requiresRestart) {
-                    FilledTonalButton(
-                        onClick = onDismiss,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(14.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(context.getString(R.string.ui_close))
-                    }
-                }
-                Button(
-                    onClick = onPrimaryAction,
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(14.dp)
-                ) {
+            },
+            title = { Text(context.getString(R.string.ui_error)) },
+            text = { Text(errorMessage) },
+            confirmButton = {
+                Button(onClick = {
+                    HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
+                    showError = false
+                }) {
                     Icon(
-                        imageVector = if (state.requiresRestart) {
-                            Icons.Default.RestartAlt
-                        } else if (state.isError) {
-                            Icons.Default.Refresh
-                        } else {
-                            Icons.Default.Check
-                        },
+                        imageVector = Icons.Filled.Close,
                         contentDescription = null,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        if (state.requiresRestart) {
-                            context.getString(R.string.settings_restart_now)
-                        } else {
-                            context.getString(R.string.ui_ok)
-                        }
-                    )
+                    Text("OK")
                 }
-            }
-        }
+            },
+            shape = RoundedCornerShape(24.dp)
+        )
     }
 }
 
@@ -9748,7 +7828,7 @@ fun GesturesSettingsScreen(onBackClick: () -> Unit) {
                 .padding(horizontal = 24.dp)
         ) {
             // Mini Player Gestures
-            item(key = "miniplayer_gestures_header") {
+            item() {
                 Spacer(modifier = Modifier.height(24.dp))
                 Text(
                     text = context.getString(R.string.settings_miniplayer),
@@ -9758,7 +7838,7 @@ fun GesturesSettingsScreen(onBackClick: () -> Unit) {
                 )
             }
 
-            item(key = "miniplayer_gestures_card") {
+            item() {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp),
@@ -9783,7 +7863,7 @@ fun GesturesSettingsScreen(onBackClick: () -> Unit) {
             }
 
             // Full Player Gestures
-            item(key = "player_gestures_header") {
+            item() {
                 Spacer(modifier = Modifier.height(24.dp))
                 Text(
                     text = context.getString(R.string.settings_full_player),
@@ -9793,7 +7873,7 @@ fun GesturesSettingsScreen(onBackClick: () -> Unit) {
                 )
             }
 
-            item(key = "player_gestures_card") {
+            item() {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp),
@@ -9850,7 +7930,7 @@ fun GesturesSettingsScreen(onBackClick: () -> Unit) {
             }
 
             // Tips
-            item(key = "gesture_tips") {
+            item() {
                 Spacer(modifier = Modifier.height(24.dp))
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -9947,7 +8027,6 @@ fun MiniPlayerCustomizationSettingsScreen(onBackClick: () -> Unit) {
     val miniPlayerShowTime by appSettings.miniPlayerShowTime.collectAsState()
     val miniPlayerUseCircularProgress by appSettings.miniPlayerUseCircularProgress.collectAsState()
     val miniPlayerAlwaysShowTablet by appSettings.miniPlayerAlwaysShowTablet.collectAsState()
-    val expressiveShapesEnabled by appSettings.expressiveShapesEnabled.collectAsState()
 
     var showMiniPlayerProgressStyleSheet by remember { mutableStateOf(false) }
     var showMiniPlayerArtworkSizeSheet by remember { mutableStateOf(false) }
@@ -10160,21 +8239,12 @@ fun MiniPlayerCustomizationSettingsScreen(onBackClick: () -> Unit) {
                             modifier = Modifier.padding(horizontal = 20.dp),
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
                         )
-                        if (expressiveShapesEnabled) {
-                            SettingRow(
-                                icon = Icons.Default.RoundedCorner,
-                                title = "Corner Radius",
-                                description = "Managed by Expressive Shapes",
-                                onClick = null
-                            )
-                        } else {
-                            SettingRow(
-                                icon = Icons.Default.RoundedCorner,
-                                title = "Corner Radius",
-                                description = "${miniPlayerCornerRadius}dp",
-                                onClick = { showMiniPlayerCornerRadiusSheet = true }
-                            )
-                        }
+                        SettingRow(
+                            icon = Icons.Default.RoundedCorner,
+                            title = "Corner Radius",
+                            description = "${miniPlayerCornerRadius}dp",
+                            onClick = { showMiniPlayerCornerRadiusSheet = true }
+                        )
                     }
                 }
             }
@@ -10442,7 +8512,6 @@ fun PlayerCustomizationSettingsScreen(onBackClick: () -> Unit) {
     val playerShowSongInfoOnArtwork by appSettings.playerShowSongInfoOnArtwork.collectAsState()
     val playerArtworkCornerRadius by appSettings.playerArtworkCornerRadius.collectAsState()
     val playerShowAudioQualityBadges by appSettings.playerShowAudioQualityBadges.collectAsState()
-    val expressiveShapesEnabled by appSettings.expressiveShapesEnabled.collectAsState()
 
     // Progress bar settings
     val playerProgressStyle by appSettings.playerProgressStyle.collectAsState()
@@ -10657,7 +8726,7 @@ fun PlayerCustomizationSettingsScreen(onBackClick: () -> Unit) {
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
                                     Text(
-                                        text = "Art ↔ Lyrics switch animation",
+                                        text = "Art â†” Lyrics switch animation",
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -10927,21 +8996,12 @@ fun PlayerCustomizationSettingsScreen(onBackClick: () -> Unit) {
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
                     elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                 ) {
-                    if (expressiveShapesEnabled) {
-                        SettingRow(
-                            icon = Icons.Default.RoundedCorner,
-                            title = "Corner Radius",
-                            description = "Managed by Expressive Shapes",
-                            onClick = null
-                        )
-                    } else {
-                        SettingRow(
-                            icon = Icons.Default.RoundedCorner,
-                            title = "Corner Radius",
-                            description = "${playerArtworkCornerRadius}dp",
-                            onClick = { showCornerRadiusSheet = true }
-                        )
-                    }
+                    SettingRow(
+                        icon = Icons.Default.RoundedCorner,
+                        title = "Corner Radius",
+                        description = "${playerArtworkCornerRadius}dp",
+                        onClick = { showCornerRadiusSheet = true }
+                    )
                 }
             }
 
@@ -12165,13 +10225,13 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
             ) { modifier ->
         val settingGroups = listOf(
             SettingGroup(
-                title = context.getString(R.string.settings_display_mode),
+                title = context.getString(R.string.theme_display_mode),
                 items = listOf(
                     // Display Mode Button Group
                     SettingItem(
                         Icons.Default.Settings,
-                        context.getString(R.string.settings_theme_mode),
-                        context.getString(R.string.settings_theme_mode_desc),
+                        "Theme Mode",
+                        "Choose your preferred theme",
                         onClick = {
                             // This will be replaced with button group below
                         }
@@ -12179,23 +10239,23 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
                     // AMOLED Theme - always in list, rendered conditionally via AnimatedVisibility
                     SettingItem(
                         Icons.Default.Brightness2,
-                        context.getString(R.string.settings_amoled_theme),
-                        context.getString(R.string.settings_amoled_theme_desc),
+                        "AMOLED Theme",
+                        "Pure black theme for OLED displays",
                         toggleState = amoledTheme,
                         onToggleChange = { appSettings.setAmoledTheme(it) }
                     )
                 )
             ),
             SettingGroup(
-                title = context.getString(R.string.settings_color_customization),
+                title = context.getString(R.string.theme_color_customization),
                 items = listOf(
                     SettingItem(
                         Icons.Default.Palette,
-                        context.getString(R.string.settings_color_source),
+                        "Color Source",
                         when (selectedColorSource) {
-                            ColorSource.ALBUM_ART -> context.getString(R.string.settings_color_source_album)
-                            ColorSource.MONET -> context.getString(R.string.settings_color_source_monet)
-                            ColorSource.CUSTOM -> context.getString(R.string.settings_color_source_custom, customColorScheme)
+                            ColorSource.ALBUM_ART -> "Album Art - Extracts from artwork"
+                            ColorSource.MONET -> "System Colors - Material You"
+                            ColorSource.CUSTOM -> "Custom Scheme - ${customColorScheme}"
                         },
                         onClick = {
                             HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
@@ -12204,11 +10264,11 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
                     ),
                     SettingItem(
                         Icons.Default.ColorLens,
-                        context.getString(R.string.settings_color_schemes),
+                        "Color Schemes",
                         if (selectedColorSource == ColorSource.CUSTOM)
-                            context.getString(R.string.settings_color_schemes_desc)
+                            "Browse and select predefined color palettes"
                         else
-                            context.getString(R.string.settings_custom_only),
+                            "Available only with Custom color source",
                         onClick = {
                             HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
                             showColorSchemesDialog = true
@@ -12216,11 +10276,11 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
                     ),
                     SettingItem(
                         Icons.Default.Brush,
-                        context.getString(R.string.settings_custom_colors),
+                        "Custom Colors",
                         if (selectedColorSource == ColorSource.CUSTOM)
-                            context.getString(R.string.settings_custom_colors_desc)
+                            "Create your own unique color palette"
                         else
-                            context.getString(R.string.settings_custom_only),
+                            "Available only with Custom color source",
                         onClick = {
                             HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
                             showCustomColorsDialog = true
@@ -12229,17 +10289,14 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
                 )
             ),
             SettingGroup(
-                title = context.getString(R.string.settings_font_customization),
+                title = context.getString(R.string.theme_font_customization),
                 items = listOf(
                     SettingItem(
                         Icons.Default.TextFields,
-                        context.getString(R.string.settings_font_source),
+                        "Font Source",
                         when (selectedFontSource) {
-                            FontSource.SYSTEM -> context.getString(R.string.settings_font_source_system, currentFont)
-                            FontSource.CUSTOM -> context.getString(
-                                R.string.settings_font_source_custom,
-                                customFontFamily
-                            )
+                            FontSource.SYSTEM -> "System Font - ${currentFont}"
+                            FontSource.CUSTOM -> "Custom Font - ${customFontFamily ?: "Not imported"}"
                         },
                         onClick = {
                             HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
@@ -12248,11 +10305,11 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
                     ),
                     SettingItem(
                         Icons.Default.TextFields,
-                        context.getString(R.string.settings_font_selection),
+                        "Font Selection",
                         if (selectedFontSource == FontSource.SYSTEM)
-                            context.getString(R.string.settings_font_selection_desc)
+                            "Choose from built-in font options"
                         else
-                            context.getString(R.string.settings_system_font_only),
+                            "Available only with System font source",
                         onClick = {
                             HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
                             showFontSelectionDialog = true
@@ -12260,11 +10317,11 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
                     ),
                     SettingItem(
                         Icons.Default.FileUpload,
-                        context.getString(R.string.settings_import_custom_font),
+                        "Import Custom Font",
                         if (customFontPath != null)
-                            context.getString(R.string.settings_font_imported_name, customFontFamily)
+                            "Imported: ${customFontFamily}"
                         else
-                            context.getString(R.string.settings_import_font_desc),
+                            "Import your own font file (.ttf, .otf)",
                         onClick = {
                             HapticUtils.performHapticFeedback(
                                 context,
@@ -12277,13 +10334,13 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
                 )
             ),
             SettingGroup(
-                title = context.getString(R.string.settings_festive_themes),
+                title = context.getString(R.string.theme_festive_themes),
                 items = buildList {
                     add(
                         SettingItem(
                             Icons.Default.Celebration,
-                            context.getString(R.string.settings_enable_festive),
-                            context.getString(R.string.settings_enable_festive_desc),
+                            "Enable Festive Theme",
+                            "Show festive decorations across the app",
                             toggleState = festiveThemeEnabled,
                             onToggleChange = { appSettings.setFestiveThemeEnabled(it) }
                         )
@@ -12292,8 +10349,8 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
                         add(
                             SettingItem(
                                 Icons.Default.EventAvailable,
-                                context.getString(R.string.settings_auto_detect_holidays),
-                                context.getString(R.string.settings_auto_detect_holidays_desc),
+                                context.getString(R.string.theme_auto_detect),
+                                context.getString(R.string.theme_auto_detect_desc),
                                 toggleState = festiveThemeAutoDetect,
                                 onToggleChange = { appSettings.setFestiveThemeAutoDetect(it) }
                             )
@@ -12302,7 +10359,7 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
                             add(
                                 SettingItem(
                                     Icons.Default.AutoAwesome,
-                                    context.getString(R.string.settings_select_festival),
+                                    "Select Festival",
                                     getFestivalDisplayName(festiveThemeType),
                                     onClick = {
                                         HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
@@ -12340,7 +10397,7 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
                 ) {
                     Column {
                         when (group.title) {
-                            context.getString(R.string.settings_display_mode) -> {
+                            "Display Mode" -> {
                                 // Display Mode Button Group
                                 Column(modifier = Modifier.padding(20.dp)) {
                                     Row(
@@ -12368,13 +10425,13 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
                                         }
                                         Column {
                                             Text(
-                                                text = context.getString(R.string.settings_theme_mode),
+                                                text = "Theme Mode",
                                                 style = MaterialTheme.typography.titleMedium,
                                                 fontWeight = FontWeight.Medium,
                                                 color = MaterialTheme.colorScheme.onSurface
                                             )
                                             Text(
-                                                text = context.getString(R.string.settings_theme_mode_desc),
+                                                text = "Choose your preferred theme",
                                                 style = MaterialTheme.typography.bodyMedium,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
@@ -12384,11 +10441,7 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
                                     Spacer(modifier = Modifier.height(16.dp))
 
                                     ExpressiveButtonGroup(
-                                        items = listOf(
-                                            context.getString(R.string.settings_theme_system),
-                                            context.getString(R.string.settings_theme_light),
-                                            context.getString(R.string.settings_theme_dark)
-                                        ),
+                                        items = listOf("System", "Light", "Dark"),
                                         selectedIndex = when {
                                             useSystemTheme -> 0
                                             !darkMode -> 1
@@ -12601,230 +10654,231 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
             shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
             containerColor = MaterialTheme.colorScheme.surfaceContainer
         ) {
-            val festiveContentPadding = 24.dp
-
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
                     .padding(bottom = 24.dp)
             ) {
                 item {
-                    StandardBottomSheetHeader(
-                        title = context.getString(R.string.theme_festive_settings),
-                        subtitle = context.getString(R.string.settings_choose_festive_theme),
-                        visible = true,
-                        modifier = Modifier.padding(horizontal = 0.dp, vertical = 0.dp)
+                    Text(
+                        text = context.getString(R.string.theme_festive_settings),
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(bottom = 16.dp)
                     )
                 }
-
+                
+                // Festival Selection
                 item {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = festiveContentPadding)
-                    ) {
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Text(
-                            text = context.getString(R.string.settings_select_festival),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(bottom = 8.dp)
-                        )
-
-                        val festivals = listOf(
-                            "CHRISTMAS" to context.getString(R.string.settings_festival_christmas),
-                            "NEW_YEAR" to context.getString(R.string.settings_festival_new_year)
-                        )
-
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            festivals.forEach { (id, name) ->
-                                val isSelected = id == festiveThemeType
-                                Card(
-                                    onClick = {
-                                        HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
-                                        appSettings.setFestiveThemeType(id)
-                                    },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(12.dp),
-                                    colors = CardDefaults.cardColors(
-                                        containerColor = if (isSelected)
-                                            MaterialTheme.colorScheme.primaryContainer
-                                        else
-                                            MaterialTheme.colorScheme.surfaceContainerHigh
-                                    ),
-                                    border = if (isSelected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
+                    Text(
+                        text = "Select Festival",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                }
+                
+                item {
+                    val festivals = listOf(
+                        "CHRISTMAS" to "Christmas",
+                        "NEW_YEAR" to "New Year",
+                        "HALLOWEEN" to "Halloween",
+                        "VALENTINES" to "Valentine's Day",
+                        "DIWALI" to "Diwali"
+                    )
+                    
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        festivals.forEach { (id, name) ->
+                            val isSelected = id == festiveThemeType
+                            Card(
+                                onClick = {
+                                    HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
+                                    appSettings.setFestiveThemeType(id)
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (isSelected)
+                                        MaterialTheme.colorScheme.primaryContainer
+                                    else
+                                        MaterialTheme.colorScheme.surfaceContainerHigh
+                                ),
+                                border = if (isSelected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(16.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = name,
-                                            style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                            color = if (isSelected)
-                                                MaterialTheme.colorScheme.onPrimaryContainer
-                                            else
-                                                MaterialTheme.colorScheme.onSurface,
-                                            modifier = Modifier.weight(1f)
+                                    Text(
+                                        text = name,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (isSelected)
+                                            MaterialTheme.colorScheme.onPrimaryContainer
+                                        else
+                                            MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    if (isSelected) {
+                                        Icon(
+                                            imageVector = Icons.Filled.CheckCircle,
+                                            contentDescription = "Selected",
+                                            
+                                            modifier = Modifier.size(24.dp)
                                         )
-                                        if (isSelected) {
-                                            Icon(
-                                                imageVector = Icons.Filled.CheckCircle,
-                                                contentDescription = context.getString(R.string.ui_selected),
-                                                modifier = Modifier.size(24.dp)
-                                            )
-                                        }
                                     }
                                 }
                             }
                         }
-
-                        Spacer(modifier = Modifier.height(24.dp))
-
+                    }
+                }
+                
+                // Decoration Intensity
+                item {
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Text(
+                        text = "Decoration Intensity",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Text(
-                            text = context.getString(R.string.settings_decoration_intensity),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(bottom = 12.dp)
-                        )
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = context.getString(R.string.settings_intensity),
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Text(
-                                text = "${(festiveThemeIntensity * 100).toInt()}%",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Slider(
-                            value = festiveThemeIntensity,
-                            onValueChange = { appSettings.setFestiveThemeIntensity(it) },
-                            valueRange = 0.1f..1f,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = context.getString(R.string.settings_snowflake_size),
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Text(
-                                text = "${(festiveSnowflakeSize * 100).toInt()}%",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Slider(
-                            value = festiveSnowflakeSize,
-                            onValueChange = { appSettings.setFestiveSnowflakeSize(it) },
-                            valueRange = 0.5f..2.0f,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        Text(
-                            text = context.getString(R.string.settings_snowflake_display_area),
+                            text = "Intensity",
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.Medium
                         )
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            FilterChip(
-                                selected = festiveSnowflakeArea == "FULL_SCREEN",
-                                onClick = { appSettings.setFestiveSnowflakeArea("FULL_SCREEN") },
-                                label = { Text(context.getString(R.string.settings_area_full)) },
-                                modifier = Modifier.weight(1f)
-                            )
-                            FilterChip(
-                                selected = festiveSnowflakeArea == "LEFT_RIGHT_ONLY",
-                                onClick = { appSettings.setFestiveSnowflakeArea("LEFT_RIGHT_ONLY") },
-                                label = { Text(context.getString(R.string.settings_area_sides)) },
-                                modifier = Modifier.weight(1f)
-                            )
-                            FilterChip(
-                                selected = festiveSnowflakeArea == "TOP_ONE_THIRD",
-                                onClick = { appSettings.setFestiveSnowflakeArea("TOP_ONE_THIRD") },
-                                label = { Text(context.getString(R.string.settings_area_top_third)) },
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(24.dp))
-
                         Text(
-                            text = context.getString(R.string.settings_decoration_elements),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(bottom = 8.dp)
+                            text = "${(festiveThemeIntensity * 100).toInt()}%",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.primary
                         )
-
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            DecorationToggleCard(
-                                title = context.getString(R.string.settings_snowfall),
-                                description = context.getString(R.string.settings_snowfall_desc),
-                                icon = Icons.Rounded.AcUnit,
-                                isEnabled = festiveShowSnowfall,
-                                onToggle = { appSettings.setFestiveShowSnowfall(it) }
-                            )
-                            DecorationToggleCard(
-                                title = context.getString(R.string.settings_top_lights),
-                                description = context.getString(R.string.settings_top_lights_desc),
-                                icon = Icons.Rounded.Lightbulb,
-                                isEnabled = festiveShowTopLights,
-                                onToggle = { appSettings.setFestiveShowTopLights(it) }
-                            )
-                            DecorationToggleCard(
-                                title = context.getString(R.string.settings_side_garland),
-                                description = context.getString(R.string.settings_side_garland_desc),
-                                icon = Icons.Rounded.Park,
-                                isEnabled = festiveShowSideGarland,
-                                onToggle = { appSettings.setFestiveShowSideGarland(it) }
-                            )
-                            DecorationToggleCard(
-                                title = context.getString(R.string.settings_snow_pile),
-                                description = context.getString(R.string.settings_snow_pile_desc),
-                                icon = Icons.Rounded.Terrain,
-                                isEnabled = festiveShowBottomSnow,
-                                onToggle = { appSettings.setFestiveShowBottomSnow(it) }
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(16.dp))
                     }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Slider(
+                        value = festiveThemeIntensity,
+                        onValueChange = { appSettings.setFestiveThemeIntensity(it) },
+                        valueRange = 0.1f..1f,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                
+                // Snowflake Size
+                item {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Snowflake Size",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = "${(festiveSnowflakeSize * 100).toInt()}%",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Slider(
+                        value = festiveSnowflakeSize,
+                        onValueChange = { appSettings.setFestiveSnowflakeSize(it) },
+                        valueRange = 0.5f..2.0f,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                
+                // Snowflake Area
+                item {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "Snowflake Display Area",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilterChip(
+                            selected = festiveSnowflakeArea == "FULL_SCREEN",
+                            onClick = { appSettings.setFestiveSnowflakeArea("FULL_SCREEN") },
+                            label = { Text("Full") },
+                            modifier = Modifier.weight(1f)
+                        )
+                        FilterChip(
+                            selected = festiveSnowflakeArea == "LEFT_RIGHT_ONLY",
+                            onClick = { appSettings.setFestiveSnowflakeArea("LEFT_RIGHT_ONLY") },
+                            label = { Text("Sides") },
+                            modifier = Modifier.weight(1f)
+                        )
+                        FilterChip(
+                            selected = festiveSnowflakeArea == "TOP_ONE_THIRD",
+                            onClick = { appSettings.setFestiveSnowflakeArea("TOP_ONE_THIRD") },
+                            label = { Text("Top â…“") },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+                
+                // Decoration Elements
+                item {
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Text(
+                        text = "Decoration Elements",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                }
+                
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        DecorationToggleCard(
+                            title = "Snowfall",
+                            description = "Animated falling snowflakes",
+                            icon = Icons.Rounded.AcUnit,
+                            isEnabled = festiveShowSnowfall,
+                            onToggle = { appSettings.setFestiveShowSnowfall(it) }
+                        )
+                        DecorationToggleCard(
+                            title = "Top Lights",
+                            description = "Christmas lights at the top",
+                            icon = Icons.Rounded.Lightbulb,
+                            isEnabled = festiveShowTopLights,
+                            onToggle = { appSettings.setFestiveShowTopLights(it) }
+                        )
+                        DecorationToggleCard(
+                            title = "Side Garland",
+                            description = "Ornaments on sides",
+                            icon = Icons.Rounded.Park,
+                            isEnabled = festiveShowSideGarland,
+                            onToggle = { appSettings.setFestiveShowSideGarland(it) }
+                        )
+                        DecorationToggleCard(
+                            title = "Snow Pile",
+                            description = "Snow at the bottom",
+                            icon = Icons.Rounded.Terrain,
+                            isEnabled = festiveShowBottomSnow,
+                            onToggle = { appSettings.setFestiveShowBottomSnow(it) }
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
                 }
             }
         }
@@ -14027,7 +12081,7 @@ private fun ExpressiveColorPickerControls(
                             modifier = Modifier.alpha(0.8f)
                         ) {
                             Text(
-                                text = "H:${hue.toInt()}°",
+                                text = "H:${hue.toInt()}Â°",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = if (color.luminance() > 0.5f) Color.Black.copy(alpha = 0.7f) else Color.White.copy(alpha = 0.9f)
                             )
@@ -14068,7 +12122,7 @@ private fun ExpressiveColorPickerControls(
                     modifier = Modifier.shadow(2.dp, RoundedCornerShape(12.dp))
                 ) {
                     Text(
-                        text = "${hue.toInt()}°",
+                        text = "${hue.toInt()}Â°",
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurface,
@@ -14555,7 +12609,7 @@ private fun ColorPickerControls(
                 color = MaterialTheme.colorScheme.surfaceContainerHighest
             ) {
                 Text(
-                    text = "${hue.toInt()}°",
+                    text = "${hue.toInt()}Â°",
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -15311,7 +13365,7 @@ fun CrashLogHistorySettingsScreen(onBackClick: () -> Unit, appSettings: AppSetti
                             )
                             Spacer(modifier = Modifier.height(16.dp))
                             Text(
-                                text = context.getString(R.string.settings_no_crash_logs),
+                                text = "No crash logs found. Good job!",
                                 style = MaterialTheme.typography.titleMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -15734,10 +13788,10 @@ fun LyricsSourceSettingsScreen(onBackClick: () -> Unit) {
                         }
 
                         Text(
-                            text = "• Embedded lyrics are stored in your audio files\n" +
-                                    "• Online APIs provide high-quality synced lyrics\n" +
-                                    "• Apple Music offers word-by-word sync\n" +
-                                    "• LRCLib provides free line-by-line sync",
+                            text = "â€¢ Embedded lyrics are stored in your audio files\n" +
+                                    "â€¢ Online APIs provide high-quality synced lyrics\n" +
+                                    "â€¢ Apple Music offers word-by-word sync\n" +
+                                    "â€¢ LRCLib provides free line-by-line sync",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onTertiaryContainer,
                             lineHeight = 20.sp
@@ -15805,7 +13859,6 @@ fun HomeScreenCustomizationSettingsScreen(onBackClick: () -> Unit) {
         }
     ) { modifier ->
         val lazyListState = rememberSaveable(
-            key = "home_screen_settings_scroll_state",
             saver = LazyListStateSaver
         ) {
             androidx.compose.foundation.lazy.LazyListState()
@@ -15819,7 +13872,7 @@ fun HomeScreenCustomizationSettingsScreen(onBackClick: () -> Unit) {
                 .padding(horizontal = 24.dp)
         ) {
             // ==================== HEADER CUSTOMIZATION ====================
-            item(key = "header_customization_header", contentType = "section_header") {
+            item(contentType = "section_header") {
                 Spacer(modifier = Modifier.height(24.dp))
                 Text(
                     text = context.getString(R.string.settings_header_customization),
@@ -15830,7 +13883,7 @@ fun HomeScreenCustomizationSettingsScreen(onBackClick: () -> Unit) {
             }
             
             // Consolidated Header Settings Card
-            item(key = "header_settings_card", contentType = "settings_card") {
+            item(contentType = "settings_card") {
                 val collapseBehavior by appSettings.headerCollapseBehavior.collectAsState()
                 val displayMode by appSettings.homeHeaderDisplayMode.collectAsState()
                 val visibilityMode by appSettings.homeAppIconVisibility.collectAsState()
@@ -16038,7 +14091,7 @@ fun HomeScreenCustomizationSettingsScreen(onBackClick: () -> Unit) {
             }
 
             // ==================== GREETING SETTINGS ====================
-            item(key = "greeting_settings_header", contentType = "section_header") {
+            item(contentType = "section_header") {
                 Spacer(modifier = Modifier.height(24.dp))
                 Text(
                     text = "Greeting",
@@ -16048,7 +14101,7 @@ fun HomeScreenCustomizationSettingsScreen(onBackClick: () -> Unit) {
                 )
             }
 
-            item(key = "greeting_toggle_card", contentType = "settings_card") {
+            item(contentType = "settings_card") {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp),
@@ -16115,7 +14168,7 @@ fun HomeScreenCustomizationSettingsScreen(onBackClick: () -> Unit) {
             }
 
             // ==================== SECTION ORDER & VISIBILITY ====================
-            item(key = "section_order_header", contentType = "section_header") {
+            item(contentType = "section_header") {
                 Spacer(modifier = Modifier.height(24.dp))
                 Text(
                     text = context.getString(R.string.settings_section_order_visibility),
@@ -16125,7 +14178,7 @@ fun HomeScreenCustomizationSettingsScreen(onBackClick: () -> Unit) {
                 )
             }
 
-            item(key = "section_order_button", contentType = "action_button") {
+            item(contentType = "action_button") {
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -16193,7 +14246,7 @@ fun HomeScreenCustomizationSettingsScreen(onBackClick: () -> Unit) {
             }
 
             // ==================== WIDGET ITEM COUNTS ====================
-            item(key = "widget_counts_settings", contentType = "slider_group") {
+            item(contentType = "slider_group") {
                 Column {
                     Spacer(modifier = Modifier.height(24.dp))
                     Text(
@@ -16327,7 +14380,7 @@ fun HomeScreenCustomizationSettingsScreen(onBackClick: () -> Unit) {
             }
 
             // ==================== DISCOVER CAROUSEL SETTINGS ====================
-            item(key = "discover_carousel_settings", contentType = "settings_card") {
+            item(contentType = "settings_card") {
                 AnimatedVisibility(visible = showDiscoverCarousel) {
                     Column {
                         Spacer(modifier = Modifier.height(24.dp))
@@ -16519,7 +14572,7 @@ fun HomeScreenCustomizationSettingsScreen(onBackClick: () -> Unit) {
             }
 
             // Quick Tips Card
-            item(key = "tips_card", contentType = "tips") {
+            item(contentType = "tips") {
                 Spacer(modifier = Modifier.height(24.dp))
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -16571,7 +14624,7 @@ fun HomeScreenCustomizationSettingsScreen(onBackClick: () -> Unit) {
                 }
             }
 
-            item(key = "bottom_spacer") { Spacer(modifier = Modifier.height(24.dp)) }
+            item() { Spacer(modifier = Modifier.height(24.dp)) }
         }
     }
 }
@@ -17019,7 +15072,7 @@ fun ExpressiveShapesSettingsScreen(onBackClick: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // Enable/Disable Card 
-            item(key = "expressive_shapes_toggle") {
+            item() {
                 Spacer(modifier = Modifier.height(8.dp))
                 Card(
                     colors = CardDefaults.cardColors(
@@ -17067,7 +15120,7 @@ fun ExpressiveShapesSettingsScreen(onBackClick: () -> Unit) {
             }
             
             // Preset Selection with animation
-            item(key = "preset_section") {
+            item() {
                 AnimatedVisibility(
                     visible = expressiveShapesEnabled,
                     enter = fadeIn() + expandVertically(),
@@ -17104,7 +15157,7 @@ fun ExpressiveShapesSettingsScreen(onBackClick: () -> Unit) {
             }
             
             // Preset Preview Row with animation
-            item(key = "preset_preview") {
+            item() {
                 AnimatedVisibility(
                     visible = expressiveShapesEnabled,
                     enter = fadeIn() + expandVertically(),
@@ -17169,52 +15222,8 @@ fun ExpressiveShapesSettingsScreen(onBackClick: () -> Unit) {
                 }
             }
             
-            // Randomize Button
-            item(key = "randomize_shapes") {
-                AnimatedVisibility(
-                    visible = expressiveShapesEnabled,
-                    enter = fadeIn() + expandVertically(),
-                    exit = fadeOut() + shrinkVertically()
-                ) {
-                    Card(
-                        onClick = {
-                            HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.LongPress)
-                            appSettings.randomizeExpressiveShapes()
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(18.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.tertiaryContainer
-                        ),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 20.dp, vertical = 18.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Shuffle,
-                                contentDescription = "Randomize shapes",
-                                modifier = Modifier.size(22.dp),
-                                tint = MaterialTheme.colorScheme.onTertiaryContainer
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text(
-                                text = "Randomize All Shapes",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onTertiaryContainer
-                            )
-                        }
-                    }
-                }
-            }
-            
             // Individual Shape Customization with animation
-            item(key = "individual_shapes_header") {
+            item() {
                 AnimatedVisibility(
                     visible = expressiveShapesEnabled,
                     enter = fadeIn() + expandVertically(),
@@ -17317,7 +15326,7 @@ fun ExpressiveShapesSettingsScreen(onBackClick: () -> Unit) {
             }
             
             // Info/Tip Card about M3 Expressive
-            item(key = "expressive_info_card") {
+            item() {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp),
@@ -17357,7 +15366,7 @@ fun ExpressiveShapesSettingsScreen(onBackClick: () -> Unit) {
             }
 
             // Bottom spacer
-            item(key = "bottom_spacer") {
+            item() {
                 Spacer(modifier = Modifier.height(100.dp))
             }
         }
@@ -17582,7 +15591,7 @@ fun ExpressiveShapesSettingsScreen(onBackClick: () -> Unit) {
                     contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp)
                 ) {
                     groupedShapes.forEach { (category, shapes) ->
-                        item(key = "category_$category", span = { GridItemSpan(2) }) {
+                        item(span = { GridItemSpan(2) }) {
                             Text(
                                 text = category,
                                 style = MaterialTheme.typography.labelLarge,
@@ -17867,6 +15876,7 @@ fun PlaceholderSettingsScreen() {
         }
     }
 }
+
 
 
 

@@ -34,6 +34,7 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.automirrored.rounded.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.rounded.*
+import androidx.compose.material.icons.automirrored.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
@@ -517,7 +518,7 @@ fun LibraryScreen(
         val displaySong = songs.find { it.id == selectedSong!!.id } ?: selectedSong
         
         SongInfoBottomSheet(
-            song = displaySong!!,
+            song = displaySong,
             onDismiss = { showSongInfoSheet = false },
             appSettings = appSettings,
             onEditSong = { title, artist, album, genre, year, trackNumber ->
@@ -699,8 +700,8 @@ fun LibraryScreen(
                 }
             },
             onAddToBlacklist = {
-                // Add all selected songs to blacklist
-                selectedSongs.forEach { song ->
+                // Add first selected song to blacklist
+                selectedSongs.firstOrNull()?.let { song ->
                     appSettings.addToBlacklist(song.id)
                 }
             },
@@ -1016,7 +1017,6 @@ fun LibraryScreen(
                                                         tint = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
                                                     )
                                                 }
-                                                else -> {}
                                             }
                                         },
                                         onClick = {
@@ -1181,7 +1181,7 @@ fun LibraryScreen(
                         }
                     }
                 },
-                colors = TopAppBarDefaults.largeTopAppBarColors(
+                colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Transparent,
                     scrolledContainerColor = Color.Transparent
                 ),
@@ -1913,24 +1913,24 @@ fun SingleCardSongsContent(
                 val formatInfo = AudioFormatDetector.detectFormat(context, song.uri, song)
                 
                 // Prefer Song's metadata when available (more reliable)
-                val bitrateKbps = if (song.bitrate != null && song.bitrate!! > 0) {
-                    song.bitrate!! / 1000
+                val bitrateKbps = if (song.bitrate != null && song.bitrate > 0) {
+                    song.bitrate / 1000
                 } else if (formatInfo.bitrateKbps > 0) {
                     formatInfo.bitrateKbps
                 } else {
                     0
                 }
                 
-                val sampleRateHz = if (song.sampleRate != null && song.sampleRate!! > 0) {
-                    song.sampleRate!!
+                val sampleRateHz = if (song.sampleRate != null && song.sampleRate > 0) {
+                    song.sampleRate
                 } else if (formatInfo.sampleRateHz > 0) {
                     formatInfo.sampleRateHz
                 } else {
                     0
                 }
                 
-                val channelCount = if (song.channels != null && song.channels!! > 0) {
-                    song.channels!!
+                val channelCount = if (song.channels != null && song.channels > 0) {
+                    song.channels
                 } else if (formatInfo.channelCount > 0) {
                     formatInfo.channelCount
                 } else {

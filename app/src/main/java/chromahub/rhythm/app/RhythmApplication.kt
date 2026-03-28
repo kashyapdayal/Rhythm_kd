@@ -119,6 +119,7 @@ class RhythmApplication : Application() {
     }
     
     override fun onTrimMemory(level: Int) {
+        @Suppress("DEPRECATION")
         super.onTrimMemory(level)
         
         val levelName = when (level) {

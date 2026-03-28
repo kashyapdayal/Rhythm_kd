@@ -2,6 +2,8 @@ package chromahub.rhythm.app.activities
 
 import android.Manifest
 import android.content.Intent
+import android.hardware.usb.UsbDevice
+import android.hardware.usb.UsbManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -160,6 +162,7 @@ class MainActivity : ComponentActivity() {
         installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        volumeControlStream = android.media.AudioManager.STREAM_MUSIC
 
         appSettings = AppSettings.getInstance(applicationContext) // Initialize AppSettings
         
@@ -168,6 +171,9 @@ class MainActivity : ComponentActivity() {
 
         // Initialize CrashReporter
         CrashReporter.init(application)
+        
+        // Handle USB_DEVICE_ATTACHED launch intent (from manifest filter)
+        handleUsbIntent(intent)
         
         // We'll delay intent handling until after initialization
         val startupIntent = intent
@@ -309,10 +315,40 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        // Handle the new intent
+        // Handle USB intents first (manifest-launched attach)
+        handleUsbIntent(intent)
+        // Handle other intents (ACTION_VIEW etc)
         handleIntent(intent)
     }
     
+    /**
+     * Handle USB_DEVICE_ATTACHED intents from the manifest filter.
+     * When Android launches the app for a USB device, the device is in the launch intent.
+     * Forward it to UsbAudioManager via UsbAudioReceiver's persistence mechanism.
+     */
+    private fun handleUsbIntent(intent: Intent?) {
+        if (intent?.action == UsbManager.ACTION_USB_DEVICE_ATTACHED) {
+            val device = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                intent.getParcelableExtra(UsbManager.EXTRA_DEVICE, UsbDevice::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
+            }
+            if (device != null) {
+                Log.d(TAG, "Launched via USB_DEVICE_ATTACHED: ${device.productName}")
+                // Persist so UsbAudioManager picks it up when service starts
+                val sessionManager = chromahub.rhythm.app.infrastructure.audio.UsbAudioReceiver.sessionManagerInstance
+                if (sessionManager != null) {
+                    sessionManager.onDeviceArrived(device)
+                } else {
+                    val cloneIntent = Intent(intent)
+                    cloneIntent.action = UsbManager.ACTION_USB_DEVICE_ATTACHED
+                    sendBroadcast(cloneIntent)
+                }
+            }
+        }
+    }
+
     private fun handleIntent(intent: Intent?) {
         if (intent == null) return
         
@@ -347,6 +383,9 @@ class MainActivity : ComponentActivity() {
                     } ?: run {
                         Log.w(TAG, "ACTION_VIEW intent received without data")
                     }
+                }
+                UsbManager.ACTION_USB_DEVICE_ATTACHED -> {
+                    // Handled upstream by handleUsbIntent, safely ignore here
                 }
                 else -> {
                     Log.d(TAG, "Unhandled intent action: ${intent.action}")
@@ -579,6 +618,8 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    @Deprecated("Deprecated in Android Activity API")
+    @Suppress("DEPRECATION")
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<String>,
@@ -625,9 +666,6 @@ class MainActivity : ComponentActivity() {
         return when (step) {
             OnboardingStep.WELCOME -> "Welcome"
             OnboardingStep.PERMISSIONS -> "Permissions"
-            OnboardingStep.RHYTHM_GUARD -> "Rhythm Guard"
-            OnboardingStep.UPDATER -> "Updates"
-            OnboardingStep.FULL_TOUR_PROMPT -> "Full Tour Choice"
             OnboardingStep.NOTIFICATIONS -> "Notifications"
             OnboardingStep.BACKUP_RESTORE -> "Backup & Restore"
             OnboardingStep.AUDIO_PLAYBACK -> "Audio & Playback"
@@ -638,7 +676,30 @@ class MainActivity : ComponentActivity() {
             OnboardingStep.WIDGETS -> "Widgets"
             OnboardingStep.INTEGRATIONS -> "Integrations"
             OnboardingStep.RHYTHM_STATS -> "Rhythm Stats"
+            OnboardingStep.UPDATER -> "Updates"
             OnboardingStep.SETUP_FINISHED -> "Setup Finished"
             OnboardingStep.COMPLETE -> "Complete"
         }
-}}
+}
+    override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent?): Boolean {
+        // Bug 4 FIX: Route volume keys appropriately based on engine mode
+        // Note: For simplicity in MainActivity, we default to standard mode volume handling
+        // The actual USB exclusive mode check is done in MediaPlaybackService
+        
+        // Always use standard volume key handling in MainActivity
+        // USB exclusive volume control is routed through the broadcast system
+        if (keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP) {
+            val intent = Intent("chromahub.rhythm.app.action.VOLUME_UP")
+            sendBroadcast(intent)
+            return true  // Consume event — prevent system volume bar
+        }
+        if (keyCode == android.view.KeyEvent.KEYCODE_VOLUME_DOWN) {
+            val intent = Intent("chromahub.rhythm.app.action.VOLUME_DOWN")
+            sendBroadcast(intent)
+            return true  // Consume event — prevent system volume bar
+        }
+
+        return super.onKeyDown(keyCode, event)
+    }
+}
+

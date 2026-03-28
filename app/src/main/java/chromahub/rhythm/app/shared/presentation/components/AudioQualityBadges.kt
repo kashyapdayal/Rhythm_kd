@@ -7,8 +7,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.HighQuality
+import androidx.compose.material.icons.filled.HighQuality
+import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.rounded.SurroundSound
+
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -27,6 +31,11 @@ import chromahub.rhythm.app.util.AudioQualityDetector
 import chromahub.rhythm.app.util.AudioFormatDetector
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 
 /**
  * Quality level for badge styling
@@ -58,6 +67,12 @@ fun AudioQualityBadges(
 
     // Get enhanced audio quality information
     var audioQuality by remember(song.id) { mutableStateOf<AudioQualityDetector.AudioQuality?>(null) }
+    var detectedFormatInfo by remember(song.id) { mutableStateOf<AudioFormatDetector.AudioFormatInfo?>(null) }
+    var replayGainInfo by remember(song.id) { mutableStateOf<chromahub.rhythm.app.util.ReplayGainInfo?>(null) }
+
+    val dataStore = remember { chromahub.rhythm.app.shared.data.model.AudioQualityDataStore(context) }
+    val usbExclusive by dataStore.usbExclusiveModeEnabled.collectAsState(initial = false)
+    val usbDeviceConnected by dataStore.usbDeviceConnected.collectAsState(initial = false)
 
     LaunchedEffect(song.id) {
         withContext(Dispatchers.IO) {
@@ -65,32 +80,24 @@ fun AudioQualityBadges(
                 // First try to get format info for codec detection
                 // Pass song object for better bit depth calculation
                 val formatInfo = AudioFormatDetector.detectFormat(context, song.uri, song)
+                detectedFormatInfo = formatInfo
+                
+                // Fetch ReplayGain metadata
+                replayGainInfo = chromahub.rhythm.app.util.ReplayGainParser.parseReplayGain(context, song.uri)
 
                 // Use the enhanced quality detector with format info
                 // Prefer Song's metadata when available as it's more reliable
-                val bitrateKbps = if (song.bitrate != null && song.bitrate!! > 0) {
-                    song.bitrate!! / 1000
-                } else if (formatInfo.bitrateKbps > 0) {
-                    formatInfo.bitrateKbps
-                } else {
-                    0
-                }
+                val bitrateKbps = song.bitrate?.takeIf { it > 0 }?.let { it / 1000 }
+                    ?: formatInfo.bitrateKbps.takeIf { it > 0 }
+                    ?: 0
                 
-                val sampleRateHz = if (song.sampleRate != null && song.sampleRate!! > 0) {
-                    song.sampleRate!!
-                } else if (formatInfo.sampleRateHz > 0) {
-                    formatInfo.sampleRateHz
-                } else {
-                    0
-                }
+                val sampleRateHz = song.sampleRate?.takeIf { it > 0 }
+                    ?: formatInfo.sampleRateHz.takeIf { it > 0 }
+                    ?: 0
                 
-                val channelCount = if (song.channels != null && song.channels!! > 0) {
-                    song.channels!!
-                } else if (formatInfo.channelCount > 0) {
-                    formatInfo.channelCount
-                } else {
-                    2
-                }
+                val channelCount = song.channels?.takeIf { it > 0 }
+                    ?: formatInfo.channelCount.takeIf { it > 0 }
+                    ?: 2
                 
                 Log.d("AudioQualityBadges", "Song metadata: bitrate=${song.bitrate}, sampleRate=${song.sampleRate}, channels=${song.channels}, codec=${song.codec}")
                 Log.d("AudioQualityBadges", "Format info: codec=${formatInfo.codec}, " +
@@ -115,23 +122,44 @@ fun AudioQualityBadges(
         }
     }
 
-    audioQuality?.let { quality ->
-        // Only show badges for meaningful quality indicators
-        val shouldShowBadges = quality.isLossless || quality.isDolby || quality.isDTS || quality.isHiRes ||
-                              quality.qualityType != AudioQualityDetector.QualityType.LOSSY_COMPRESSED
+    // Determine if any badges should be shown
+    val shouldShowQualityBadges = audioQuality?.let { quality ->
+        quality.isLossless || quality.isDolby || quality.isDTS || quality.isHiRes ||
+        quality.qualityType != AudioQualityDetector.QualityType.LOSSY_COMPRESSED
+    } ?: false
+    
+    val showFormatBadge = detectedFormatInfo != null && detectedFormatInfo?.codec != "Unknown"
+    val showUsbBadge = usbExclusive && usbDeviceConnected
+    val showReplayGainBadge = replayGainInfo?.isValid == true
 
-        if (shouldShowBadges) {
-            Row(
-                modifier = modifier.padding(horizontal = 4.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Primary quality badge based on type with enhanced color coding
+    if (shouldShowQualityBadges || showFormatBadge || showUsbBadge || showReplayGainBadge) {
+        // Use an Accompanist FlowRow equivalent or a scrollable Row
+        Row(
+            modifier = modifier
+                .padding(horizontal = 4.dp)
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            
+            // 1. USB Exclusive Badge
+            if (showUsbBadge) {
+                QualityBadge(
+                    text = "USB EXCLUSIVE",
+                    icon = Icons.Default.Settings,
+                    qualityLevel = QualityLevel.EXCELLENT
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+            }
+
+            // 2. Primary quality badge based on type
+            if (shouldShowQualityBadges) {
+                val quality = audioQuality!!
                 when (quality.qualityType) {
                     AudioQualityDetector.QualityType.HI_RES_STUDIO_MASTER -> {
                         QualityBadge(
                             text = "STUDIO MASTER",
-                            icon = Icons.Rounded.HighQuality,
+                            icon = Icons.Filled.HighQuality,
                             qualityLevel = QualityLevel.EXCELLENT
                         )
                     }
@@ -148,7 +176,6 @@ fun AudioQualityBadges(
                             qualityLevel = QualityLevel.EXCELLENT
                         )
                     }
-
                     AudioQualityDetector.QualityType.DOLBY_LOSSY_SURROUND -> {
                         val badgeText = when {
                             quality.qualityLabel.contains("Plus") -> "DOLBY DIGITAL+"
@@ -160,7 +187,6 @@ fun AudioQualityBadges(
                             qualityLevel = QualityLevel.STANDARD
                         )
                     }
-
                     AudioQualityDetector.QualityType.DTS_SURROUND -> {
                         val badgeText = when {
                             quality.isLossless -> "DTS-HD MA"
@@ -172,51 +198,93 @@ fun AudioQualityBadges(
                             qualityLevel = if (quality.isLossless) QualityLevel.EXCELLENT else QualityLevel.STANDARD
                         )
                     }
-
                     AudioQualityDetector.QualityType.LOSSLESS_SURROUND -> {
-                        // Show full label: "DOLBY SURROUND 5.1" or "DOLBY SURROUND 7.1"
                         QualityBadge(
                             text = quality.qualityLabel.uppercase(),
                             icon = Icons.Rounded.SurroundSound,
                             qualityLevel = QualityLevel.EXCELLENT
                         )
                     }
-
                     AudioQualityDetector.QualityType.HI_RES_LOSSLESS -> {
                         QualityBadge(
                             text = "HI-RES LOSSLESS",
-                            icon = Icons.Rounded.HighQuality,
+                            icon = Icons.Filled.HighQuality,
                             qualityLevel = QualityLevel.GOOD
                         )
                     }
-
                     AudioQualityDetector.QualityType.CD_QUALITY_LOSSLESS -> {
                         QualityBadge(
                             text = "LOSSLESS",
-                            icon = Icons.Rounded.HighQuality,
+                            icon = Icons.Filled.HighQuality,
                             qualityLevel = QualityLevel.GOOD
                         )
                     }
-
                     AudioQualityDetector.QualityType.LOSSY_COMPRESSED -> {
-                        // Only show high-quality lossy badges (320kbps+)
                         if (quality.qualityDescription.contains("320")) {
                             QualityBadge(
                                 text = "320K",
-                                icon = Icons.Rounded.HighQuality,
+                                icon = Icons.Filled.HighQuality,
                                 qualityLevel = QualityLevel.STANDARD
                             )
                         }
                     }
-
-                    AudioQualityDetector.QualityType.UNKNOWN -> {
-                        // Don't show unknown quality badges
-                    }
+                    AudioQualityDetector.QualityType.UNKNOWN -> {}
                 }
+                Spacer(modifier = Modifier.width(6.dp))
+            }
+            
+            // 3. Format Information Chip (Codec, Bitrate, Sample Rate)
+            if (showFormatBadge) {
+                val formatInfo = detectedFormatInfo!!
+                val bitDepthStr = if (formatInfo.bitDepth > 0) "${formatInfo.bitDepth}-bit" else ""
+                val sampleRateStr = if (formatInfo.sampleRateHz > 0) {
+                    if (formatInfo.sampleRateHz % 1000 == 0) "${formatInfo.sampleRateHz / 1000}kHz"
+                    else "${String.format(java.util.Locale.US, "%.1f", formatInfo.sampleRateHz / 1000.0)}kHz"
+                } else ""
+                val bitrateStr = if (formatInfo.bitrateKbps > 0) "${formatInfo.bitrateKbps} kbps" else ""
+                
+                val parts = listOf(formatInfo.codec, bitDepthStr, sampleRateStr, bitrateStr).filter { it.isNotEmpty() }
+                val formatText = parts.joinToString(" • ")
+
+                if (formatText.isNotEmpty()) {
+                    QualityBadge(
+                        text = formatText,
+                        icon = Icons.Default.MusicNote,
+                        qualityLevel = QualityLevel.STANDARD
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                }
+            }
+
+            // 4. ReplayGain Pill
+            if (showReplayGainBadge) {
+                val trackGain = replayGainInfo?.trackGain
+                val albumGain = replayGainInfo?.albumGain
+                val displayGain = trackGain ?: albumGain ?: 0f
+                val sign = if (displayGain > 0) "+" else ""
+                
+                val currentContext = LocalContext.current
+                
+                QualityBadge(
+                    text = "RG",
+                    icon = Icons.Default.GraphicEq,
+                    qualityLevel = QualityLevel.GOOD,
+                    modifier = Modifier.pointerInput(Unit) {
+                        detectTapGestures(
+                            onLongPress = {
+                                val tGain = trackGain?.let { sign + String.format(java.util.Locale.US, "%.1f", it) + " dB" } ?: "N/A"
+                                val aGain = albumGain?.let { sign + String.format(java.util.Locale.US, "%.1f", it) + " dB" } ?: "N/A"
+                                val msg = "ReplayGain: Track $tGain, Album $aGain"
+                                android.widget.Toast.makeText(currentContext, msg, android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                    }
+                )
             }
         }
     }
 }
+
 
 /**
  * Material 3 Expressive Badge with gradient, animation, and dynamic colors

@@ -162,10 +162,37 @@ object MediaUtils {
                         )
                     }
                 }
-
             null
         } catch (e: Exception) {
             Log.e(TAG, "Error searching MediaStore", e)
+            null
+        }
+    }
+
+    /**
+     * Resolves a content URI to a real file path if possible.
+     * @param context The application context
+     * @param uri The URI to resolve
+     * @return The real file path, or null if it couldn't be resolved
+     */
+    fun getRealPathFromURI(context: Context, uri: Uri): String? {
+        return try {
+            when (uri.scheme) {
+                "content" -> {
+                    val projection = arrayOf(MediaStore.Audio.Media.DATA)
+                    context.contentResolver.query(uri, projection, null, null, null)
+                        ?.use { cursor ->
+                            if (cursor.moveToFirst()) {
+                                val dataIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
+                                cursor.getString(dataIndex)
+                            } else null
+                        }
+                }
+                "file" -> uri.path
+                else -> null
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error resolving real path from URI", e)
             null
         }
     }
@@ -640,24 +667,24 @@ object MediaUtils {
 
         // Calculate detailed audio quality using AudioQualityDetector
         // Prefer Song's metadata when available as it's more reliable
-        val bitrateKbps = if (song.bitrate != null && song.bitrate!! > 0) {
-            song.bitrate!! / 1000
+        val bitrateKbps = if (song.bitrate != null && song.bitrate > 0) {
+            song.bitrate / 1000
         } else if (audioFormatInfo?.bitrateKbps != null && audioFormatInfo.bitrateKbps > 0) {
             audioFormatInfo.bitrateKbps
         } else {
             0
         }
 
-        val sampleRateValue = if (song.sampleRate != null && song.sampleRate!! > 0) {
-            song.sampleRate!!
+        val sampleRateValue = if (song.sampleRate != null && song.sampleRate > 0) {
+            song.sampleRate
         } else if (audioFormatInfo?.sampleRateHz != null && audioFormatInfo.sampleRateHz > 0) {
             audioFormatInfo.sampleRateHz
         } else {
             0
         }
 
-        val channelCountValue = if (song.channels != null && song.channels!! > 0) {
-            song.channels!!
+        val channelCountValue = if (song.channels != null && song.channels > 0) {
+            song.channels
         } else if (audioFormatInfo?.channelCount != null && audioFormatInfo.channelCount > 0) {
             audioFormatInfo.channelCount
         } else {
@@ -1206,8 +1233,6 @@ object MediaUtils {
                         tag.setField(FieldKey.ALBUM, newAlbum)
                         if (newGenre.isNotBlank()) {
                             tag.setField(FieldKey.GENRE, newGenre)
-                        } else {
-                            tag.deleteField(FieldKey.GENRE)
                         }
                         if (newYear > 0) {
                             tag.setField(FieldKey.YEAR, newYear.toString())
@@ -1344,8 +1369,6 @@ object MediaUtils {
                             tag.setField(FieldKey.ALBUM, newAlbum)
                             if (newGenre.isNotBlank()) {
                                 tag.setField(FieldKey.GENRE, newGenre)
-                            } else {
-                                tag.deleteField(FieldKey.GENRE)
                             }
                             if (newYear > 0) {
                                 tag.setField(FieldKey.YEAR, newYear.toString())
@@ -1559,8 +1582,6 @@ object MediaUtils {
             tag.setField(FieldKey.ALBUM, newAlbum)
             if (newGenre.isNotBlank()) {
                 tag.setField(FieldKey.GENRE, newGenre)
-            } else {
-                tag.deleteField(FieldKey.GENRE)
             }
             if (newYear > 0) {
                 tag.setField(FieldKey.YEAR, newYear.toString())

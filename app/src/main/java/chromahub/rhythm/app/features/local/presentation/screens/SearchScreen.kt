@@ -17,17 +17,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
@@ -115,7 +111,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -175,18 +170,14 @@ fun SearchScreen(
     onNavigateToArtist: (Artist) -> Unit = {}
 ) {
     val context = LocalContext.current
-    val appSettings = AppSettings.getInstance(context)
     val viewModel = musicViewModel
     var searchQuery by remember { mutableStateOf("") }
     val focusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
-    val keyboardController = LocalSoftwareKeyboardController.current
     var isSearchActive by remember { mutableStateOf(false) }
     var showFilterOptions by remember { mutableStateOf(false) }
     var selectedCategory by remember { mutableStateOf("All") }
     var showAllSongsPage by remember { mutableStateOf(false) }
-    val showKeyboardOnSearchOpen by appSettings.showKeyboardOnSearchOpen.collectAsState()
-    var didAutoFocusOnEntry by remember { mutableStateOf(false) }
     
     // Filter states
     var filterSongs by remember { mutableStateOf(true) }
@@ -346,16 +337,6 @@ fun SearchScreen(
         kotlinx.coroutines.delay(50)
         showContent = true
     }
-
-    LaunchedEffect(showContent, showKeyboardOnSearchOpen) {
-        if (showContent && showKeyboardOnSearchOpen && !didAutoFocusOnEntry) {
-            didAutoFocusOnEntry = true
-            isSearchActive = true
-            kotlinx.coroutines.delay(120)
-            focusRequester.requestFocus()
-            keyboardController?.show()
-        }
-    }
     
     val contentAlpha by animateFloatAsState(
         targetValue = if (showContent) 1f else 0f,
@@ -379,113 +360,116 @@ fun SearchScreen(
                     alpha = contentAlpha
                     translationY = contentOffset
                 }
-                .padding(bottom = paddingValues.calculateBottomPadding())
+                .padding(paddingValues)
         ) {
-            val searchContainerShape = RoundedCornerShape(28.dp)
-
-            Surface(
+            // Enhanced Material 3 SearchBar with modern design and animations
+            // Enhanced Material 3 SearchBar with modern design and animations
+            DockedSearchBar(
+                expanded = isSearchActive,
+                onExpandedChange = { isSearchActive = it },
+                colors = SearchBarDefaults.colors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    dividerColor = Color.Transparent
+                ),
+                shape = RoundedCornerShape(28.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(horizontal = 20.dp)
-                    .padding(top = 2.dp)
-                    .clip(searchContainerShape),
-                shape = searchContainerShape,
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                tonalElevation = if (isSearchActive) 3.dp else 1.dp,
-                shadowElevation = if (isSearchActive) 6.dp else 2.dp
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(
-                        onClick = {
-                            HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
-                            onBack()
-                        },
-                        colors = IconButtonDefaults.iconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f),
-                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    ) {
-                        Icon(
-                            imageVector = RhythmIcons.Back,
-                            contentDescription = "Back",
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
+                    .padding(horizontal = 20.dp, vertical = if (isSearchActive) 0.dp else 18.dp)
+                    .focusRequester(focusRequester)
+                    .then(if (isSearchActive) Modifier.fillMaxSize() else Modifier),
+                inputField = {
                     TextField(
                         value = searchQuery,
                         onValueChange = { newQuery ->
                             searchQuery = newQuery
                             isSearchActive = true
                         },
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(start = 8.dp)
-                            .focusRequester(focusRequester),
+                        modifier = Modifier.fillMaxWidth(),
                         placeholder = {
                             Text(
-                                "Search your Rhythm...",
+                                "  Search your 🎵 Rhythm...",
                                 style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f)
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                             )
                         },
                         leadingIcon = {
-                            Icon(
-                                imageVector = RhythmIcons.Search,
-                                contentDescription = "Search",
-                                modifier = Modifier.size(20.dp)
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                modifier = Modifier.padding(horizontal = 5.dp)
+                            ) {
+                                IconButton(
+                                    onClick = {
+                                        HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
+                                        onBack()
+                                    },
+                                    colors = IconButtonDefaults.iconButtonColors(
+                                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f),
+                                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                ) {
+                                    Icon(
+                                        imageVector = RhythmIcons.Back,
+                                        contentDescription = "Back",
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+
+                                Icon(
+                                    imageVector = RhythmIcons.Search,
+                                    contentDescription = "Search",
+                                    
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
                         },
                         trailingIcon = {
                             Row(
+                                horizontalArrangement = Arrangement.spacedBy(5.dp),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                modifier = Modifier.padding(horizontal = 5.dp)
                             ) {
                                 if (searchQuery.isNotEmpty()) {
+                                    // Filter toggle button with accent background
                                     IconButton(
                                         onClick = {
                                             HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
                                             showFilterOptions = !showFilterOptions
                                         },
                                         colors = IconButtonDefaults.iconButtonColors(
-                                            containerColor = if (showFilterOptions) {
+                                            containerColor = if (showFilterOptions)
                                                 MaterialTheme.colorScheme.primaryContainer
-                                            } else {
-                                                Color.Transparent
-                                            },
-                                            contentColor = if (showFilterOptions) {
+                                            else Color.Transparent,
+                                            contentColor = if (showFilterOptions)
                                                 MaterialTheme.colorScheme.onPrimaryContainer
-                                            } else {
-                                                MaterialTheme.colorScheme.onSurfaceVariant
-                                            }
+                                            else MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     ) {
                                         Icon(
                                             imageVector = Icons.Rounded.FilterList,
                                             contentDescription = "Filters",
-                                            modifier = Modifier.size(18.dp)
+                                            modifier = Modifier.size(20.dp)
                                         )
                                     }
+
+                                    val animatedAlpha by animateFloatAsState(
+                                        targetValue = 1f,
+                                        animationSpec = spring(dampingRatio = 0.8f),
+                                        label = "clearButtonAlpha"
+                                    )
 
                                     IconButton(
                                         onClick = {
                                             HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
                                             searchQuery = ""
                                             isSearchActive = false
-                                            showFilterOptions = false
-                                            showAllSongsPage = false
                                             focusManager.clearFocus()
                                         },
                                         colors = IconButtonDefaults.iconButtonColors(
                                             containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.8f),
                                             contentColor = MaterialTheme.colorScheme.onErrorContainer
-                                        )
+                                        ),
+                                        modifier = Modifier.graphicsLayer(alpha = animatedAlpha)
                                     ) {
                                         Icon(
                                             imageVector = RhythmIcons.Close,
@@ -514,187 +498,10 @@ fun SearchScreen(
                             focusedContainerColor = Color.Transparent
                         )
                     )
-                }
-            }
-
-            AnimatedVisibility(
-                visible = showFilterOptions && searchQuery.isNotEmpty() && !showAllSongsPage,
-                enter = expandVertically() + fadeIn(),
-                exit = shrinkVertically() + fadeOut(),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 10.dp)
-            ) {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-                    ),
-                    shape = RoundedCornerShape(20.dp)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp)
-                    ) {
-                        Text(
-                            text = context.getString(R.string.search_filter_results),
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.padding(bottom = 12.dp)
-                        )
-
-                        LazyRow(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            contentPadding = PaddingValues(horizontal = 4.dp)
-                        ) {
-                            item {
-                                val allSelected = filterSongs && filterAlbums && filterArtists && filterPlaylists
-                                val noneSelected = !filterSongs && !filterAlbums && !filterArtists && !filterPlaylists
-
-                                FilterChip(
-                                    onClick = {
-                                        HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
-                                        if (allSelected || (!allSelected && !noneSelected)) {
-                                            filterSongs = false
-                                            filterAlbums = false
-                                            filterArtists = false
-                                            filterPlaylists = false
-                                        } else {
-                                            filterSongs = true
-                                            filterAlbums = true
-                                            filterArtists = true
-                                            filterPlaylists = true
-                                        }
-                                    },
-                                    label = { Text(if (allSelected) "Deselect All" else "Select All") },
-                                    selected = allSelected,
-                                    leadingIcon = if (allSelected) {
-                                        { Icon(RhythmIcons.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
-                                    } else null,
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                                        selectedLabelColor = MaterialTheme.colorScheme.onTertiaryContainer
-                                    )
-                                )
-                            }
-
-                            item {
-                                FilterChip(
-                                    onClick = {
-                                        HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
-                                        filterSongs = !filterSongs
-                                    },
-                                    label = { Text("Songs (${searchedSongs.size})") },
-                                    selected = filterSongs,
-                                    leadingIcon = if (filterSongs) {
-                                        { Icon(RhythmIcons.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
-                                    } else null,
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                                    )
-                                )
-                            }
-
-                            item {
-                                FilterChip(
-                                    onClick = {
-                                        HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
-                                        filterAlbums = !filterAlbums
-                                    },
-                                    label = { Text("Albums (${searchedAlbums.size})") },
-                                    selected = filterAlbums,
-                                    leadingIcon = if (filterAlbums) {
-                                        { Icon(RhythmIcons.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
-                                    } else null,
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                                    )
-                                )
-                            }
-
-                            item {
-                                FilterChip(
-                                    onClick = {
-                                        HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
-                                        filterArtists = !filterArtists
-                                    },
-                                    label = { Text("Artists (${searchedArtists.size})") },
-                                    selected = filterArtists,
-                                    leadingIcon = if (filterArtists) {
-                                        { Icon(RhythmIcons.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
-                                    } else null,
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                                    )
-                                )
-                            }
-
-                            item {
-                                FilterChip(
-                                    onClick = {
-                                        HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
-                                        filterPlaylists = !filterPlaylists
-                                    },
-                                    label = { Text("Playlists (${searchedPlaylists.size})") },
-                                    selected = filterPlaylists,
-                                    leadingIcon = if (filterPlaylists) {
-                                        { Icon(RhythmIcons.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
-                                    } else null,
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                                    )
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = if (totalResults == 0) "No results found" else "$totalResults results found",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = if (totalResults == 0) {
-                                    MaterialTheme.colorScheme.error
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                },
-                                fontWeight = if (totalResults == 0) FontWeight.Medium else FontWeight.Normal
-                            )
-
-                            if (totalResults > 0) {
-                                val activeFilters = listOf(
-                                    "Songs" to filterSongs,
-                                    "Albums" to filterAlbums,
-                                    "Artists" to filterArtists,
-                                    "Playlists" to filterPlaylists
-                                ).count { it.second }
-
-                                Text(
-                                    text = "$activeFilters filters active",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.Medium
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .imePadding()
-                    .navigationBarsPadding()
-            ) {
-                when {
-                    showAllSongsPage -> {
+                },
+                content = {
+                    // Content for the expanded search bar
+                    if (showAllSongsPage) {
                         AllSongsPage(
                             songs = filteredSongs,
                             onSongClick = onSongClick,
@@ -709,72 +516,222 @@ fun SearchScreen(
                             onBack = { showAllSongsPage = false },
                             haptics = haptics
                         )
-                    }
-
-                    searchQuery.isEmpty() -> {
-                        val recommendedSongs = remember(viewModel) {
-                            viewModel.getRecommendedSongs().take(4)
-                        }
-                        DefaultSearchContent(
-                            songs = songs,
-                            searchHistory = searchHistory,
-                            recentlyPlayed = recentlyPlayed,
-                            recommendedSongs = recommendedSongs,
+                    } else if (searchQuery.isEmpty()) {
+                        // The content is now shown outside the search bar when not active
+                    } else if (hasSearchResults) {
+                        // Search results
+                        SearchResults(
+                            songs = filteredSongs,
+                            albums = filteredAlbums,
+                            artists = filteredArtists,
+                            playlists = filteredPlaylists,
+                            searchQuery = searchQuery,
+                            totalResults = totalResults,
                             onSongClick = onSongClick,
-                            onSearchQuerySelect = { query ->
-                                searchQuery = query
-                                isSearchActive = true
-                            },
+                            onAlbumClick = onAlbumClick,
+                            onArtistClick = onArtistClick,
+                            onPlaylistClick = onPlaylistClick,
                             onAddSongToPlaylist = { song ->
                                 selectedSong = song
                                 showAddToPlaylistSheet = true
                             },
-                            onClearSearchHistory = {
-                                viewModel.clearSearchHistory()
+                            onSongMoreClick = { song ->
+                                selectedSong = song
+                                showSongOptionsSheet = true
+                            },
+                            onAlbumBottomSheetClick = { album ->
+                                selectedAlbum = album
+                                showAlbumBottomSheet = true
+                            },
+                            onArtistBottomSheetClick = { artist ->
+                                onNavigateToArtist(artist)
+                            },
+                            onViewAllSongsClick = { showAllSongsPage = true },
+                            filterSection = {
+                                AnimatedVisibility(
+                                    visible = showFilterOptions,
+                                    enter = expandVertically() + fadeIn(),
+                                    exit = shrinkVertically() + fadeOut()
+                                ) {
+                                    Card(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(bottom = 16.dp),
+                                        colors = CardDefaults.cardColors(
+                                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                                        )
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.padding(16.dp)
+                                        ) {
+                                            Text(
+                                                text = context.getString(R.string.search_filter_results),
+                                                style = MaterialTheme.typography.titleMedium,
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                                modifier = Modifier.padding(bottom = 12.dp)
+                                            )
+
+                                            LazyRow(
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                contentPadding = PaddingValues(horizontal = 4.dp)
+                                            ) {
+                                                // Select All / Deselect All chip
+                                                item {
+                                                    val allSelected = filterSongs && filterAlbums && filterArtists && filterPlaylists
+                                                    val noneSelected = !filterSongs && !filterAlbums && !filterArtists && !filterPlaylists
+
+                                                    FilterChip(
+                                                        onClick = {
+                                                            HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
+                                                            if (allSelected || (!allSelected && !noneSelected)) {
+                                                                // Deselect all
+                                                                filterSongs = false
+                                                                filterAlbums = false
+                                                                filterArtists = false
+                                                                filterPlaylists = false
+                                                            } else {
+                                                                // Select all
+                                                                filterSongs = true
+                                                                filterAlbums = true
+                                                                filterArtists = true
+                                                                filterPlaylists = true
+                                                            }
+                                                        },
+                                                        label = {
+                                                            Text(if (allSelected) "Deselect All" else "Select All")
+                                                        },
+                                                        selected = allSelected,
+                                                        leadingIcon = if (allSelected) {
+                                                            { Icon(RhythmIcons.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                                                        } else null,
+                                                        colors = FilterChipDefaults.filterChipColors(
+                                                            selectedContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                                                            selectedLabelColor = MaterialTheme.colorScheme.onTertiaryContainer
+                                                        )
+                                                    )
+                                                }
+
+                                                item {
+                                                    FilterChip(
+                                                        onClick = {
+                                                            HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
+                                                            filterSongs = !filterSongs
+                                                        },
+                                                        label = {
+                                                            Text("Songs (${searchedSongs.size})")
+                                                        },
+                                                        selected = filterSongs,
+                                                        leadingIcon = if (filterSongs) {
+                                                            { Icon(RhythmIcons.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                                                        } else null,
+                                                        colors = FilterChipDefaults.filterChipColors(
+                                                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                                        )
+                                                    )
+                                                }
+
+                                                item {
+                                                    FilterChip(
+                                                        onClick = {
+                                                            HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
+                                                            filterAlbums = !filterAlbums
+                                                        },
+                                                        label = {
+                                                            Text("Albums (${searchedAlbums.size})")
+                                                        },
+                                                        selected = filterAlbums,
+                                                        leadingIcon = if (filterAlbums) {
+                                                            { Icon(RhythmIcons.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                                                        } else null,
+                                                        colors = FilterChipDefaults.filterChipColors(
+                                                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                                        )
+                                                    )
+                                                }
+
+                                                item {
+                                                    FilterChip(
+                                                        onClick = {
+                                                            HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
+                                                            filterArtists = !filterArtists
+                                                        },
+                                                        label = {
+                                                            Text("Artists (${searchedArtists.size})")
+                                                        },
+                                                        selected = filterArtists,
+                                                        leadingIcon = if (filterArtists) {
+                                                            { Icon(RhythmIcons.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                                                        } else null,
+                                                        colors = FilterChipDefaults.filterChipColors(
+                                                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                                        )
+                                                    )
+                                                }
+
+                                                item {
+                                                    FilterChip(
+                                                        onClick = {
+                                                            HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
+                                                            filterPlaylists = !filterPlaylists
+                                                        },
+                                                        label = {
+                                                            Text("Playlists (${searchedPlaylists.size})")
+                                                        },
+                                                        selected = filterPlaylists,
+                                                        leadingIcon = if (filterPlaylists) {
+                                                            { Icon(RhythmIcons.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                                                        } else null,
+                                                        colors = FilterChipDefaults.filterChipColors(
+                                                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                                        )
+                                                    )
+                                                }
+                                            }
+
+                                            if (searchQuery.isNotEmpty()) {
+                                                Spacer(modifier = Modifier.height(12.dp))
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Text(
+                                                        text = if (totalResults == 0) "No results found" else "$totalResults results found",
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                        color = if (totalResults == 0)
+                                                            MaterialTheme.colorScheme.error
+                                                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        fontWeight = if (totalResults == 0) FontWeight.Medium else FontWeight.Normal
+                                                    )
+
+                                                    if (totalResults > 0) {
+                                                        val activeFilters = listOf(
+                                                            "Songs" to filterSongs,
+                                                            "Albums" to filterAlbums,
+                                                            "Artists" to filterArtists,
+                                                            "Playlists" to filterPlaylists
+                                                        ).count { it.second }
+
+                                                        Text(
+                                                            text = "$activeFilters filters active",
+                                                            style = MaterialTheme.typography.bodySmall,
+                                                            color = MaterialTheme.colorScheme.primary,
+                                                            fontWeight = FontWeight.Medium
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         )
-                    }
-
-                    hasSearchResults -> {
-                        AnimatedResultsContainer(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(horizontal = 12.dp, vertical = 8.dp)
-                        ) {
-                            SearchResults(
-                                modifier = Modifier.fillMaxSize(),
-                                songs = filteredSongs,
-                                albums = filteredAlbums,
-                                artists = filteredArtists,
-                                playlists = filteredPlaylists,
-                                searchQuery = searchQuery,
-                                totalResults = totalResults,
-                                onSongClick = onSongClick,
-                                onAlbumClick = onAlbumClick,
-                                onArtistClick = onArtistClick,
-                                onPlaylistClick = onPlaylistClick,
-                                onAddSongToPlaylist = { song ->
-                                    selectedSong = song
-                                    showAddToPlaylistSheet = true
-                                },
-                                onSongMoreClick = { song ->
-                                    selectedSong = song
-                                    showSongOptionsSheet = true
-                                },
-                                onAlbumBottomSheetClick = { album ->
-                                    selectedAlbum = album
-                                    showAlbumBottomSheet = true
-                                },
-                                onArtistBottomSheetClick = { artist ->
-                                    onNavigateToArtist(artist)
-                                },
-                                onViewAllSongsClick = { showAllSongsPage = true },
-                                filterSection = {}
-                            )
-                        }
-                    }
-
-                    else -> {
+                    } else {
+                        // No results found
                         NoSearchResults(
                             searchQuery = searchQuery,
                             hasActiveFilters = filterSongs || filterAlbums || filterArtists || filterPlaylists,
@@ -788,6 +745,30 @@ fun SearchScreen(
                         )
                     }
                 }
+            )
+
+            if (searchQuery.isEmpty()) {
+                val recommendedSongs = remember(viewModel) {
+                    viewModel.getRecommendedSongs().take(4)
+                }
+                DefaultSearchContent(
+                    songs = songs,
+                    searchHistory = searchHistory,
+                    recentlyPlayed = recentlyPlayed,
+                    recommendedSongs = recommendedSongs,
+                    onSongClick = onSongClick,
+                    onSearchQuerySelect = { query ->
+                        searchQuery = query
+                        isSearchActive = true
+                    },
+                    onAddSongToPlaylist = { song ->
+                        selectedSong = song
+                        showAddToPlaylistSheet = true
+                    },
+                    onClearSearchHistory = {
+                        viewModel.clearSearchHistory()
+                    }
+                )
             }
         }
     }
@@ -799,7 +780,7 @@ fun SearchScreen(
             playlists = playlists,
             onDismissRequest = { showAddToPlaylistSheet = false },
             onAddToPlaylist = { playlist ->
-                onAddSongToPlaylist(selectedSong!!, playlist.id ?: "")
+                onAddSongToPlaylist(selectedSong!!, playlist.id)
                 scope.launch {
                     addToPlaylistSheetState.hide()
                 }.invokeOnCompletion {
@@ -975,54 +956,10 @@ fun SearchScreen(
     }
 }
 
-@Composable
-private fun AnimatedResultsContainer(
-    modifier: Modifier = Modifier,
-    content: @Composable () -> Unit
-) {
-    var visible by remember { mutableStateOf(false) }
-
-    LaunchedEffect(Unit) {
-        visible = true
-    }
-
-    val containerAlpha by animateFloatAsState(
-        targetValue = if (visible) 1f else 0f,
-        animationSpec = tween(durationMillis = 260),
-        label = "results_container_alpha"
-    )
-    val containerOffsetY by animateFloatAsState(
-        targetValue = if (visible) 0f else 22f,
-        animationSpec = tween(durationMillis = 320),
-        label = "results_container_offset"
-    )
-
-    Card(
-        modifier = modifier.graphicsLayer {
-            alpha = containerAlpha
-            translationY = containerOffsetY
-        },
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainer
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 6.dp, vertical = 6.dp)
-        ) {
-            content()
-        }
-    }
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 
 @Composable
 fun SearchResults(
-    modifier: Modifier = Modifier,
     songs: List<Song>,
     albums: List<Album>,
     artists: List<Artist>,
@@ -1042,18 +979,10 @@ fun SearchResults(
 ) {
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
-    val miniPlayerBottomPadding = LocalMiniPlayerPadding.current.calculateBottomPadding()
-    val contentBottomPadding = (miniPlayerBottomPadding + 20.dp).coerceAtLeast(96.dp)
-
     LazyColumn(
-        modifier = modifier,
+        modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(16.dp),
-        contentPadding = PaddingValues(
-            start = 16.dp,
-            end = 16.dp,
-            top = 16.dp,
-            bottom = contentBottomPadding
-        )
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp)
     ) {
         // Filter section
         item {
@@ -1064,10 +993,9 @@ fun SearchResults(
         item {
             Card(
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
                 ),
                 shape = RoundedCornerShape(20.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
@@ -1078,13 +1006,12 @@ fun SearchResults(
                 ) {
                     Surface(
                         shape = CircleShape,
-                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
                         modifier = Modifier.size(48.dp)
                     ) {
                         Icon(
                             imageVector = RhythmIcons.Search,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSecondaryContainer,
                             modifier = Modifier
                                 .size(24.dp)
                                 .padding(12.dp)
@@ -1096,12 +1023,12 @@ fun SearchResults(
                             text = context.getString(R.string.search_results),
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                         Text(
                             text = "$totalResults items found for \"$searchQuery\"",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                         )
                     }
                 }
@@ -1161,10 +1088,9 @@ fun SearchResults(
                         Spacer(modifier = Modifier.height(12.dp))
                         Card(
                             colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.secondaryContainer
+                                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
                             ),
                             shape = RoundedCornerShape(16.dp),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = 4.dp)
@@ -1185,18 +1111,17 @@ fun SearchResults(
                                         text = context.getString(R.string.search_view_all_songs),
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.Medium,
-                                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                                        color = MaterialTheme.colorScheme.primary
                                     )
                                     Text(
                                         text = context.getString(R.string.search_see_all_songs, songs.size),
                                         style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
                                 Icon(
                                     imageVector = RhythmIcons.Forward,
                                     contentDescription = "View all",
-                                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
                                     
                                     modifier = Modifier.size(24.dp)
                                 )
@@ -1359,6 +1284,8 @@ fun SearchResults(
             }
         }
         
+        // Add bottom spacing
+        item { Spacer(modifier = Modifier.height(88.dp)) }
     }
 }
 
@@ -1638,9 +1565,8 @@ fun SearchSongItem(
             onClick()
         },
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         shape = RoundedCornerShape(12.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -1692,8 +1618,8 @@ fun SearchSongItem(
                 },
                 modifier = Modifier.size(36.dp),
                 colors = IconButtonDefaults.filledIconButtonColors(
-                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer
                 )
             ) {
                 Icon(
@@ -1723,9 +1649,8 @@ fun SearchAlbumItem(
             }),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+            containerColor = MaterialTheme.colorScheme.surface
+        )
     ) {
         Column(
             modifier = Modifier.padding(8.dp)
@@ -1779,9 +1704,8 @@ fun SearchArtistItem(
             }),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+            containerColor = MaterialTheme.colorScheme.surface
+        )
     ) {
         Column(
             modifier = Modifier.padding(12.dp),
@@ -1865,9 +1789,8 @@ fun SearchPlaylistItem(
             .padding(vertical = 6.dp), // Added vertical padding for consistency
         shape = RoundedCornerShape(20.dp), // Increased radius
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+        )
     ) {
         Column(
             modifier = Modifier.padding(12.dp),
@@ -1885,7 +1808,7 @@ fun SearchPlaylistItem(
                 Surface(
                     modifier = Modifier.size(68.dp),
                     shape = RoundedCornerShape(25.dp),
-                    color = MaterialTheme.colorScheme.tertiaryContainer
+                    color = MaterialTheme.colorScheme.primaryContainer
                 ) {
                     Box(
                         modifier = Modifier.fillMaxSize(),
@@ -2922,9 +2845,6 @@ fun AllSongsPage(
     haptics: androidx.compose.ui.hapticfeedback.HapticFeedback // Add haptics parameter
 ) {
     val context = LocalContext.current
-    val miniPlayerBottomPadding = LocalMiniPlayerPadding.current.calculateBottomPadding()
-    val contentBottomPadding = (miniPlayerBottomPadding + 20.dp).coerceAtLeast(96.dp)
-
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
             modifier = Modifier
@@ -2948,12 +2868,7 @@ fun AllSongsPage(
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(
-                start = 16.dp,
-                end = 16.dp,
-                top = 16.dp,
-                bottom = contentBottomPadding
-            ),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 16.dp + 80.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             items(

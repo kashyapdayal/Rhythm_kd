@@ -85,3 +85,4 @@
 # ──────────────────────────────
 -dontwarn java.lang.invoke.**
 -dontwarn javax.annotation.**
+-dontwarn reactor.blockhound.**

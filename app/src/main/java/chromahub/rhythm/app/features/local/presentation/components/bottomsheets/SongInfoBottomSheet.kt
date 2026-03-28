@@ -230,18 +230,16 @@ fun SongInfoBottomSheet(
     
     // Load rhythm stats and rating
     LaunchedEffect(song.id) {
-        song?.let { currentSong ->
-            // Load playback stats
-            songPlaybackStats = withContext(Dispatchers.IO) {
-                chromahub.rhythm.app.shared.data.repository.PlaybackStatsRepository.getInstance(context).getSongPlaybackStats(
-                    currentSong.id,
-                    chromahub.rhythm.app.shared.data.repository.StatsTimeRange.ALL_TIME
-                )
-            }
-            
-            // Load rating
-            songRating = appSettings.getSongRating(currentSong.id)
+        // Load playback stats
+        songPlaybackStats = withContext(Dispatchers.IO) {
+            chromahub.rhythm.app.shared.data.repository.PlaybackStatsRepository.getInstance(context).getSongPlaybackStats(
+                song.id,
+                chromahub.rhythm.app.shared.data.repository.StatsTimeRange.ALL_TIME
+            )
         }
+        
+        // Load rating
+        songRating = appSettings.getSongRating(song.id)
     }
 
     // Animation trigger
@@ -286,16 +284,14 @@ fun SongInfoBottomSheet(
                 Button(
                     onClick = {
                         isLoadingBlacklist = true
-                        song?.let { songToBlock ->
-                            if (isBlacklisted) {
-                                appSettings.removeFromBlacklist(songToBlock.id)
-                            } else {
-                                appSettings.addToBlacklist(songToBlock.id)
-                            }
-                            isLoadingBlacklist = false
-                            val message = if (isBlacklisted) "Song removed from blacklist" else "Song added to blacklist"
-                            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                        if (isBlacklisted) {
+                            appSettings.removeFromBlacklist(song.id)
+                        } else {
+                            appSettings.addToBlacklist(song.id)
                         }
+                        isLoadingBlacklist = false
+                        val message = if (isBlacklisted) "Song removed from blacklist" else "Song added to blacklist"
+                        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
                         showBlacklistTrackConfirm = false
                     },
                     colors = ButtonDefaults.buttonColors(

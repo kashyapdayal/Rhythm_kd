@@ -393,7 +393,7 @@ const updateData = {
 
             <h3>🔊 Audiophile-Grade Playback</h3>
             <ul>
-                <li><strong>High-Resolution Audio Mode</strong> — Preserve native sample rates and bit depths, bypassing Android processing for purer sound</li>
+                <li><strong>Bit Perfect Mode</strong> — Send audio bit-for-bit to your DAC or audio hardware, bypassing all Android processing for the purest possible sound</li>
                 <li><strong>EAC3-JOC Decoder</strong> — Full support for Dolby Atmos / EAC3-JOC encoded files</li>
                 <li><strong>Extended Codec Coverage</strong> — Improved ALAC, OGG, and more with the updated FFmpeg decoder integration</li>
             </ul>

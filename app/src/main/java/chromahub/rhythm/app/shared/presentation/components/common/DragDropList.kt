@@ -5,6 +5,7 @@ import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListItemInfo
 import androidx.compose.foundation.lazy.LazyListState
@@ -119,7 +120,7 @@ fun <T> DragDropLazyColumn(
                     .graphicsLayer {
                         if (isCurrentlyDragged) {
                             translationY = animatedOffset.value
-                            shadowElevation = 0f
+                            shadowElevation = 8f
                             alpha = 0.9f
                         }
                     }

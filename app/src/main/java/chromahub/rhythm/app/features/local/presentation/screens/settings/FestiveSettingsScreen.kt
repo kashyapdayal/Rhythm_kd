@@ -144,6 +144,34 @@ fun FestiveSettingsScreen(
                                     appSettings.setFestiveThemeType("NEW_YEAR") 
                                 }
                             )
+                            
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 20.dp),
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
+                            )
+                            
+                            FestiveTypeOption(
+                                icon = Icons.Default.Favorite,
+                                title = "Valentine's Day",
+                                description = "Coming soon",
+                                selected = festiveType == "VALENTINES",
+                                enabled = false,
+                                onClick = { }
+                            )
+                            
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 20.dp),
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
+                            )
+                            
+                            FestiveTypeOption(
+                                icon = Icons.Default.Nightlight,
+                                title = "Halloween",
+                                description = "Coming soon",
+                                selected = festiveType == "HALLOWEEN",
+                                enabled = false,
+                                onClick = { }
+                            )
                         }
                     }
                 }
@@ -294,7 +322,7 @@ private fun FestiveSettingRow(
                 )
             }
         }
-        TunerAnimatedSwitch(
+        Switch(
             checked = checked,
             onCheckedChange = onCheckedChange,
             enabled = enabled

@@ -66,7 +66,6 @@ fun PermissionHandler(
     var permissionScreenState by remember { mutableStateOf<PermissionScreenState>(PermissionScreenState.Loading) }
     var permissionRequestLaunched by remember { mutableStateOf(false) } // New state to track if permission request has been launched
     var showMediaScanLoader by remember { mutableStateOf(false) } // New state for media scan loader
-    var continueFullTour by remember { mutableStateOf(false) }
 
     // Storage permissions based on Android version:
     // - Android 13+ (API 33+): READ_MEDIA_AUDIO (granular media permissions)
@@ -130,14 +129,6 @@ fun PermissionHandler(
             if (onboardingCompleted) OnboardingStep.COMPLETE else OnboardingStep.WELCOME
         )
     }
-
-    fun completeOnboardingNow() {
-        appSettings.setOnboardingCompleted(true)
-        currentOnboardingStep = OnboardingStep.COMPLETE
-        if (!initialMediaScanCompleted) {
-            showMediaScanLoader = true
-        }
-    }
     
     val permissionsState = rememberMultiplePermissionsState(essentialPermissions)
     
@@ -153,8 +144,7 @@ fun PermissionHandler(
         if (hasStoragePermissions) {
             permissionScreenState = PermissionScreenState.PermissionsGranted
             if (!onboardingCompleted) {
-                continueFullTour = false
-                currentOnboardingStep = OnboardingStep.RHYTHM_GUARD
+                currentOnboardingStep = OnboardingStep.BACKUP_RESTORE // Move to backup/restore step first
             } else {
                 currentOnboardingStep = OnboardingStep.COMPLETE
                 onSetIsInitializingApp(true) // Start app initialization
@@ -299,7 +289,8 @@ fun PermissionHandler(
                             // Handle based on current permission state
                             when (permissionScreenState) {
                                 PermissionScreenState.PermissionsGranted -> {
-                                    currentOnboardingStep = OnboardingStep.RHYTHM_GUARD
+                                    // Already granted, move to next step
+                                    currentOnboardingStep = OnboardingStep.NOTIFICATIONS
                                 }
                                 PermissionScreenState.RedirectToSettings -> {
                                     // This is handled by onRequestAgain callback
@@ -319,27 +310,26 @@ fun PermissionHandler(
                                 }
                             }
                         }
-                        OnboardingStep.RHYTHM_GUARD -> currentOnboardingStep = OnboardingStep.MEDIA_SCAN
-                        OnboardingStep.MEDIA_SCAN -> currentOnboardingStep = OnboardingStep.UPDATER
-                        OnboardingStep.UPDATER -> currentOnboardingStep = OnboardingStep.FULL_TOUR_PROMPT
-                        OnboardingStep.FULL_TOUR_PROMPT -> {
-                            currentOnboardingStep = if (continueFullTour) {
-                                OnboardingStep.BACKUP_RESTORE
-                            } else {
-                                OnboardingStep.SETUP_FINISHED
-                            }
-                        }
-                        OnboardingStep.NOTIFICATIONS -> currentOnboardingStep = OnboardingStep.BACKUP_RESTORE
-                        OnboardingStep.BACKUP_RESTORE -> currentOnboardingStep = OnboardingStep.AUDIO_PLAYBACK
-                        OnboardingStep.AUDIO_PLAYBACK -> currentOnboardingStep = OnboardingStep.THEMING
-                        OnboardingStep.THEMING -> currentOnboardingStep = OnboardingStep.GESTURES
-                        OnboardingStep.GESTURES -> currentOnboardingStep = OnboardingStep.WIDGETS
-                        OnboardingStep.LIBRARY_SETUP -> currentOnboardingStep = OnboardingStep.WIDGETS
+                        OnboardingStep.NOTIFICATIONS -> currentOnboardingStep = OnboardingStep.BACKUP_RESTORE // Move to backup restore
+                        OnboardingStep.BACKUP_RESTORE -> currentOnboardingStep = OnboardingStep.AUDIO_PLAYBACK // Move to audio playback
+                        OnboardingStep.AUDIO_PLAYBACK -> currentOnboardingStep = OnboardingStep.THEMING // Move to theming
+                        OnboardingStep.THEMING -> currentOnboardingStep = OnboardingStep.GESTURES // Move to gestures
+                        OnboardingStep.GESTURES -> currentOnboardingStep = OnboardingStep.LIBRARY_SETUP // Move to library setup
+                        OnboardingStep.LIBRARY_SETUP -> currentOnboardingStep = OnboardingStep.MEDIA_SCAN // Move to media scan
+                        OnboardingStep.MEDIA_SCAN -> currentOnboardingStep = OnboardingStep.WIDGETS // Move to widgets
                         OnboardingStep.WIDGETS -> currentOnboardingStep = OnboardingStep.INTEGRATIONS // Move to integrations
                         OnboardingStep.INTEGRATIONS -> currentOnboardingStep = OnboardingStep.RHYTHM_STATS // Move to rhythm stats
-                        OnboardingStep.RHYTHM_STATS -> currentOnboardingStep = OnboardingStep.SETUP_FINISHED // Move to setup finished
+                        OnboardingStep.RHYTHM_STATS -> currentOnboardingStep = OnboardingStep.UPDATER // Move to updater
+                        OnboardingStep.UPDATER -> currentOnboardingStep = OnboardingStep.SETUP_FINISHED // Move to setup finished
                         OnboardingStep.SETUP_FINISHED -> {
-                            completeOnboardingNow()
+                            appSettings.setOnboardingCompleted(true) // Mark onboarding as complete
+                            currentOnboardingStep = OnboardingStep.COMPLETE // Move to complete
+                            // Show media scan loader only after onboarding completion for the first time
+                            if (!initialMediaScanCompleted) {
+                                showMediaScanLoader = true
+                            }
+                            // The evaluatePermissionsAndSetStep will handle setting isInitializingApp = true
+                            // and then false after service init.
                         }
                         OnboardingStep.COMPLETE -> { /* Should not happen */ }
                     }
@@ -347,42 +337,27 @@ fun PermissionHandler(
                 onPrevStep = {
                     when (currentOnboardingStep) {
                         OnboardingStep.PERMISSIONS -> currentOnboardingStep = OnboardingStep.WELCOME
-                        OnboardingStep.RHYTHM_GUARD -> {
+                        OnboardingStep.NOTIFICATIONS -> {
                             currentOnboardingStep = OnboardingStep.PERMISSIONS
+                            // Re-evaluate permissions when going back to permission screen
                             scope.launch {
-                                onSetIsLoading(false)
+                                onSetIsLoading(false) // Ensure not loading
                                 evaluatePermissionsAndSetStep()
                             }
                         }
-                        OnboardingStep.MEDIA_SCAN -> currentOnboardingStep = OnboardingStep.RHYTHM_GUARD
-                        OnboardingStep.UPDATER -> currentOnboardingStep = OnboardingStep.MEDIA_SCAN
-                        OnboardingStep.FULL_TOUR_PROMPT -> currentOnboardingStep = OnboardingStep.UPDATER
-                        OnboardingStep.NOTIFICATIONS -> currentOnboardingStep = OnboardingStep.FULL_TOUR_PROMPT
-                        OnboardingStep.BACKUP_RESTORE -> currentOnboardingStep = OnboardingStep.FULL_TOUR_PROMPT
+                        OnboardingStep.BACKUP_RESTORE -> currentOnboardingStep = OnboardingStep.NOTIFICATIONS
                         OnboardingStep.AUDIO_PLAYBACK -> currentOnboardingStep = OnboardingStep.BACKUP_RESTORE
                         OnboardingStep.THEMING -> currentOnboardingStep = OnboardingStep.AUDIO_PLAYBACK
                         OnboardingStep.GESTURES -> currentOnboardingStep = OnboardingStep.THEMING
                         OnboardingStep.LIBRARY_SETUP -> currentOnboardingStep = OnboardingStep.GESTURES
-                        OnboardingStep.WIDGETS -> currentOnboardingStep = OnboardingStep.GESTURES
+                        OnboardingStep.MEDIA_SCAN -> currentOnboardingStep = OnboardingStep.LIBRARY_SETUP
+                        OnboardingStep.WIDGETS -> currentOnboardingStep = OnboardingStep.MEDIA_SCAN
                         OnboardingStep.INTEGRATIONS -> currentOnboardingStep = OnboardingStep.WIDGETS
                         OnboardingStep.RHYTHM_STATS -> currentOnboardingStep = OnboardingStep.INTEGRATIONS
-                        OnboardingStep.SETUP_FINISHED -> {
-                            currentOnboardingStep = if (continueFullTour) {
-                                OnboardingStep.RHYTHM_STATS
-                            } else {
-                                OnboardingStep.FULL_TOUR_PROMPT
-                            }
-                        }
+                        OnboardingStep.UPDATER -> currentOnboardingStep = OnboardingStep.RHYTHM_STATS
+                        OnboardingStep.SETUP_FINISHED -> currentOnboardingStep = OnboardingStep.UPDATER
                         else -> { /* Should not happen for WELCOME or COMPLETE */ }
                     }
-                },
-                onContinueFullTour = {
-                    continueFullTour = true
-                    currentOnboardingStep = OnboardingStep.BACKUP_RESTORE
-                },
-                onSkipFullTour = {
-                    continueFullTour = false
-                    completeOnboardingNow()
                 },
                 onRequestAgain = {
                     // This is for "Open App Settings" or re-requesting permissions
@@ -398,7 +373,15 @@ fun PermissionHandler(
                 themeViewModel = themeViewModel,
                 appSettings = appSettings, // Pass appSettings to OnboardingScreen
                 onFinish = {
-                    completeOnboardingNow()
+                    // Handle the finish setup button - same logic as SETUP_FINISHED in onNextStep
+                    appSettings.setOnboardingCompleted(true) // Mark onboarding as complete
+                    currentOnboardingStep = OnboardingStep.COMPLETE // Move to complete
+                    // Show media scan loader only after onboarding completion for the first time
+                    if (!initialMediaScanCompleted) {
+                        showMediaScanLoader = true
+                    }
+                    // The evaluatePermissionsAndSetStep will handle setting isInitializingApp = true
+                    // and then false after service init.
                 }
             )
         }

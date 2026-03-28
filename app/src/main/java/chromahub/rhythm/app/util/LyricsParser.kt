@@ -74,7 +74,7 @@ object LyricsParser {
                     romanization = line.substring(1, line.length - 1).trim()
                 }
                 // If main text has non-ASCII and this line has ASCII, it's likely romanization
-                mainText.any { it.toInt() > 127 } && line.all { it.toInt() <= 127 || it.isWhitespace() } -> {
+                mainText.any { it.code > 127 } && line.all { it.code <= 127 || it.isWhitespace() } -> {
                     romanization = line
                 }
                 // Otherwise, treat as translation

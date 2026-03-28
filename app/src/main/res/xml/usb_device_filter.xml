@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    USB device filter for Rhythm.
+    This tells Android to offer Rhythm as the app to handle USB audio devices.
+    USB Audio Device Class = 0x01. When a device with this class is plugged in,
+    Android will show the "Open Rhythm to handle USB-C Audio?" system dialog.
+-->
+<resources>
+    <!-- Match any USB Audio Class device (class 0x01 = USB Audio) -->
+    <usb-device class="1" />
+    <!-- TTGK USB-C Audio DAC — VID 0x3302=13058, PID 0x3360=13152 (decimal) -->
+    <usb-device vendor-id="13058" product-id="13152"/>
+</resources>

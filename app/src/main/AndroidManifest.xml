@@ -14,6 +14,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- Optional permission for auto-update installation from GitHub -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" android:required="false" />
     <uses-permission android:name="android.permission.VIBRATE" />
@@ -26,6 +27,10 @@
                      android:usesPermissionFlags="neverForLocation"
                      tools:targetApi="s" />
 
+    <!-- USB Host permissions for exclusive USB DAC access -->
+    <uses-permission android:name="android.permission.MANAGE_USB" tools:ignore="ProtectedPermissions" />
+    <uses-feature android:name="android.hardware.usb.host" android:required="false" />
+
     <queries>
         <intent>
             <action android:name="android.media.browse.MediaBrowserService" />
@@ -34,6 +39,12 @@
             <action android:name="androidx.media3.session.MediaSessionService" />
         </intent>
     </queries>
+
+    <!-- Attribution tags to silence AppOps "attributionTag not declared" errors -->
+    <attribution android:tag="media_playback" android:label="@string/attribution_media_playback" />
+    <attribution android:tag="usb_audio" android:label="@string/attribution_usb_audio" />
+    <attribution android:tag="playback" android:label="@string/attribution_media_playback" />
+    <attribution android:tag="siphon" android:label="@string/attribution_usb_audio" />
 
     <application
         android:name=".RhythmApplication"
@@ -73,6 +84,21 @@
             android:name="androidx.mediarouter.media.MediaTransferReceiver"
             android:exported="true">
         </receiver>
+
+        <!-- USB Audio Receiver — triggers OS 'Open Rhythm to handle USB-C Audio?' dialog -->
+        <receiver
+            android:name=".infrastructure.audio.UsbAudioReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
+                <action android:name="android.hardware.usb.action.USB_DEVICE_DETACHED" />
+                <action android:name="chromahub.rhythm.app.USB_PERMISSION" />
+            </intent-filter>
+            <!-- This metadata tells Android to only trigger the dialog for USB audio class devices -->
+            <meta-data
+                android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
+                android:resource="@xml/usb_device_filter" />
+        </receiver>
         
         <!-- Music Widget Receiver (Legacy RemoteViews) -->
         <receiver
@@ -111,6 +137,7 @@
             <intent-filter>
                 <action android:name="androidx.media3.session.MediaSessionService" />
                 <action android:name="android.media.browse.MediaBrowserService" />
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
             </intent-filter>
             <meta-data
                 android:name="androidx.media3.ui.PlayerNotificationManager.smallIcon"
@@ -131,18 +158,20 @@
                 android:name="androidx.media3.session.notification.small_icon"
                 android:resource="@drawable/ic_notification" />
         </service>
+
+        <receiver
+            android:name=".infrastructure.service.MediaButtonIntentReceiver"
+            android:exported="true">
+            <intent-filter android:priority="1000">
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
         
         <activity
             android:name=".activities.CrashActivity"
             android:exported="false"
             android:theme="@style/Theme.Rhythm"
             android:process=":crash_process" />
-
-        <activity
-            android:name=".activities.RhythmGuardTimeoutActivity"
-            android:exported="false"
-            android:theme="@style/Theme.Rhythm"
-            android:launchMode="singleTop" />
 
         <activity
             android:name=".activities.MainActivity"
@@ -156,6 +185,14 @@
                 <category android:name="android.intent.category.LAUNCHER" />
                 <category android:name="android.intent.category.APP_MUSIC" />
             </intent-filter>
+            
+            <!-- USB device filter for auto-launch on DAC connect -->
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"/>
+            </intent-filter>
+            <meta-data
+                android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
+                android:resource="@xml/usb_device_filter"/>
             
             <!-- Handle playlists -->
             <intent-filter>

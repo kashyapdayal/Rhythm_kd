@@ -3,7 +3,7 @@
 Open-source Material You music player with audiophile-grade audio, zero tracking, and zero ads.
 
 <b>🔊 Sound That Moves You</b>
-• High-Resolution Audio Playback — preserve native sample rates and bit depths
+• Bit Perfect Playback — pure audio sent direct to your hardware
 • 10-Band Equalizer + 6,000+ AutoEQ device presets
 • Gapless playback, EAC3-JOC/Dolby Atmos codec support
 • FLAC, ALAC, MP3, AAC, Opus, WAV, OGG & more

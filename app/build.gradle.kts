@@ -2,10 +2,10 @@ import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+
     alias(libs.plugins.ksp)
-    id("kotlin-parcelize")
+    id("org.jetbrains.kotlin.plugin.parcelize")
 //    alias(libs.plugins.kotlin.serialization)
 }
 
@@ -17,8 +17,8 @@ android {
         applicationId = "chromahub.rhythm.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 45351940
-        versionName = "4.5.351.940"
+        versionCode = 44347928
+        versionName = "4.4.347.928"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -70,8 +70,6 @@ android {
         signingConfigs.getByName("debug")
     }
 
-    defaultConfig {
-    }
 
     buildTypes {
         release {
@@ -134,6 +132,14 @@ android {
         resources {
             merges += "/META-INF/INDEX.LIST"
             merges += "**/io.netty.versions.properties"
+            excludes += "META-INF/services/reactor.blockhound.integration.BlockHoundIntegration"
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
         }
     }
 
@@ -147,13 +153,14 @@ android {
         }
     }
 
-    applicationVariants.all {
-        outputs.all {
-            (this as com.android.build.gradle.internal.api.BaseVariantOutputImpl).outputFileName =
-                "Rhythm-${defaultConfig.versionName}-${name}.apk"
-        }
-    }
+//    applicationVariants.all {
+//        outputs.all {
+//            (this as com.android.build.gradle.internal.api.BaseVariantOutputImpl).outputFileName =
+//                "Rhythm-${defaultConfig.versionName}-${name}.apk"
+//        }
+//    }
 }
+
 
 dependencies {
     // Desugaring library
@@ -175,15 +182,15 @@ dependencies {
     
     // Material 3 dependencies
     implementation(platform(libs.androidx.compose.bom))
-    implementation("androidx.compose.material3:material3-android:1.5.0-alpha16")
-    implementation("androidx.compose.material3:material3-window-size-class-android:1.5.0-alpha16")
+    implementation("androidx.compose.material3:material3-android:1.5.0-alpha15")
+    implementation("androidx.compose.material3:material3-window-size-class-android:1.5.0-alpha15")
     implementation("com.google.android.material:material:1.13.0-alpha05")
 
     // Media3 dependencies
-    implementation("androidx.media3:media3-exoplayer:1.10.0")
-    implementation("androidx.media3:media3-exoplayer-dash:1.10.0")
-    implementation("androidx.media3:media3-ui:1.10.0")
-    implementation("androidx.media3:media3-session:1.10.0")
+    implementation("androidx.media3:media3-exoplayer:1.9.2")
+    implementation("androidx.media3:media3-exoplayer-dash:1.9.2")
+    implementation("androidx.media3:media3-ui:1.9.2")
+    implementation("androidx.media3:media3-session:1.9.2")
     implementation("org.jellyfin.media3:media3-ffmpeg-decoder:1.9.0+1")
     
     // Icons
@@ -195,7 +202,7 @@ dependencies {
     implementation("androidx.glance:glance-material3:1.1.1")
     
     // Physics-based animations
-    implementation("androidx.compose.animation:animation:1.10.6")
+    implementation("androidx.compose.animation:animation:1.10.5")
     //noinspection GradleDependency
     implementation("androidx.compose.animation:animation-graphics:1.8.3")
     implementation(libs.androidx.compose.animation.core)
@@ -237,7 +244,7 @@ dependencies {
     implementation(libs.androidx.foundation.layout)
     
     // WorkManager for background tasks
-    implementation("androidx.work:work-runtime-ktx:2.11.2")
+    implementation("androidx.work:work-runtime-ktx:2.11.1")
     
     // Room database
     implementation(libs.androidx.room.runtime)

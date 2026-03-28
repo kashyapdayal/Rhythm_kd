@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.rounded.*
+import androidx.compose.material.icons.automirrored.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -115,7 +116,7 @@ fun SleepTimerBottomSheetNew(
     
     // Action options
     val actionOptions = listOf(
-        Triple(SleepAction.FADE_OUT, "Fade Out", Icons.Rounded.VolumeDown),
+        Triple(SleepAction.FADE_OUT, "Fade Out", Icons.AutoMirrored.Rounded.VolumeDown),
         Triple(SleepAction.PAUSE, "Pause", Icons.Rounded.Pause),
         Triple(SleepAction.STOP, "Stop", Icons.Rounded.Stop)
     )
@@ -299,7 +300,7 @@ fun SleepTimerBottomSheetNew(
                                     colors = ButtonDefaults.outlinedButtonColors(
                                         contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                                     ),
-                                    border = ButtonDefaults.outlinedButtonBorder.copy(
+                                    border = ButtonDefaults.outlinedButtonBorder(enabled = true).copy(
                                         brush = androidx.compose.foundation.BorderStroke(
                                             1.dp, 
                                             MaterialTheme.colorScheme.onPrimaryContainer
