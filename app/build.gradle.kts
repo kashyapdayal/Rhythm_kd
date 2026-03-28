@@ -17,8 +17,8 @@ android {
         applicationId = "chromahub.rhythm.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 45350936
-        versionName = "4.5.350.936"
+        versionCode = 45351940
+        versionName = "4.5.351.940"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -180,10 +180,10 @@ dependencies {
     implementation("com.google.android.material:material:1.13.0-alpha05")
 
     // Media3 dependencies
-    implementation("androidx.media3:media3-exoplayer:1.9.3")
-    implementation("androidx.media3:media3-exoplayer-dash:1.9.3")
-    implementation("androidx.media3:media3-ui:1.9.3")
-    implementation("androidx.media3:media3-session:1.9.3")
+    implementation("androidx.media3:media3-exoplayer:1.10.0")
+    implementation("androidx.media3:media3-exoplayer-dash:1.10.0")
+    implementation("androidx.media3:media3-ui:1.10.0")
+    implementation("androidx.media3:media3-session:1.10.0")
     implementation("org.jellyfin.media3:media3-ffmpeg-decoder:1.9.0+1")
     
     // Icons
