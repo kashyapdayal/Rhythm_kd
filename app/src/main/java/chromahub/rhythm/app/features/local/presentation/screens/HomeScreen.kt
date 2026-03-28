@@ -216,6 +216,7 @@ import androidx.core.text.HtmlCompat
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun HomeScreen(
+    musicViewModel: chromahub.rhythm.app.viewmodel.MusicViewModel,
     songs: List<Song>,
     albums: List<Album>,
     artists: List<Artist>,
@@ -244,7 +245,6 @@ fun HomeScreen(
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val coroutineScope = rememberCoroutineScope()
-    val musicViewModel = viewModel<chromahub.rhythm.app.viewmodel.MusicViewModel>()
     val haptics = LocalHapticFeedback.current
     val context = LocalContext.current
     val appSettings = remember { AppSettings.getInstance(context) }
@@ -449,7 +449,6 @@ fun HomeScreen(
     }
 
     if (showAddToPlaylistSheet && selectedSongForPlaylist != null) {
-        val musicViewModel = viewModel<chromahub.rhythm.app.viewmodel.MusicViewModel>()
         val playlists by musicViewModel.playlists.collectAsState()
 
         AddToPlaylistBottomSheet(
