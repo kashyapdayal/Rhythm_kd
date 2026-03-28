@@ -2,11 +2,12 @@
 #include <android/log.h>
 #include <cstdint>
 #include <cstring>
+#include <mutex>
 
 #include "siphon_usb_driver.cpp"
 #include "siphon_software_gain.h"
 
-static JavaVM* gJvm = nullptr;
+JavaVM* gJvm = nullptr;
 
 extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
     gJvm = vm;
@@ -38,8 +39,10 @@ void notifyDeviceLost() {
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
 
-
 // ── Global state ──────────────────────────────────────────────────────
+// FIX #6: Mutex protects gUsbDriver against concurrent init/release calls
+// triggered by rapid MTK HAL disconnect bursts (multiple port state callbacks)
+static std::mutex gDriverMutex;
 static SiphonUsbDriver* gUsbDriver = nullptr;
 static bool gUsbIsHardwareMode = false;
 static int gChannels = 2;
@@ -47,6 +50,7 @@ static int gBitDepth = 16;
 static float gCurrentVolume = 1.0f;
 
 static void releaseAll() {
+    std::lock_guard<std::mutex> lock(gDriverMutex);
     if (gUsbDriver) {
         gUsbDriver->release();
         delete gUsbDriver;
@@ -74,6 +78,8 @@ Java_chromahub_rhythm_app_infrastructure_audio_siphon_SiphonIsochronousEngine_na
     jint endpointAddress
 ) {
     releaseAll();
+
+    std::lock_guard<std::mutex> lock(gDriverMutex);
     gChannels = channelCount > 0 ? channelCount : 2;
     gBitDepth = bitDepth > 0 ? bitDepth : 16;
     gCurrentVolume = 1.0f;
@@ -188,6 +194,9 @@ Java_chromahub_rhythm_app_infrastructure_audio_siphon_SiphonIsochronousEngine_na
       LOGI("nativeAttachKernelDriver: snd-usb-audio re-attached. Zombie cleared.");
     } else if (r == LIBUSB_ERROR_BUSY || r == LIBUSB_ERROR_NOT_FOUND) {
       LOGI("nativeAttachKernelDriver: %s - already clean", libusb_error_name(r));
+      r = 0;
+    } else if (r == LIBUSB_ERROR_NO_DEVICE) {
+      LOGI("nativeAttachKernelDriver: device already unplugged — nothing to re-attach (clean exit)");
       r = 0;
     } else {
       LOGW("nativeAttachKernelDriver: failed: %s", libusb_error_name(r));

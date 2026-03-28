@@ -337,9 +337,14 @@ class MainActivity : ComponentActivity() {
             if (device != null) {
                 Log.d(TAG, "Launched via USB_DEVICE_ATTACHED: ${device.productName}")
                 // Persist so UsbAudioManager picks it up when service starts
-                chromahub.rhythm.app.infrastructure.audio.usb.UsbAudioManager.persistPendingAttach(
-                    applicationContext, device
-                )
+                val sessionManager = chromahub.rhythm.app.infrastructure.audio.UsbAudioReceiver.sessionManagerInstance
+                if (sessionManager != null) {
+                    sessionManager.onDeviceArrived(device)
+                } else {
+                    val cloneIntent = Intent(intent)
+                    cloneIntent.action = UsbManager.ACTION_USB_DEVICE_ATTACHED
+                    sendBroadcast(cloneIntent)
+                }
             }
         }
     }
@@ -697,3 +702,4 @@ class MainActivity : ComponentActivity() {
         return super.onKeyDown(keyCode, event)
     }
 }
+

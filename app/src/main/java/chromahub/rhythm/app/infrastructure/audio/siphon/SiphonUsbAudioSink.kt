@@ -78,6 +78,7 @@ class SiphonUsbAudioSink(
             sampleRate = format.sampleRate,
             channelCount = format.channelCount,
             bitDepth = format.bitDepth,
+            maxPacketSize = deviceCapabilities.maxPacketSize,
             interfaceId = interfaceId,
             endpointAddress = deviceCapabilities.endpointAddress
         )
@@ -149,6 +150,9 @@ class SiphonUsbAudioSink(
                 return -1
             }
             Log.d(TAG, "Set AudioStreaming interface for sample rate ${format.sampleRate}Hz")
+
+            // Bug 7 FIX: Allow AudioFlinger (ALSA) to tear down gracefully before pumping isochronous data
+            Thread.sleep(50)
 
             Log.i(TAG, "USB Host path ACTIVE — AudioFlinger fully bypassed | fd=${usbConnection.fileDescriptor}")
             return audioStreamingInterface.id // Returning ID for cpp bindings

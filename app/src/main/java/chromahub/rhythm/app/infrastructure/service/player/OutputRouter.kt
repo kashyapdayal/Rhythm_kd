@@ -143,6 +143,9 @@ class OutputRouter(
 
     lateinit var playerEngine: RhythmPlayerEngine
 
+    /** Set by MediaPlaybackService — used to check routing transition state. */
+    var sessionManager: chromahub.rhythm.app.infrastructure.audio.siphon.SiphonSessionManager? = null
+
     init {
         SiphonIsochronousEngine.deviceLostListener = {
             Log.w(TAG, "USB DAC lost mid-playback — switching to Standard")
@@ -257,12 +260,17 @@ class OutputRouter(
                 Log.d(TAG, "Device already routed, ignoring repeat attach")
                 return@launch
             }
-            Log.i(TAG, "onUsbDeviceAttached: Re-routing to Siphon USB DAC")
-            executeSwitchToSiphon(device, caps.toDeviceCapabilities())
+            Log.i(TAG, "onUsbDeviceAttached: Re-routing to SiphonSessionManager")
+            val mgr = sessionManager
+            if (mgr != null) {
+                mgr.claimInterface(device, caps.toDeviceCapabilities())
+            } else {
+                executeSwitchToSiphon(device, caps.toDeviceCapabilities())
+            }
         }
     }
 
-    private suspend fun executeSwitchToSiphon(
+    suspend fun executeSwitchToSiphon(
         device: UsbDevice,
         caps: chromahub.rhythm.app.infrastructure.audio.siphon.SiphonDeviceCapabilities
     ) {
@@ -291,6 +299,55 @@ class OutputRouter(
                         .build()
                 ).build()
             siphonAudioManager.requestAudioFocus(focusRequest)
+
+            // ── FIX #7: AudioFlinger eviction — prevent ALSA write storm ──────
+            // Step A: Tell audio policy to disconnect the USB output
+            try {
+                siphonAudioManager.setParameters("usb_out_connected=false")
+                Log.d(TAG, "AudioFlinger eviction: setParameters(usb_out_connected=false)")
+            } catch (e: Exception) {
+                Log.w(TAG, "setParameters failed (non-fatal): ${e.message}")
+            }
+
+            // Step B: Create a brief silent AudioTrack routed to USB, then kill it.
+            // This forces AudioFlinger to cleanly close its ALSA pcm handle on the DAC.
+            try {
+                val usbDeviceInfo = siphonAudioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+                    .firstOrNull { it.type == AudioDeviceInfo.TYPE_USB_DEVICE }
+                if (usbDeviceInfo != null) {
+                    val silentTrack = AudioTrack.Builder()
+                        .setAudioAttributes(
+                            AudioAttributes.Builder()
+                                .setUsage(AudioAttributes.USAGE_MEDIA)
+                                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                                .build()
+                        )
+                        .setAudioFormat(
+                            AudioFormat.Builder()
+                                .setSampleRate(48000)
+                                .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                                .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
+                                .build()
+                        )
+                        .setBufferSizeInBytes(48000 * 2 * 2 / 10) // ~100ms buffer
+                        .setTransferMode(AudioTrack.MODE_STATIC)
+                        .build()
+                    silentTrack.setPreferredDevice(usbDeviceInfo)
+                    val silentBuf = ByteArray(48000 * 2 * 2 / 10) // 100ms of silence
+                    silentTrack.write(silentBuf, 0, silentBuf.size)
+                    silentTrack.play()
+                    delay(SILENT_TRACK_PLAY_MS)
+                    silentTrack.stop()
+                    silentTrack.release()
+                    Log.d(TAG, "AudioFlinger eviction: silent track played and released")
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Silent track eviction failed (non-fatal): ${e.message}")
+            }
+
+            // Step C: Allow ALSA kernel driver to fully release
+            delay(ALSA_RELEASE_DELAY_MS)
+            Log.d(TAG, "AudioFlinger eviction: ALSA release delay complete")
 
             // 4. Detach kernel driver + open device
             val connection = usbManager.openDevice(device)

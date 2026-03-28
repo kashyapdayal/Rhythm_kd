@@ -70,10 +70,10 @@ object SiphonIsochronousEngine {
     }
 
     @JvmStatic
-    fun initLibUSB(usbFd: Int, sampleRate: Int, channelCount: Int, bitDepth: Int, routingMode: Int): Int {
+    fun initLibUSB(usbFd: Int, sampleRate: Int, channelCount: Int, bitDepth: Int, routingMode: Int, maxPacketSize: Int = 0): Int {
         return nativeInit(
             usbFd = usbFd,
-            packetSize = 0,
+            packetSize = maxPacketSize,
             sampleRate = sampleRate,
             channelCount = channelCount,
             bitDepth = bitDepth
@@ -137,11 +137,12 @@ object SiphonIsochronousEngine {
         sampleRate: Int,
         channelCount: Int,
         bitDepth: Int,
+        maxPacketSize: Int,
         interfaceId: Int = 1,
         endpointAddress: Int = 0x01
     ): SiphonEngineType {
         if (usbFd > 0) {
-            val tier2 = nativeInit(usbFd, 0, sampleRate, channelCount, bitDepth, interfaceId, endpointAddress)
+            val tier2 = nativeInit(usbFd, maxPacketSize, sampleRate, channelCount, bitDepth, interfaceId, endpointAddress)
             if (tier2 == 0) {
                 return SiphonEngineType.LIBUSB_DIRECT
             }

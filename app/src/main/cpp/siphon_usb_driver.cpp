@@ -8,6 +8,7 @@
 #include <sys/time.h>
 #include <cstring>
 #include <pthread.h>
+#include <jni.h>
 #include "CircularBuffer.h"
 
 #define LOG_TAG_USBD "SiphonUsbDriver"
@@ -29,7 +30,7 @@ public:
         mChannelCount = channelCount;
         mBitDepth = bitDepth;
         mBytesPerFrame = mChannelCount * ((mBitDepth == 24) ? 3 : (mBitDepth / 8));
-        mPacketSize = packetSize > 0 ? packetSize : (mSampleRate * mBytesPerFrame) / 1000;
+
         mInterfaceId = interfaceId;
         mFrameCounter = 0;
 
@@ -47,10 +48,18 @@ public:
             return -1;
         }
 
+        int speed = libusb_get_device_speed(libusb_get_device(mDevHandle));
+        mPacketsPerMs = (speed == LIBUSB_SPEED_HIGH || speed == LIBUSB_SPEED_SUPER) ? 8 : 1;
+        ULOGI("SiphonUsbDriver: Device speed category=%d. Packets per ms=%d", speed, mPacketsPerMs);
+
+        // FIX: Packet size query moved AFTER alt setting selection (see below).
+        // Querying here returns 0 for alt-setting 0 which has no isoc endpoint.
+
         // ── 2. Detach kernel ALSA driver — THE KEY CALL ────────────────────
         r = libusb_detach_kernel_driver(mDevHandle, mInterfaceId);
         if (r == 0) {
             ULOGI("SiphonUsbDriver: snd-usb-audio detached from interface %d. AudioFlinger evicted. DAC is free.", mInterfaceId);
+            usleep(50000); // 50ms breather for AudioFlinger ALSA thread to die gracefully.
         } else if (r == LIBUSB_ERROR_NOT_FOUND) {
             ULOGI("SiphonUsbDriver: No kernel driver on interface %d — already free.", mInterfaceId);
         } else if (r == LIBUSB_ERROR_NOT_SUPPORTED) {
@@ -76,20 +85,18 @@ public:
         ULOGI("SiphonUsbDriver: Interface %d claimed exclusively. AudioFlinger fully evicted. libusb owns USB DAC. V4A: Processing=No", mInterfaceId);
 
         // ── 4. Select alt setting based on actual bytes-per-millisecond requirement ────
-        // The DAC's MaxPacketSize per alt setting: 1=192, 2=288, 3=384 (typical)
-        // Calculate actual required bandwidth to select the correct alt setting
         int bytesPerSample = (mBitDepth == 24) ? 3 : (mBitDepth / 8);
         int bytesPerSec = mSampleRate * mChannelCount * bytesPerSample;
         int bytesPerMs = bytesPerSec / 1000;
-        
+
         int maxFramesPerMs = mSampleRate / 1000 + ((mSampleRate % 1000 == 0) ? 0 : 1);
         int requiredPacketSize = maxFramesPerMs * mBytesPerFrame;
-        
+
         int altSetting;
         if      (requiredPacketSize <= 192) altSetting = 1;
         else if (requiredPacketSize <= 288) altSetting = 2;
-        else                                 altSetting = 3;
-        
+        else                                altSetting = 3;
+
         ULOGI("SiphonUsbDriver: bytesPerMs=%d, requiredPacketSize=%d, selecting altSetting=%d",
               bytesPerMs, requiredPacketSize, altSetting);
 
@@ -101,10 +108,26 @@ public:
             mDevHandle = nullptr;
             return -6; // SIPHON_ERR_ALT_SETTING_FAILED
         }
+
+        // ── FIX #1: Query max ISO packet size AFTER alt setting is active ──────
+        // This is the critical fix for 96kHz — previously this was called before
+        // alt setting selection, returning 0 for alt-setting 0's non-existent endpoint.
+        int max_iso = libusb_get_max_iso_packet_size(libusb_get_device(mDevHandle), endpointAddress | LIBUSB_ENDPOINT_OUT);
+        if (max_iso > 0) {
+            mPacketSize = max_iso;
+            ULOGI("SiphonUsbDriver: libusb max_iso_packet_size (post-alt-setting) = %d", max_iso);
+        } else if (packetSize > 0) {
+            mPacketSize = packetSize;
+            ULOGI("SiphonUsbDriver: Falling back to provided packetSize = %d", packetSize);
+        } else {
+            mPacketSize = (mSampleRate * mBytesPerFrame) / (1000 * mPacketsPerMs) + mBytesPerFrame;
+            ULOGW("SiphonUsbDriver: No strict packet size found, estimating = %d", mPacketSize);
+        }
+
         ULOGI("SiphonUsbDriver: Alt setting %d active — %d Hz / %d-bit / %d ch / packetSize=%d bytes",
               altSetting, mSampleRate, mBitDepth, mChannelCount, mPacketSize);
 
-        mEndpoint = endpointAddress; // Out endpoint
+        mEndpoint = endpointAddress;
         mRing.clear();
         mFirstTransferLogged.store(false);
         return 0;
@@ -116,7 +139,7 @@ public:
         // NOTE: Software gain is ALREADY applied in siphon_engine.cpp::nativeWritePcm()
         // DO NOT apply gain here again - this maintains bit-perfect output when hardware mode is ON
         // and consistent single-pass gain when software mode is ON
-        
+
         // When isHardwareMode is true, data passes through UNMODIFIED = bit-perfect
         // When isHardwareMode is false, gain was already applied in JNI layer
         return mRing.write(data, size);
@@ -125,32 +148,59 @@ public:
     void start() {
         if (mRunning.exchange(true)) return;
         mThread = std::thread([this]() {
-            // Elevate writer thread to real-time priority for USB audio
-            // Try SCHED_FIFO first (requires root), fall back to SCHED_RR, then nice(-20)
+            // ── FIX #8: Enhanced thread scheduling ─────────────────────
+            // Step 1: Try POSIX real-time schedulers
             struct sched_param param = {};
             param.sched_priority = 90;
-            
+
             if (pthread_setschedparam(pthread_self(), SCHED_FIFO, &param) == 0) {
                 ULOGI("Writer thread running at SCHED_FIFO priority 90");
             } else {
-                // SCHED_FIFO failed (non-root) — try SCHED_RR as fallback
                 param.sched_priority = 50;
                 if (pthread_setschedparam(pthread_self(), SCHED_RR, &param) == 0) {
                     ULOGI("Writer thread running at SCHED_RR priority 50 (FIFO unavailable)");
                 } else {
-                    // Both real-time schedulers failed — use nice to maximize priority
                     nice(-20);
-                    ULOGW("Real-time scheduling unavailable — using nice(-20) for elevated priority");
+                    ULOGW("Real-time scheduling unavailable via pthread — using nice(-20) for elevated priority");
                 }
             }
+
+            // Step 2: Attach to JVM and set Android THREAD_PRIORITY_URGENT_AUDIO (-19)
+            // This maps the thread into Android's real-time audio cgroup for guaranteed scheduling
+            extern JavaVM* gJvm;
+            JNIEnv* env = nullptr;
+            bool jvmAttached = false;
+            if (gJvm) {
+                int status = gJvm->GetEnv((void**)&env, JNI_VERSION_1_6);
+                if (status == JNI_EDETACHED) {
+                    if (gJvm->AttachCurrentThread(&env, nullptr) == 0) jvmAttached = true;
+                }
+                if (env) {
+                    jclass processClass = env->FindClass("android/os/Process");
+                    if (processClass) {
+                        jmethodID setThreadPriority = env->GetStaticMethodID(processClass, "setThreadPriority", "(I)V");
+                        if (setThreadPriority) {
+                            env->CallStaticVoidMethod(processClass, setThreadPriority, -19);
+                            ULOGI("Writer thread set to Android THREAD_PRIORITY_URGENT_AUDIO (-19)");
+                        }
+                        env->DeleteLocalRef(processClass);
+                    }
+                }
+            }
+
             this->runWriter();
+
+            // Detach from JVM when writer loop exits
+            if (jvmAttached && gJvm) {
+                gJvm->DetachCurrentThread();
+            }
         });
         mEventThread = std::thread([this]() { this->runEvents(); });
     }
 
     void stop() {
         if (!mRunning.exchange(false, std::memory_order_seq_cst)) return;
-        
+
         // Signal event loop to wake up if it's blocking
         if (mCtx) {
             libusb_interrupt_event_handler(mCtx);
@@ -160,7 +210,7 @@ public:
             ULOGI("SiphonUsbDriver: Joining writer thread...");
             mThread.join();
         }
-        
+
         if (mEventThread.joinable()) {
             ULOGI("SiphonUsbDriver: Joining event thread...");
             mEventThread.join();
@@ -171,16 +221,17 @@ public:
     void release() {
         stop();
         if (mDevHandle) {
-            // Cancel any remaining transfers before releasing interface
             ULOGI("SiphonUsbDriver: Releasing USB interface and handle.");
             libusb_release_interface(mDevHandle, mInterfaceId);
 
-            // Re-attach the kernel ALSA driver so AudioFlinger can use the device again
+            // ── FIX #9: Treat LIBUSB_ERROR_NO_DEVICE as clean exit on teardown ──
             int r = libusb_attach_kernel_driver(mDevHandle, mInterfaceId);
             if (r == 0) {
                 ULOGI("SiphonUsbDriver: snd-usb-audio re-attached to interface %d. AudioFlinger can reclaim the DAC.", mInterfaceId);
+            } else if (r == LIBUSB_ERROR_NO_DEVICE) {
+                ULOGI("SiphonUsbDriver: Device already unplugged — kernel re-attach skipped (clean exit).");
             } else if (r == LIBUSB_ERROR_NOT_FOUND) {
-                ULOGI("SiphonUsbDriver: No kernel driver was attached, or detach was handled correctly.");
+                ULOGI("SiphonUsbDriver: No kernel driver was attached — nothing to re-attach.");
             } else if (r == LIBUSB_ERROR_NOT_SUPPORTED || r == LIBUSB_ERROR_BUSY) {
                 ULOGI("SiphonUsbDriver: kernel driver re-attach status: %s (harmless)", libusb_error_name(r));
             } else {
@@ -197,16 +248,16 @@ public:
         mFd = -1;
     }
 
-    
-#define UAC2_CLASS_REQUEST     0x21  // bmRequestType: class, interface, host->device
-#define UAC2_CLASS_REQUEST_GET 0xA1  // bmRequestType: class, interface, device->host
+
+#define UAC2_CLASS_REQUEST     0x21
+#define UAC2_CLASS_REQUEST_GET 0xA1
 #define UAC2_SET_CUR           0x01
 #define UAC2_GET_MIN           0x82
 #define UAC2_GET_MAX           0x83
-#define UAC2_VOLUME_CS         0x02  // Volume Control Selector
-#define UAC2_MASTER_CN         0x00  // Master channel
+#define UAC2_VOLUME_CS         0x02
+#define UAC2_MASTER_CN         0x00
 #define UAC2_FEATURE_UNIT_ID   0x02
-#define UAC2_CTRL_INTERFACE    0x00  // Audio Control interface = 0
+#define UAC2_CTRL_INTERFACE    0x00
 
     void queryVolumeRange() {
         if (!mDevHandle) return;
@@ -215,14 +266,12 @@ public:
         uint16_t wValue = (UAC2_VOLUME_CS << 8) | UAC2_MASTER_CN;
         uint16_t wIndex = (UAC2_FEATURE_UNIT_ID << 8) | UAC2_CTRL_INTERFACE;
 
-        // Query minimum
         libusb_control_transfer(mDevHandle,
           UAC2_CLASS_REQUEST_GET, UAC2_GET_MIN,
           wValue, wIndex, data, 2, 500);
         int16_t rawMin = (int16_t)(data[0] | (data[1] << 8));
-        dacMinVolumeDb = std::max(rawMin / 256.0f, -60.0f); // clamp to -60 dB
+        dacMinVolumeDb = std::max(rawMin / 256.0f, -60.0f);
 
-        // Query maximum
         libusb_control_transfer(mDevHandle,
           UAC2_CLASS_REQUEST_GET, UAC2_GET_MAX,
           wValue, wIndex, data, 2, 500);
@@ -234,30 +283,26 @@ public:
     }
 
     int setHardwareVolume(int percent) {
-        if (!mDevHandle) return -3; // SIPHON_ERR_NOT_INITIALIZED
+        if (!mDevHandle) return -3;
         if (!volumeRangeQueried) queryVolumeRange();
 
         uint16_t wValue = (UAC2_VOLUME_CS << 8) | UAC2_MASTER_CN;
         uint16_t wIndex = (UAC2_FEATURE_UNIT_ID << 8) | UAC2_CTRL_INTERFACE;
 
         if (percent <= 0) {
-          // Send MUTE via CUR with minimum value
           unsigned char mute[1] = {1};
           libusb_control_transfer(mDevHandle,
             UAC2_CLASS_REQUEST, UAC2_SET_CUR,
-            0x0100,  // Mute CS
-            wIndex, mute, 1, 500);
+            0x0100, wIndex, mute, 1, 500);
           ULOGI("Hardware volume: MUTED");
-          return 0; // SIPHON_OK
+          return 0;
         }
 
-        // Unmute first
         unsigned char unmute[1] = {0};
         libusb_control_transfer(mDevHandle,
           UAC2_CLASS_REQUEST, UAC2_SET_CUR,
           0x0100, wIndex, unmute, 1, 500);
 
-        // Log taper: same curve as software for consistent feel
         float normalized = percent / 100.0f;
         float dB = dacMinVolumeDb + (normalized * normalized) *
                    (dacMaxVolumeDb - dacMinVolumeDb);
@@ -273,15 +318,14 @@ public:
 
         if (r < 0) {
           ULOGE("setHardwareVolume: control transfer failed: %s", libusb_error_name(r));
-          return -7; // SIPHON_ERR_VOLUME_FAILED
+          return -7;
         }
 
         ULOGI("Hardware volume: %d%% -> %.2f dB (UAC2 0x%04X)", percent, dB, (uint16_t)uac2Val);
-        return 0; // SIPHON_OK
+        return 0;
     }
 
 
-private:
 private:
     std::atomic<int> mActiveTransfers{0};
 
@@ -294,8 +338,8 @@ private:
 
     void runWriter() {
         const int NUM_TRANSFERS = 8;
-        const int PACKETS_PER_TRANSFER = 8;
-        const int MAX_PACKET_SIZE = mPacketSize > 0 ? mPacketSize : ((mSampleRate / 1000 + ((mSampleRate % 1000 == 0) ? 0 : 1)) * mBytesPerFrame); 
+        const int PACKETS_PER_TRANSFER = mPacketsPerMs * 4;
+        const int MAX_PACKET_SIZE = mPacketSize > 0 ? mPacketSize : ((mSampleRate / 1000 + ((mSampleRate % 1000 == 0) ? 0 : 1)) * mBytesPerFrame);
 
         std::vector<libusb_transfer*> transfers;
         for (int i = 0; i < NUM_TRANSFERS; ++i) {
@@ -303,11 +347,11 @@ private:
             uint8_t* buf = new uint8_t[MAX_PACKET_SIZE * PACKETS_PER_TRANSFER];
             t->user_data = this;
             t->buffer = buf;
-            
-            libusb_fill_iso_transfer(t, mDevHandle, mEndpoint | LIBUSB_ENDPOINT_OUT, buf, 
-                                     MAX_PACKET_SIZE * PACKETS_PER_TRANSFER, PACKETS_PER_TRANSFER, 
+
+            libusb_fill_iso_transfer(t, mDevHandle, mEndpoint | LIBUSB_ENDPOINT_OUT, buf,
+                                     MAX_PACKET_SIZE * PACKETS_PER_TRANSFER, PACKETS_PER_TRANSFER,
                                      isoCallback, this, 1000);
-            
+
             libusb_set_iso_packet_lengths(t, MAX_PACKET_SIZE);
             transfers.push_back(t);
         }
@@ -319,7 +363,7 @@ private:
         }
 
         while (mRunning.load(std::memory_order_acquire)) {
-            usleep(50000); 
+            usleep(50000);
         }
 
         for (auto t : transfers) {
@@ -336,33 +380,33 @@ private:
         }
     }
 
-        void fillTransferAndSubmit(libusb_transfer* t) {
+    void fillTransferAndSubmit(libusb_transfer* t) {
         if (!mRunning.load(std::memory_order_acquire)) return;
 
         int totalBytes = 0;
 
         for (int i = 0; i < t->num_iso_packets; ++i) {
-            int frames = mSampleRate / 1000;
-            mFrameCounter += (mSampleRate % 1000);
-            if (mFrameCounter >= 1000) {
+            int baseFrames = mSampleRate / (1000 * mPacketsPerMs);
+            mFrameCounter += (mSampleRate % (1000 * mPacketsPerMs));
+
+            int frames = baseFrames;
+            if (mFrameCounter >= (1000 * mPacketsPerMs)) {
                 frames += 1;
-                mFrameCounter -= 1000;
+                mFrameCounter -= (1000 * mPacketsPerMs);
             }
-            
+
             int packetBytes = frames * mBytesPerFrame;
             t->iso_packet_desc[i].length = packetBytes;
             totalBytes += packetBytes;
         }
 
-        // We must also update the transfer total length 
-        // to match the sum of all packet lengths!
         t->length = totalBytes;
 
         size_t readBytes = mRing.read(t->buffer, totalBytes);
         if (readBytes < static_cast<size_t>(totalBytes)) {
             memset(t->buffer + readBytes, 0, totalBytes - readBytes);
         }
-        
+
         int r = libusb_submit_transfer(t);
         if (r == LIBUSB_ERROR_NO_DEVICE || r == LIBUSB_ERROR_IO) {
             ULOGW("SiphonUsbDriver: device lost during playback: %s", libusb_error_name(r));
@@ -403,20 +447,14 @@ private:
     int mBytesPerFrame = 4;
     int mPacketSize = 0;
     int mFrameCounter = 0;
-    
+    int mPacketsPerMs = 1;
+
     rhythm::CircularBuffer mRing;
     std::atomic<bool> mRunning{false};
     std::atomic<bool> mFirstTransferLogged{false};
     std::thread mThread;
-        float dacMinVolumeDb = -60.0f;
+    std::thread mEventThread;
+    float dacMinVolumeDb = -60.0f;
     float dacMaxVolumeDb = 0.0f;
     bool volumeRangeQueried = false;
-std::thread mEventThread;
 };
-
-
-
-
-
-
-

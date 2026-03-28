@@ -28,6 +28,11 @@ class UsbAudioReceiver : BroadcastReceiver() {
         // This is needed because manifest-registered BroadcastReceivers create new instances
         @Volatile
         var usbAudioManagerInstance: UsbAudioManager? = null
+
+        // Singleton reference to the SiphonSessionManager — set by MediaPlaybackService
+        // Routes USB lifecycle events through the centralized gatekeeper
+        @Volatile
+        var sessionManagerInstance: chromahub.rhythm.app.infrastructure.audio.siphon.SiphonSessionManager? = null
         
         // Queue events that arrive before UsbAudioManager is ready (Bug 2 fix)
         private val pendingEvents = mutableListOf<Intent>()
@@ -56,7 +61,15 @@ class UsbAudioReceiver : BroadcastReceiver() {
                     }
                     if (device != null && isUsbAudioDevice(device)) {
                         Log.d(TAG, "USB audio device attached: ${device.productName}")
-                        manager.onUsbDeviceAttached(device)
+                        // Route through SiphonSessionManager first (centralized gatekeeper)
+                        // It will check exclusive mode before deciding whether to claim
+                        val sessionMgr = sessionManagerInstance
+                        if (sessionMgr != null) {
+                            sessionMgr.onDeviceArrived(device)
+                        } else {
+                            // Fallback: session manager not yet wired, use direct path
+                            manager.onUsbDeviceAttached(device)
+                        }
                     }
                 }
 
@@ -69,6 +82,8 @@ class UsbAudioReceiver : BroadcastReceiver() {
                     }
                     if (device != null) {
                         Log.d(TAG, "USB audio device detached: ${device.productName}")
+                        // Notify both session manager AND audio manager
+                        sessionManagerInstance?.onDeviceRemoved(device)
                         manager.onUsbDeviceDetached()
                     }
                 }
@@ -83,6 +98,7 @@ class UsbAudioReceiver : BroadcastReceiver() {
                     val granted = intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)
                     Log.d(TAG, "USB permission result for ${device?.productName}: granted=$granted")
                     if (device != null) {
+                        sessionManagerInstance?.onPermissionResult(device, granted)
                         manager.onPermissionResult(device, granted)
                     }
                 }
@@ -127,3 +143,4 @@ class UsbAudioReceiver : BroadcastReceiver() {
         processEvent(manager, intent)
     }
 }
+

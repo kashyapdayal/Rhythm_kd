@@ -1023,7 +1023,6 @@ fun SettingsScreenWrapper(
                         SettingsRoutes.EXPRESSIVE_SHAPES -> ExpressiveShapesSettingsScreen(onBackClick = { currentRoute = null })
                         SettingsRoutes.LIBRARY_SETTINGS -> LibrarySettingsScreen(onBackClick = { currentRoute = null })
                         SettingsRoutes.AUDIO_QUALITY -> chromahub.rhythm.app.features.local.presentation.screens.settings.AudioQualitySettingsScreen(onNavigateBack = { currentRoute = null })
-                        SettingsRoutes.AUDIO_EFFECTS -> chromahub.rhythm.app.features.local.presentation.screens.settings.AudioEffectsSettingsScreen(onBackClick = { currentRoute = null }, onNavigateToEqualizer = { currentRoute = SettingsRoutes.EQUALIZER })
                         else -> PlaceholderSettingsScreen()
                     }
                 }
@@ -1136,7 +1135,6 @@ fun SettingsScreenWrapper(
                 SettingsRoutes.EXPRESSIVE_SHAPES -> ExpressiveShapesSettingsScreen(onBackClick = { currentRoute = null })
                 SettingsRoutes.LIBRARY_SETTINGS -> LibrarySettingsScreen(onBackClick = { currentRoute = null })
                 SettingsRoutes.AUDIO_QUALITY -> chromahub.rhythm.app.features.local.presentation.screens.settings.AudioQualitySettingsScreen(onNavigateBack = { currentRoute = null })
-                SettingsRoutes.AUDIO_EFFECTS -> chromahub.rhythm.app.features.local.presentation.screens.settings.AudioEffectsSettingsScreen(onBackClick = { currentRoute = null }, onNavigateToEqualizer = { currentRoute = SettingsRoutes.EQUALIZER })
                 else -> SettingsScreen(
                     onBackClick = handleBack,
                     onNavigateTo = onNavigateToSubsetting,

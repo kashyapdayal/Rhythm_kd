@@ -379,7 +379,14 @@ class RhythmPlayerEngine(
                         "enc=${format.pcmEncoding}, bitrate=${format.bitrate}")
                 // format log removed
             } else {
-                Log.w(TAG, "⚡ onTracksChanged: No audio track selected!")
+                // Suppress warning during USB routing transitions (Siphon claim/release)
+                val isTransitioning = outputRouter?.sessionManager?.isRoutingTransitionInProgress() == true
+                    || outputRouter?.isRoutingChangePending() == true
+                if (isTransitioning) {
+                    Log.d(TAG, "⚡ onTracksChanged: No audio track selected (expected — routing transition in progress)")
+                } else {
+                    Log.w(TAG, "⚡ onTracksChanged: No audio track selected!")
+                }
             }
         }
 

@@ -1,19 +1,12 @@
 package chromahub.rhythm.app.infrastructure.audio.siphon
 
-import android.content.BroadcastReceiver
 import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import androidx.media3.exoplayer.audio.AudioSink
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 
 class SiphonManager(
     private val context: Context,
@@ -49,24 +42,11 @@ class SiphonManager(
     private var activeDevice: UsbDevice? = null
     private var activeConnection: android.hardware.usb.UsbDeviceConnection? = null
     
-    // Register for USB attach/detach events
-    private val usbEventReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) {
-            when (intent.action) {
-                UsbManager.ACTION_USB_DEVICE_ATTACHED -> {
-                    val device: UsbDevice? = 
-                        intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
-                    device?.let { onUsbDeviceAttached(it) }
-                }
-                UsbManager.ACTION_USB_DEVICE_DETACHED -> {
-                    disconnect()
-                }
-            }
-        }
-    }
-    
-    private var isUsbEventReceiverRegistered = false
-    
+    /**
+     * Initialize Siphon engine listeners.
+     * NOTE: USB lifecycle (attach/detach/permission) is now managed by SiphonSessionManager.
+     * This method only sets up the native engine callbacks and zombie recovery.
+     */
     fun start() {
         if (!SiphonIsochronousEngine.isNativeLoaded) {
             android.util.Log.e("SiphonManager", "Siphon engine native library failed to load - aborting Siphon start")
@@ -85,30 +65,9 @@ class SiphonManager(
                 markSiphonActive(true)
             }
         }
-
-        // Register USB events
-        if (!isUsbEventReceiverRegistered) {
-            val filter = IntentFilter().apply {
-                addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED)
-                addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
-            }
-            context.registerReceiver(usbEventReceiver, filter)
-            isUsbEventReceiverRegistered = true
-        }
         
-        // Recover from zombie state before checking current device
+        // Recover from zombie state (crash loop prevention)
         recoverFromZombieState()
-
-        // If recoverFromZombieState decided we shouldn't continue, return early
-        if (wasSiphonActiveOnLastClose()) {
-             // In fact, recoverFromZombieState just clears flags.
-             // But the instructions say: "MUST return here. No native calls. No SiphonGain. No openDevice(). Nothing."
-             // So if we just 'recovered', we stop start() for this tick.
-             return
-        }
-
-        // Check if USB device already connected at startup
-        usbDriver.findUsbAudioDevice()?.let { onUsbDeviceAttached(it) }
     }
 
     fun recoverFromZombieState() {
@@ -120,34 +79,13 @@ class SiphonManager(
             return // MUST return here to prevent fallthrough to onUsbDeviceAttached()
         }
     }
+
     
-    private fun onUsbDeviceAttached(device: UsbDevice) {
-        // CRITICAL FIX: Check Exclusive Mode BEFORE attempting any Siphon connection
-        // This prevents the AudioFlinger/Siphon conflict where both try to own the USB device
-        GlobalScope.launch(Dispatchers.Main) {
-            val exclusiveEnabled = audioQualityDataStore?.usbExclusiveModeEnabled
-                ?.first() ?: true // Default to true if no datastore (legacy behavior)
-            
-            if (!exclusiveEnabled) {
-                android.util.Log.d("SiphonManager", "USB DAC attached but Exclusive Mode is OFF — " +
-                    "Siphon will NOT claim device. AudioFlinger remains in control.")
-                _state.value = SiphonState.Disconnected
-                return@launch
-            }
-            
-            _state.value = SiphonState.RequestingPermission
-            
-            permissionHandler.requestPermission(device) { granted ->
-                if (granted) {
-                    connectToDevice(device)
-                } else {
-                    _state.value = SiphonState.PermissionDenied(device)
-                }
-            }
-        }
-    }
-    
-    private fun connectToDevice(device: UsbDevice) {
+    /**
+     * Connect to a USB DAC device. Called by SiphonSessionManager after all gates
+     * (exclusive mode, permission, AudioFlinger eviction) have passed.
+     */
+    fun connectToDevice(device: UsbDevice) {
         _state.value = SiphonState.Connecting(device)
         
         val pair = usbDriver.openDevice(device)

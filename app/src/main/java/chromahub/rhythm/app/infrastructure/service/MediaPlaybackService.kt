@@ -195,6 +195,9 @@ class MediaPlaybackService : MediaLibraryService(),
     
     // Siphon USB Direct Audio Engine
     private lateinit var siphonManager: chromahub.rhythm.app.infrastructure.audio.siphon.SiphonManager
+
+    // Centralized USB Gatekeeper
+    private lateinit var siphonSessionManager: chromahub.rhythm.app.infrastructure.audio.siphon.SiphonSessionManager
     
     // Fix 7: Attribution-context AudioManager for playback-related calls
     private val playbackAudioManager: android.media.AudioManager by lazy {
@@ -347,6 +350,12 @@ class MediaPlaybackService : MediaLibraryService(),
         // Initialize Siphon Manager with AudioQualityDataStore for Exclusive Mode checks
         siphonManager = chromahub.rhythm.app.infrastructure.audio.siphon.SiphonManager(applicationContext, audioQualityDataStore)
         siphonManager.start()
+
+        // Initialize Centralized Gatekeeper
+        val sessionManager = chromahub.rhythm.app.infrastructure.audio.siphon.SiphonSessionManager(applicationContext, audioQualityDataStore, usbAudioManager, siphonManager)
+        sessionManager.scope = serviceScope
+        chromahub.rhythm.app.infrastructure.audio.UsbAudioReceiver.sessionManagerInstance = sessionManager
+        this.siphonSessionManager = sessionManager
         
         // FIX 8: Zombie state recovery hook for ungraceful process death
         Runtime.getRuntime().addShutdownHook(Thread {
@@ -390,7 +399,15 @@ class MediaPlaybackService : MediaLibraryService(),
             
             // Wire output router dependencies
             usbAudioManager.outputRouter = outputRouter
+            if (::siphonSessionManager.isInitialized) {
+                siphonSessionManager.outputRouter = outputRouter
+            }
             outputRouter.playerEngine = rhythmPlayerEngine
+
+            // Trigger the centralized gatekeeper to start looking for USB DACs
+            if (::siphonSessionManager.isInitialized) {
+                siphonSessionManager.onAppReady()
+            }
             
             // Observe Routing Changes
             serviceScope.launch {
@@ -2547,3 +2564,7 @@ class MediaPlaybackService : MediaLibraryService(),
         super.onDestroy()
     }
 }
+
+
+
+
