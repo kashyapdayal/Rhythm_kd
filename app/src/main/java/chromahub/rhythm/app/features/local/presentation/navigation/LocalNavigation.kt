@@ -389,7 +389,9 @@ fun LocalNavigation(
     }
 
     // Provide dynamic mini-player padding with comprehensive navigation handling
-    val showMiniPlayer = currentSong != null && currentRoute != Screen.Player.route
+    val showMiniPlayer = currentSong != null &&
+        currentRoute != Screen.Player.route &&
+        currentRoute != Screen.Search.route
     val showNavBar = remember(currentRoute) {
         currentRoute == Screen.Home.route || currentRoute.startsWith("library") || currentRoute == Screen.Search.route || currentRoute == Screen.Settings.route || currentRoute == Screen.ListeningStats.route
     }

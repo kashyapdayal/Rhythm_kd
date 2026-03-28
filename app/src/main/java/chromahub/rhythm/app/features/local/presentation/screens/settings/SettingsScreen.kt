@@ -222,6 +222,7 @@ fun SettingsScreen(
     val appMode by appSettings.appMode.collectAsState()
     val rhythmGuardMode by appSettings.rhythmGuardMode.collectAsState()
     val showSettingsSuggestions by appSettings.showSettingsSuggestions.collectAsState()
+    val showKeyboardOnSearchOpen by appSettings.showKeyboardOnSearchOpen.collectAsState()
     
     var showDefaultScreenDialog by remember { mutableStateOf(false) }
     var showLanguageSwitcher by remember { mutableStateOf(false) }
@@ -296,6 +297,13 @@ fun SettingsScreen(
                         context.getString(R.string.settings_gestures),
                         context.getString(R.string.settings_gestures_desc),
                         onClick = { onNavigateTo(SettingsRoutes.GESTURES) }
+                    ))
+                    add(SettingItem(
+                        RhythmIcons.Search,
+                        context.getString(R.string.settings_show_keyboard_on_search_open),
+                        context.getString(R.string.settings_show_keyboard_on_search_open_desc),
+                        toggleState = showKeyboardOnSearchOpen,
+                        onToggleChange = { appSettings.setShowKeyboardOnSearchOpen(it) }
                     ))
                     add(SettingItem(
                         Icons.Default.Lightbulb,
@@ -449,6 +457,7 @@ fun SettingsScreen(
                             SettingsTipsRow(
                                 onNavigateTo = onNavigateTo,
                                 rhythmGuardMode = rhythmGuardMode,
+                                appMode = appMode,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(top = 8.dp, bottom = 2.dp)
@@ -1187,6 +1196,7 @@ data class SettingsTipData(
 fun SettingsTipsRow(
     onNavigateTo: (String) -> Unit,
     rhythmGuardMode: String,
+    appMode: String,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -1199,6 +1209,12 @@ fun SettingsTipsRow(
     val appSettings = remember { chromahub.rhythm.app.shared.data.model.AppSettings.getInstance(context) }
     val limitMinutes by appSettings.rhythmGuardAlertThresholdMinutes.collectAsState()
     val manualVolumeFloat by appSettings.rhythmGuardManualVolumeThreshold.collectAsState()
+    val autoBackupEnabled by appSettings.autoBackupEnabled.collectAsState()
+    val updatesEnabled by appSettings.updatesEnabled.collectAsState()
+    val miniPlayerShowProgress by appSettings.miniPlayerShowProgress.collectAsState()
+    val playerShowSeekButtons by appSettings.playerShowSeekButtons.collectAsState()
+    val gesturePlayerSwipeTracks by appSettings.gesturePlayerSwipeTracks.collectAsState()
+    val enableRatingSystem by appSettings.enableRatingSystem.collectAsState()
 
     LaunchedEffect(limitMinutes, manualVolumeFloat) {
         val statsRepo = chromahub.rhythm.app.shared.data.repository.PlaybackStatsRepository.getInstance(context)
@@ -1228,14 +1244,41 @@ fun SettingsTipsRow(
     // Generate a fixed seed when the view enters to keep shuffle stable during recompositions
     val shuffleSeed = rememberSaveable { kotlin.random.Random.nextInt() }
     
-    val tips = remember(rhythmGuardMode, dismissedIds, todayExposureMinutes, currentRiskLevel) {
+    val tips = remember(
+        rhythmGuardMode,
+        appMode,
+        dismissedIds,
+        todayExposureMinutes,
+        currentRiskLevel,
+        autoBackupEnabled,
+        updatesEnabled,
+        miniPlayerShowProgress,
+        playerShowSeekButtons,
+        gesturePlayerSwipeTracks,
+        enableRatingSystem
+    ) {
         val random = kotlin.random.Random(shuffleSeed)
+        val isLocalMode = appMode == "LOCAL"
+        val hourOfDay = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+        val dayMomentLabel = when (hourOfDay) {
+            in 5..11 -> "this morning"
+            in 12..16 -> "this afternoon"
+            in 17..21 -> "this evening"
+            else -> "tonight"
+        }
+        val listeningPulseLabel = when {
+            todayExposureMinutes < 20 -> "Fresh session energy"
+            todayExposureMinutes < 60 -> "Steady groove"
+            todayExposureMinutes < 120 -> "Heavy listening"
+            else -> "Marathon mode"
+        }
+
         buildList {
-            if ("rhythm_guard" !in dismissedIds) {
+            if (isLocalMode && "rhythm_guard" !in dismissedIds) {
                 val desc = when (rhythmGuardMode) {
-                    "OFF" -> context.getString(R.string.settings_tip_rhythm_guard_off)
-                    "MANUAL" -> context.getString(R.string.settings_tip_rhythm_guard_manual)
-                    else -> context.getString(R.string.settings_tip_rhythm_guard_auto)
+                    "OFF" -> "${context.getString(R.string.settings_tip_rhythm_guard_off)} ${listeningPulseLabel.lowercase()} ${dayMomentLabel}."
+                    "MANUAL" -> "${context.getString(R.string.settings_tip_rhythm_guard_manual)} ${todayExposureMinutes} min played today."
+                    else -> "${context.getString(R.string.settings_tip_rhythm_guard_auto)} ${todayExposureMinutes} min tracked ${dayMomentLabel}."
                 }
                 
                 val progress = (todayExposureMinutes.toFloat() / 90f).coerceIn(0.05f, 1f)
@@ -1285,7 +1328,7 @@ fun SettingsTipsRow(
                     )
                 )
             }
-            if ("media_scan" !in dismissedIds) {
+            if (isLocalMode && "media_scan" !in dismissedIds) {
                 val descs = listOf(
                     context.getString(R.string.settings_tip_media_scan),
                     "Avoid unwanted audio clips. Explicitly define which folders we should scan for music.",
@@ -1301,7 +1344,7 @@ fun SettingsTipsRow(
                     )
                 )
             }
-            if ("sleep_timer" !in dismissedIds) {
+            if (isLocalMode && "sleep_timer" !in dismissedIds) {
                 val descs = listOf(
                     "Drift off to sleep while your music is playing. We'll automatically pause it.",
                     "Set an automated sleep timer before bed so playback stops perfectly."
@@ -1316,7 +1359,7 @@ fun SettingsTipsRow(
                     )
                 )
             }
-            if ("equalizer" !in dismissedIds) {
+            if (isLocalMode && "equalizer" !in dismissedIds) {
                 val descs = listOf(
                     "Elevate your experience. Boost the bass and adjust frequencies using the Equalizer.",
                     "Tune the sound to your headphones securely with our advanced audio effects."
@@ -1331,6 +1374,138 @@ fun SettingsTipsRow(
                     )
                 )
             }
+            if (isLocalMode && "backup_restore" !in dismissedIds) {
+                val descs = if (autoBackupEnabled) {
+                    listOf(
+                        "Auto backup is active. Verify your backup sections so restores stay clean.",
+                        "Protection enabled: schedule looks good. Run a manual backup before big edits."
+                    )
+                } else {
+                    listOf(
+                        "Auto backup is off. Enable it to protect playlists and Rhythm Guard stats.",
+                        "No safety net yet. Turn on backups to avoid losing your setup."
+                    )
+                }
+                add(
+                    SettingsTipData(
+                        id = "backup_restore",
+                        icon = Icons.Default.Backup,
+                        title = "Backup & Restore",
+                        text = descs.random(random),
+                        route = SettingsRoutes.BACKUP_RESTORE
+                    )
+                )
+            }
+            if ("updates" !in dismissedIds) {
+                val descs = if (updatesEnabled) {
+                    listOf(
+                        "Updates are enabled. Keep them on for fixes and performance improvements.",
+                        "You are set to receive updates. Check channel preferences for stability vs freshness."
+                    )
+                } else {
+                    listOf(
+                        "Updates are disabled. Re-enable them to stay protected and current.",
+                        "You are pinned to the current build. Turn updates back on when ready."
+                    )
+                }
+                add(
+                    SettingsTipData(
+                        id = "updates",
+                        icon = Icons.Default.Update,
+                        title = "App Updates",
+                        text = descs.random(random),
+                        route = SettingsRoutes.UPDATES
+                    )
+                )
+            }
+            if ("queue_playback" !in dismissedIds) {
+                val descs = if (gesturePlayerSwipeTracks) {
+                    listOf(
+                        "Player swipe-to-skip is active. Tune queue rules for smoother transitions.",
+                        "Gesture skip is on. Match queue behavior to your listening flow."
+                    )
+                } else {
+                    listOf(
+                        "Swipe-to-skip is off. Queue controls can help keep playback efficient.",
+                        "Prefer explicit controls? Fine-tune queue behavior for predictable playback."
+                    )
+                }
+                add(
+                    SettingsTipData(
+                        id = "queue_playback",
+                        icon = Icons.Default.QueueMusic,
+                        title = "Queue Playback",
+                        text = descs.random(random),
+                        route = SettingsRoutes.QUEUE_PLAYBACK
+                    )
+                )
+            }
+            if ("player_controls" !in dismissedIds) {
+                val descs = if (playerShowSeekButtons) {
+                    listOf(
+                        "Seek buttons are visible. Customize player controls to reduce clutter.",
+                        "Control-rich player enabled. Tweak layout for your thumb reach."
+                    )
+                } else {
+                    listOf(
+                        "Minimal player controls enabled. Add seek buttons if you miss precise jumps.",
+                        "Clean layout active. Re-enable seek controls for finer playback handling."
+                    )
+                }
+                add(
+                    SettingsTipData(
+                        id = "player_controls",
+                        icon = Icons.Default.MusicNote,
+                        title = "Player Controls",
+                        text = descs.random(random),
+                        route = SettingsRoutes.PLAYER_CUSTOMIZATION
+                    )
+                )
+            }
+            if ("miniplayer" !in dismissedIds) {
+                val descs = if (miniPlayerShowProgress) {
+                    listOf(
+                        "Mini player progress is visible. Choose a style that matches your theme.",
+                        "Progress bar is active on mini player. Try shape and corner tweaks next."
+                    )
+                } else {
+                    listOf(
+                        "Mini player progress is hidden. Enable it for quick track awareness.",
+                        "Compact mode is minimal now. Turn progress on for better glanceability."
+                    )
+                }
+                add(
+                    SettingsTipData(
+                        id = "miniplayer",
+                        icon = Icons.Default.PlayCircleFilled,
+                        title = "Mini Player",
+                        text = descs.random(random),
+                        route = SettingsRoutes.MINIPLAYER_CUSTOMIZATION
+                    )
+                )
+            }
+            if (isLocalMode && "library_settings" !in dismissedIds) {
+                val descs = if (enableRatingSystem) {
+                    listOf(
+                        "Ratings are enabled. Use library settings to sharpen discovery and sorting.",
+                        "Your library supports ratings. Tune scan and grouping for cleaner browsing."
+                    )
+                } else {
+                    listOf(
+                        "Ratings are disabled. Library settings can still improve structure and speed.",
+                        "Simplified library mode detected. Adjust grouping for faster navigation."
+                    )
+                }
+                add(
+                    SettingsTipData(
+                        id = "library_settings",
+                        icon = Icons.Default.LibraryMusic,
+                        title = "Library Settings",
+                        text = descs.random(random),
+                        route = SettingsRoutes.LIBRARY_SETTINGS
+                    )
+                )
+            }
         }.shuffled(random)
     }
 
@@ -1338,7 +1513,7 @@ fun SettingsTipsRow(
         LazyRow(
             modifier = modifier,
             horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(16.dp),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 0.dp, end = 16.dp, top = 8.dp, bottom = 8.dp)
         ) {
             items(tips, key = { it.id }) { tip ->
                 SettingsTipCard(
@@ -1359,18 +1534,21 @@ fun SettingsTipCard(
 ) {
     val isPrimary = tip.isPrimary
     val containerColor = if (isPrimary) {
-        MaterialTheme.colorScheme.tertiaryContainer
+        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.84f)
     } else {
-        MaterialTheme.colorScheme.surfaceContainerHigh
+        MaterialTheme.colorScheme.surfaceContainerHighest
     }
     val contentColor = if (isPrimary) {
-        MaterialTheme.colorScheme.onTertiaryContainer
+        MaterialTheme.colorScheme.onPrimaryContainer
     } else {
-        MaterialTheme.colorScheme.onSurfaceVariant
+        MaterialTheme.colorScheme.onSurface
     }
-    
-    val defaultIconBg = if (isPrimary) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.secondaryContainer
-    val iconColor = if (isPrimary) MaterialTheme.colorScheme.onTertiary else MaterialTheme.colorScheme.onSecondaryContainer
+
+    val iconColor = if (isPrimary) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.secondary
+    }
 
     // Use health status directly for icon background if available, looks much cleaner than partial filling!
     val indicatorColor = if (tip.riskLevel != null) {
@@ -1387,7 +1565,7 @@ fun SettingsTipCard(
             .width(320.dp)
             .height(160.dp)
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(32.dp),
+        shape = RoundedCornerShape(if (isPrimary) 24.dp else 20.dp),
         colors = CardDefaults.cardColors(containerColor = containerColor),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
@@ -1402,28 +1580,19 @@ fun SettingsTipCard(
                     horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    // Expressive icon
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(indicatorColor ?: defaultIconBg),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = tip.icon,
-                            contentDescription = null,
-                            tint = if (indicatorColor != null) androidx.compose.ui.graphics.Color.White else iconColor,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
+                    Icon(
+                        imageVector = tip.icon,
+                        contentDescription = null,
+                        tint = indicatorColor ?: iconColor,
+                        modifier = Modifier.size(30.dp)
+                    )
                     
                     androidx.compose.material3.IconButton(
                         onClick = onDismiss,
                         modifier = Modifier
                             .size(32.dp)
                             .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.4f))
+                            .background(MaterialTheme.colorScheme.surface.copy(alpha = if (isPrimary) 0.55f else 0.44f))
                     ) {
                         Icon(
                             imageVector = Icons.Default.Close,
@@ -1434,7 +1603,7 @@ fun SettingsTipCard(
                     }
                 }
                 
-                Spacer(modifier = Modifier.weight(1f))
+                Spacer(modifier = Modifier.height(12.dp))
                 
                 Text(
                     text = tip.title,
@@ -1445,7 +1614,7 @@ fun SettingsTipCard(
                     overflow = TextOverflow.Ellipsis
                 )
                 
-                Spacer(modifier = Modifier.height(2.dp))
+                Spacer(modifier = Modifier.height(6.dp))
                 
                 Text(
                     text = tip.text,
@@ -1455,6 +1624,8 @@ fun SettingsTipCard(
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis
                 )
+
+                Spacer(modifier = Modifier.weight(1f))
             }
         }
     }

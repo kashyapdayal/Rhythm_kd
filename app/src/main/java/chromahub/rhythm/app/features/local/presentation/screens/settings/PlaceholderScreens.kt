@@ -80,6 +80,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import chromahub.rhythm.app.BuildConfig
@@ -7548,16 +7549,27 @@ private fun RhythmGuardHeroCard(
     isWarning: Boolean,
     modifier: Modifier = Modifier
 ) {
-    val containerColor = if (isWarning) {
-        MaterialTheme.colorScheme.tertiaryContainer
-    } else {
-        MaterialTheme.colorScheme.surfaceContainerHighest
+    val progressValue = progress.coerceIn(0f, 1.5f)
+    val visualLevel = when {
+        isWarning || progressValue >= 1f -> RhythmGuardWidgetVisualLevel.CRITICAL
+        progressValue >= 0.82f -> RhythmGuardWidgetVisualLevel.ELEVATED
+        progressValue >= 0.56f -> RhythmGuardWidgetVisualLevel.WATCH
+        else -> RhythmGuardWidgetVisualLevel.STABLE
     }
-    val contentColor = if (isWarning) {
-        MaterialTheme.colorScheme.onTertiaryContainer
-    } else {
-        MaterialTheme.colorScheme.onSurface
+    val iconColor = when (visualLevel) {
+        RhythmGuardWidgetVisualLevel.STABLE -> Color(0xFF2E7D32)
+        RhythmGuardWidgetVisualLevel.WATCH -> Color(0xFFB26A00)
+        RhythmGuardWidgetVisualLevel.ELEVATED -> Color(0xFFD86E00)
+        RhythmGuardWidgetVisualLevel.CRITICAL -> Color(0xFFC62828)
     }
+    val containerColor = when (visualLevel) {
+        RhythmGuardWidgetVisualLevel.STABLE -> iconColor.copy(alpha = 0.16f)
+        RhythmGuardWidgetVisualLevel.WATCH -> iconColor.copy(alpha = 0.18f)
+        RhythmGuardWidgetVisualLevel.ELEVATED -> iconColor.copy(alpha = 0.2f)
+        RhythmGuardWidgetVisualLevel.CRITICAL -> iconColor.copy(alpha = 0.24f)
+    }
+    val contentColor = MaterialTheme.colorScheme.onSurface
+    val dynamicValueFontSize = rememberRhythmGuardHeroValueFontSize(value)
 
     Column(
         modifier = modifier
@@ -7569,38 +7581,39 @@ private fun RhythmGuardHeroCard(
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.Start,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp),
-                    tint = contentColor.copy(alpha = 0.8f)
-                )
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Medium,
-                    color = contentColor.copy(alpha = 0.85f),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(28.dp),
+                tint = iconColor
+            )
         }
 
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
+            text = title,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Medium,
+            color = contentColor.copy(alpha = 0.85f),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Text(
             text = value,
-            style = MaterialTheme.typography.headlineSmall,
+            style = MaterialTheme.typography.headlineSmall.copy(
+                fontSize = dynamicValueFontSize,
+                lineHeight = (dynamicValueFontSize.value + 3f).sp
+            ),
             fontWeight = FontWeight.Bold,
             color = contentColor,
-            maxLines = 1,
+            maxLines = 2,
             overflow = TextOverflow.Ellipsis
         )
 
@@ -7622,10 +7635,30 @@ private fun RhythmGuardHeroCard(
                 .fillMaxWidth()
                 .height(6.dp)
                 .clip(RoundedCornerShape(3.dp)),
-            color = if (isWarning) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-            trackColor = contentColor.copy(alpha = 0.16f)
+            color = iconColor,
+            trackColor = contentColor.copy(alpha = 0.2f)
         )
     }
+}
+
+@Composable
+private fun rememberRhythmGuardHeroValueFontSize(value: String): TextUnit {
+    val targetSize = when {
+        value.length <= 5 -> 34.sp
+        value.length <= 8 -> 30.sp
+        value.length <= 11 -> 26.sp
+        value.length <= 15 -> 22.sp
+        else -> 20.sp
+    }
+    val animatedSize by animateFloatAsState(
+        targetValue = targetSize.value,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "rhythm_guard_hero_value_font_size"
+    )
+    return animatedSize.sp
 }
 
 private enum class RhythmGuardOverallHealthLevel {
@@ -7635,6 +7668,13 @@ private enum class RhythmGuardOverallHealthLevel {
     RISK
 }
 
+private enum class RhythmGuardWidgetVisualLevel {
+    STABLE,
+    WATCH,
+    ELEVATED,
+    CRITICAL
+}
+
 @Composable
 private fun RhythmGuardOverallHealthCard(
     level: RhythmGuardOverallHealthLevel,
@@ -7642,24 +7682,18 @@ private fun RhythmGuardOverallHealthCard(
     summary: String,
     modifier: Modifier = Modifier
 ) {
-    val containerColor = when (level) {
-        RhythmGuardOverallHealthLevel.GOOD -> MaterialTheme.colorScheme.primaryContainer
-        RhythmGuardOverallHealthLevel.FAIR -> MaterialTheme.colorScheme.tertiaryContainer
-        RhythmGuardOverallHealthLevel.RISK -> MaterialTheme.colorScheme.errorContainer
-        RhythmGuardOverallHealthLevel.OFF -> MaterialTheme.colorScheme.surfaceContainerHighest
-    }
-    val contentColor = when (level) {
-        RhythmGuardOverallHealthLevel.GOOD -> MaterialTheme.colorScheme.onPrimaryContainer
-        RhythmGuardOverallHealthLevel.FAIR -> MaterialTheme.colorScheme.onTertiaryContainer
-        RhythmGuardOverallHealthLevel.RISK -> MaterialTheme.colorScheme.onErrorContainer
-        RhythmGuardOverallHealthLevel.OFF -> MaterialTheme.colorScheme.onSurface
-    }
     val indicatorColor = when (level) {
-        RhythmGuardOverallHealthLevel.GOOD -> MaterialTheme.colorScheme.primary
-        RhythmGuardOverallHealthLevel.FAIR -> MaterialTheme.colorScheme.tertiary
-        RhythmGuardOverallHealthLevel.RISK -> MaterialTheme.colorScheme.error
+        RhythmGuardOverallHealthLevel.GOOD -> Color(0xFF2E7D32)
+        RhythmGuardOverallHealthLevel.FAIR -> Color(0xFFB26A00)
+        RhythmGuardOverallHealthLevel.RISK -> Color(0xFFC62828)
         RhythmGuardOverallHealthLevel.OFF -> MaterialTheme.colorScheme.outline
     }
+    val containerColor = if (level == RhythmGuardOverallHealthLevel.OFF) {
+        MaterialTheme.colorScheme.surfaceContainerHighest
+    } else {
+        indicatorColor.copy(alpha = 0.2f)
+    }
+    val contentColor = MaterialTheme.colorScheme.onSurface
     val statusLabel = when (level) {
         RhythmGuardOverallHealthLevel.GOOD -> stringResource(R.string.settings_rhythm_guard_health_good)
         RhythmGuardOverallHealthLevel.FAIR -> stringResource(R.string.settings_rhythm_guard_health_fair)
@@ -7671,7 +7705,7 @@ private fun RhythmGuardOverallHealthCard(
         modifier = modifier,
         shape = RoundedCornerShape(24.dp),
         color = containerColor,
-        border = BorderStroke(1.dp, contentColor.copy(alpha = 0.14f))
+        border = BorderStroke(1.dp, indicatorColor.copy(alpha = if (level == RhythmGuardOverallHealthLevel.OFF) 0.16f else 0.3f))
     ) {
         Column(
             modifier = Modifier
@@ -7692,7 +7726,7 @@ private fun RhythmGuardOverallHealthCard(
                     Icon(
                         imageVector = Icons.Default.Security,
                         contentDescription = null,
-                        tint = contentColor,
+                        tint = indicatorColor,
                         modifier = Modifier.size(18.dp)
                     )
                     Text(
@@ -7707,12 +7741,16 @@ private fun RhythmGuardOverallHealthCard(
 
                 Surface(
                     shape = RoundedCornerShape(999.dp),
-                    color = contentColor.copy(alpha = 0.14f)
+                    color = if (level == RhythmGuardOverallHealthLevel.OFF) {
+                        contentColor.copy(alpha = 0.14f)
+                    } else {
+                        indicatorColor.copy(alpha = 0.2f)
+                    }
                 ) {
                     Text(
                         text = statusLabel,
                         style = MaterialTheme.typography.labelSmall,
-                        color = contentColor,
+                        color = if (level == RhythmGuardOverallHealthLevel.OFF) contentColor else indicatorColor,
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                     )
                 }

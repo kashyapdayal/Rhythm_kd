@@ -2834,6 +2834,8 @@
     <string name="settings_library_settings">Library Experience</string>
     <string name="settings_library_settings_desc">Ratings, organization and artwork behavior</string>
     <string name="settings_library_group_organization">Organization &amp; Ratings</string>
+    <string name="settings_show_keyboard_on_search_open">Auto Focus Search</string>
+    <string name="settings_show_keyboard_on_search_open_desc">Show keyboard when Search opens</string>
     <string name="settings_library_group_artwork">Artwork Rendering</string>
 
     <!-- Theme Customization Search Strings -->

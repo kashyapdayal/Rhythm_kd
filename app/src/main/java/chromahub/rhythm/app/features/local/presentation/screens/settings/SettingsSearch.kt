@@ -261,6 +261,24 @@ fun buildSettingsSearchIndex(context: Context): List<SearchableSettingItem> {
             route = SettingsRoutes.GESTURES,
             parentScreen = context.getString(R.string.settings_section_user_interface)
         ))
+        add(SearchableSettingItem(
+            id = "auto_focus_search",
+            title = context.getString(R.string.settings_show_keyboard_on_search_open),
+            description = context.getString(R.string.settings_show_keyboard_on_search_open_desc),
+            keywords = listOf(
+                "search",
+                "keyboard",
+                "focus",
+                "auto focus",
+                "search screen",
+                "open keyboard",
+                "auto keyboard"
+            ),
+            icon = Icons.Default.Search,
+            route = null,
+            parentScreen = context.getString(R.string.settings_section_user_interface),
+            settingKey = "showKeyboardOnSearchOpen"
+        ))
         
         // Audio & Playback Section
         add(SearchableSettingItem(

@@ -155,6 +155,7 @@ class AppSettings private constructor(context: Context) {
         
         // Search History
         private const val KEY_SEARCH_HISTORY = "search_history"
+        private const val KEY_SHOW_KEYBOARD_ON_SEARCH_OPEN = "show_keyboard_on_search_open"
         
         // Playlists
         private const val KEY_PLAYLISTS = "playlists"
@@ -856,6 +857,10 @@ class AppSettings private constructor(context: Context) {
     // Search History
     private val _searchHistory = MutableStateFlow<String?>(prefs.getString(KEY_SEARCH_HISTORY, null))
     val searchHistory: StateFlow<String?> = _searchHistory.asStateFlow()
+
+    // Search UX
+    private val _showKeyboardOnSearchOpen = MutableStateFlow(prefs.getBoolean(KEY_SHOW_KEYBOARD_ON_SEARCH_OPEN, true))
+    val showKeyboardOnSearchOpen: StateFlow<Boolean> = _showKeyboardOnSearchOpen.asStateFlow()
     
     // Playlists
     private val _playlists = MutableStateFlow<String?>(prefs.getString(KEY_PLAYLISTS, null))
@@ -1916,6 +1921,11 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
             prefs.edit().putString(KEY_SEARCH_HISTORY, history).apply()
         }
         _searchHistory.value = history
+    }
+
+    fun setShowKeyboardOnSearchOpen(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_SHOW_KEYBOARD_ON_SEARCH_OPEN, enabled).apply()
+        _showKeyboardOnSearchOpen.value = enabled
     }
 
     // Playlists
@@ -3399,6 +3409,7 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
         _showLyrics.value = prefs.getBoolean(KEY_SHOW_LYRICS, true)
         _onlineOnlyLyrics.value = prefs.getBoolean(KEY_ONLINE_ONLY_LYRICS, true)
         _searchHistory.value = prefs.getString(KEY_SEARCH_HISTORY, null)
+        _showKeyboardOnSearchOpen.value = prefs.getBoolean(KEY_SHOW_KEYBOARD_ON_SEARCH_OPEN, true)
         _playlists.value = prefs.getString(KEY_PLAYLISTS, null)
         _favoriteSongs.value = prefs.getString(KEY_FAVORITE_SONGS, null)
         
