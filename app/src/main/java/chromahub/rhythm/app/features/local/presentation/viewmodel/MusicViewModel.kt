@@ -517,27 +517,35 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     val filteredArtists: StateFlow<List<Artist>> = kotlinx.coroutines.flow.combine(
         _artists,
         filteredSongs,
-        appSettings.groupByAlbumArtist
-    ) { artists, filteredSongs, groupByAlbumArtist ->
+        appSettings.groupByAlbumArtist,
+        appSettings.artistSeparatorEnabled,
+        appSettings.artistSeparatorDelimiters
+    ) { artists, filteredSongs, groupByAlbumArtist, artistSeparatorEnabled, artistSeparatorDelimiters ->
+        val charDelimiters = if (artistSeparatorEnabled) {
+            artistSeparatorDelimiters.map { it.toString() }
+        } else {
+            emptyList()
+        }
+
         artists.filter { artist ->
             // Include artist if they have at least one non-blacklisted song
             // Check against the appropriate field based on grouping mode
             if (groupByAlbumArtist) {
-                // When grouping by album artist, match against song's albumArtist (with fallback to artist)
+                // When grouping by album artist, split albumArtist when present,
+                // otherwise split track artist fallback.
                 filteredSongs.any { song -> 
-                    val songAlbumArtist = song.albumArtist ?: song.artist
-                    songAlbumArtist == artist.name 
+                    val explicitAlbumArtist = song.albumArtist?.trim().orEmpty()
+                    val songArtistNames = if (explicitAlbumArtist.isNotBlank() && !explicitAlbumArtist.equals("<unknown>", ignoreCase = true)) {
+                        repository.splitArtistNames(explicitAlbumArtist, charDelimiters)
+                    } else {
+                        repository.splitArtistNames(song.artist, charDelimiters)
+                    }
+                    songArtistNames.any { it.equals(artist.name, ignoreCase = true) }
                 }
             } else {
                 // When grouping by track artist, match if artist appears in song's artist field (split collaborations)
                 filteredSongs.any { song -> 
-                    // Split artist names on common separators
-                    val separators = listOf(" & ", " and ", ", ", " feat. ", " feat ", " ft. ", " ft ", " featuring ", " x ", " X ", " vs ", " vs. ", " with ", ";", " / ", " + ", " · ", " - ")
-                    var names = listOf(song.artist)
-                    for (separator in separators) {
-                        names = names.flatMap { it.split(separator, ignoreCase = true) }
-                    }
-                    val artistNames = names.map { it.trim() }.filter { it.isNotBlank() }
+                    val artistNames = repository.splitArtistNames(song.artist, charDelimiters)
                     artistNames.any { it.equals(artist.name, ignoreCase = true) }
                 }
             }
@@ -816,24 +824,50 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         
-        // Reload artists when groupByAlbumArtist setting changes
-        // The _artists list must be rebuilt from the repository since
-        // track-artist vs album-artist grouping produces different lists
+        // Reload artists when grouping mode or track-artist separator settings change.
         viewModelScope.launch {
-            var previousValue = appSettings.groupByAlbumArtist.value
-            appSettings.groupByAlbumArtist.collect { newValue ->
-                if (newValue != previousValue && _isInitialized.value) {
-                    previousValue = newValue
-                    Log.d(TAG, "groupByAlbumArtist changed to $newValue, reloading artists")
-                    try {
-                        val freshArtists = withContext(Dispatchers.IO) {
-                            repository.loadArtists()
-                        }
-                        _artists.value = freshArtists
-                        Log.d(TAG, "Reloaded ${freshArtists.size} artists after groupByAlbumArtist toggle")
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error reloading artists after groupByAlbumArtist toggle", e)
+            var previousState = Triple(
+                appSettings.groupByAlbumArtist.value,
+                appSettings.artistSeparatorEnabled.value,
+                appSettings.artistSeparatorDelimiters.value
+            )
+
+            combine(
+                appSettings.groupByAlbumArtist,
+                appSettings.artistSeparatorEnabled,
+                appSettings.artistSeparatorDelimiters
+            ) { groupByAlbumArtist, artistSeparatorEnabled, artistSeparatorDelimiters ->
+                Triple(groupByAlbumArtist, artistSeparatorEnabled, artistSeparatorDelimiters)
+            }.collect { newState ->
+                if (!_isInitialized.value || newState == previousState) {
+                    return@collect
+                }
+
+                val groupChanged = newState.first != previousState.first
+                val separatorChanged =
+                    newState.second != previousState.second || newState.third != previousState.third
+                previousState = newState
+
+                val shouldReloadArtists = groupChanged || separatorChanged
+                if (!shouldReloadArtists) {
+                    return@collect
+                }
+
+                val reason = if (groupChanged) {
+                    "groupByAlbumArtist changed to ${newState.first}"
+                } else {
+                    "artist separator settings changed (enabled=${newState.second}, delimiters='${newState.third}')"
+                }
+
+                Log.d(TAG, "$reason, reloading artists")
+                try {
+                    val freshArtists = withContext(Dispatchers.IO) {
+                        repository.loadArtists()
                     }
+                    _artists.value = freshArtists
+                    Log.d(TAG, "Reloaded ${freshArtists.size} artists after artist settings update")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error reloading artists after artist settings update", e)
                 }
             }
         }

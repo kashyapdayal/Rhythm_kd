@@ -229,9 +229,17 @@ class MusicRepository(context: Context) {
 
             for (song in songs) {
                 // For groupByAlbumArtist = true
-                val albumArtistName = (song.albumArtist?.takeIf { it.isNotBlank() } ?: song.artist).trim()
-                if (albumArtistName.isNotBlank() && albumArtistName != "<unknown>") {
-                    relationships.add(SongArtistEntity(song.id, albumArtistName, true))
+                val explicitAlbumArtist = song.albumArtist?.trim().orEmpty()
+                val albumArtistNames = if (explicitAlbumArtist.isNotBlank() && !explicitAlbumArtist.equals("<unknown>", ignoreCase = true)) {
+                    splitArtistNames(explicitAlbumArtist, preloadedCharDelimiters)
+                } else {
+                    splitArtistNames(song.artist, preloadedCharDelimiters)
+                }
+                for (artistName in albumArtistNames) {
+                    val cleanName = artistName.trim()
+                    if (cleanName.isNotBlank() && !cleanName.equals("<unknown>", ignoreCase = true)) {
+                        relationships.add(SongArtistEntity(song.id, cleanName, true))
+                    }
                 }
 
                 // For groupByAlbumArtist = false (split track artists)
@@ -1389,6 +1397,9 @@ class MusicRepository(context: Context) {
 
         Log.d(TAG, "Loading artists (groupByAlbumArtist=$groupByAlbumArtist)")
 
+        // Separator config affects relationship rows; refresh relationships/cache when it changes.
+        refreshArtistRelationshipsIfNeeded(appSettings)
+
         // Try to load from Room cache first
         val cachedArtists = loadArtistsFromRoom(groupByAlbumArtist)
         if (cachedArtists != null && cachedArtists.isNotEmpty()) {
@@ -1405,6 +1416,28 @@ class MusicRepository(context: Context) {
         Log.d(TAG, "Cached ${artists.size} artists to Room (groupByAlbumArtist=$groupByAlbumArtist)")
 
         artists
+    }
+
+    private var cachedArtistSplitConfig: String? = null
+
+    private suspend fun refreshArtistRelationshipsIfNeeded(appSettings: AppSettings) {
+        val artistSeparatorEnabled = appSettings.artistSeparatorEnabled.value
+        val delimiters = if (artistSeparatorEnabled) appSettings.artistSeparatorDelimiters.value else ""
+        val configKey = "$artistSeparatorEnabled|$delimiters"
+
+        if (configKey == cachedArtistSplitConfig) {
+            return
+        }
+
+        val songs = loadSongs()
+        saveSongArtistRelationships(songs)
+        roomDb.artistDao().deleteAll()
+        cachedArtistSplitConfig = configKey
+
+        Log.d(
+            TAG,
+            "Refreshed artist relationships for separators (enabled=$artistSeparatorEnabled, delimiters='$delimiters')"
+        )
     }
 
     /**
@@ -4078,9 +4111,14 @@ class MusicRepository(context: Context) {
         // Filter songs that match the artist's name
         val artistSongs = allSongs.filter { song ->
             if (groupByAlbumArtist) {
-                // When grouping by album artist, match exactly against album artist (with fallback to track artist)
-                val songArtistName = (song.albumArtist?.takeIf { it.isNotBlank() } ?: song.artist).trim()
-                songArtistName == artist.name
+                // Match against split album artist names, falling back to split track artists.
+                val explicitAlbumArtist = song.albumArtist?.trim().orEmpty()
+                val songArtistNames = if (explicitAlbumArtist.isNotBlank() && !explicitAlbumArtist.equals("<unknown>", ignoreCase = true)) {
+                    splitArtistNames(explicitAlbumArtist)
+                } else {
+                    splitArtistNames(song.artist)
+                }
+                songArtistNames.any { it.equals(artist.name, ignoreCase = true) }
             } else {
                 // When not grouping, check if artist name appears in the track artist field (exact or as part of collaboration)
                 val artistNames = splitArtistNames(song.artist)
@@ -4115,9 +4153,16 @@ class MusicRepository(context: Context) {
             if (groupByAlbumArtist) {
                 // When grouping by album artist, check if any song in the album has matching album artist
                 allSongs.any { song ->
+                    val explicitAlbumArtist = song.albumArtist?.trim().orEmpty()
+                    val songArtistNames = if (explicitAlbumArtist.isNotBlank() && !explicitAlbumArtist.equals("<unknown>", ignoreCase = true)) {
+                        splitArtistNames(explicitAlbumArtist)
+                    } else {
+                        splitArtistNames(song.artist)
+                    }
+
                     song.album == album.title &&
                     song.albumId == album.id &&
-                    (song.albumArtist?.takeIf { it.isNotBlank() } ?: song.artist).trim() == artist.name
+                    songArtistNames.any { it.equals(artist.name, ignoreCase = true) }
                 }
             } else {
                 // When not grouping, check if artist appears in any song's track artist field for this album

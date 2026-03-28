@@ -2676,9 +2676,16 @@ fun SingleCardSongsContent(
                             onGoToArtist = { 
                                 // Find the artist from the list - respect groupByAlbumArtist setting
                                 val artist = if (groupByAlbumArtist) {
-                                    // When grouping by album artist, match against albumArtist (with fallback to artist)
-                                    val songArtistName = (song.albumArtist?.takeIf { it.isNotBlank() } ?: song.artist).trim()
-                                    artists.find { it.name.equals(songArtistName, ignoreCase = true) }
+                                    // When grouping by album artist, match split albumArtist (with split track fallback).
+                                    val explicitAlbumArtist = song.albumArtist?.trim().orEmpty()
+                                    val songArtistNames = if (explicitAlbumArtist.isNotBlank() && !explicitAlbumArtist.equals("<unknown>", ignoreCase = true)) {
+                                        splitArtistNames(explicitAlbumArtist)
+                                    } else {
+                                        splitArtistNames(song.artist)
+                                    }
+                                    artists.find { artist ->
+                                        songArtistNames.any { it.equals(artist.name, ignoreCase = true) }
+                                    }
                                 } else {
                                     // When not grouping, check if any split artist name matches
                                     val songArtistNames = splitArtistNames(song.artist)

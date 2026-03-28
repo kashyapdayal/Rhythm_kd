@@ -89,6 +89,8 @@ fun ArtistBottomSheet(
     val viewModel: MusicViewModel = viewModel()
     val appSettings = remember { AppSettings.getInstance(context) }
     val groupByAlbumArtist by appSettings.groupByAlbumArtist.collectAsState()
+    val artistSeparatorEnabled by appSettings.artistSeparatorEnabled.collectAsState()
+    val artistSeparatorDelimiters by appSettings.artistSeparatorDelimiters.collectAsState()
     val useHoursFormat by appSettings.useHoursInTimeFormat.collectAsState()
     val configuration = LocalConfiguration.current
     val density = LocalDensity.current
@@ -125,12 +127,17 @@ fun ArtistBottomSheet(
     }
     
     // Filter songs and albums for this artist based on grouping preference
-    val artistSongs = remember(allSongs, artist, groupByAlbumArtist) {
+    val artistSongs = remember(allSongs, artist, groupByAlbumArtist, artistSeparatorEnabled, artistSeparatorDelimiters) {
         allSongs.filter { song ->
             if (groupByAlbumArtist) {
-                // When grouping by album artist, match the album artist (or track artist as fallback)
-                val songArtistName = (song.albumArtist?.takeIf { it.isNotBlank() } ?: song.artist).trim()
-                songArtistName == artist.name
+                // Match split album artist names, falling back to split track artists.
+                val explicitAlbumArtist = song.albumArtist?.trim().orEmpty()
+                val songArtistNames = if (explicitAlbumArtist.isNotBlank() && !explicitAlbumArtist.equals("<unknown>", ignoreCase = true)) {
+                    splitArtistNames(explicitAlbumArtist)
+                } else {
+                    splitArtistNames(song.artist)
+                }
+                songArtistNames.any { it.equals(artist.name, ignoreCase = true) }
             } else {
                 // When not grouping, check if artist appears in track artist field (split collaborations)
                 splitArtistNames(song.artist).any { it.equals(artist.name, ignoreCase = true) }
@@ -138,14 +145,21 @@ fun ArtistBottomSheet(
         }
     }
     
-    val artistAlbums = remember(allAlbums, allSongs, artist, groupByAlbumArtist) {
+    val artistAlbums = remember(allAlbums, allSongs, artist, groupByAlbumArtist, artistSeparatorEnabled, artistSeparatorDelimiters) {
         if (groupByAlbumArtist) {
             // When grouping by album artist, check if any song in the album has matching album artist
             allAlbums.filter { album ->
                 allSongs.any { song ->
+                    val explicitAlbumArtist = song.albumArtist?.trim().orEmpty()
+                    val songArtistNames = if (explicitAlbumArtist.isNotBlank() && !explicitAlbumArtist.equals("<unknown>", ignoreCase = true)) {
+                        splitArtistNames(explicitAlbumArtist)
+                    } else {
+                        splitArtistNames(song.artist)
+                    }
+
                     song.album == album.title &&
                     song.albumId == album.id &&
-                    (song.albumArtist?.takeIf { it.isNotBlank() } ?: song.artist).trim() == artist.name
+                    songArtistNames.any { it.equals(artist.name, ignoreCase = true) }
                 }
             }
         } else {

@@ -313,6 +313,8 @@ fun PlayerScreen(
     val useSystemVolume by appSettingsInstance.useSystemVolume.collectAsState()
     val stopPlaybackOnZeroVolume by appSettingsInstance.stopPlaybackOnZeroVolume.collectAsState()
     val groupByAlbumArtist by appSettingsInstance.groupByAlbumArtist.collectAsState()
+    val artistSeparatorEnabled by appSettingsInstance.artistSeparatorEnabled.collectAsState()
+    val artistSeparatorDelimiters by appSettingsInstance.artistSeparatorDelimiters.collectAsState()
     val useHoursFormat by appSettingsInstance.useHoursInTimeFormat.collectAsState()
     val enableRatingSystem by appSettingsInstance.enableRatingSystem.collectAsState()
     
@@ -357,11 +359,20 @@ fun PlayerScreen(
     // Helper function to split artist names
     val splitArtistNames: (String) -> List<String> = remember {
         { artistName ->
+            val charDelimiters = if (artistSeparatorEnabled) {
+                artistSeparatorDelimiters.toList().map { it.toString() }
+            } else {
+                emptyList()
+            }
+
             val separators = listOf(
                 " & ", " and ", ", ", " feat. ", " feat ", " ft. ", " ft ",
                 " featuring ", " x ", " X ", " vs ", " vs. ", " with "
             )
             var names = listOf(artistName)
+            for (delimiter in charDelimiters) {
+                names = names.flatMap { it.split(delimiter) }
+            }
             for (separator in separators) {
                 names = names.flatMap { it.split(separator, ignoreCase = true) }
             }
@@ -1058,8 +1069,13 @@ fun PlayerScreen(
             onArtist = {
                 song?.let { currentSong ->
                     val artistForSong = if (groupByAlbumArtist) {
-                        val songArtistName = (currentSong.albumArtist?.takeIf { it.isNotBlank() } ?: currentSong.artist).trim()
-                        artists.find { it.name == songArtistName }
+                        val explicitAlbumArtist = currentSong.albumArtist?.trim().orEmpty()
+                        val songArtistNames = if (explicitAlbumArtist.isNotBlank() && !explicitAlbumArtist.equals("<unknown>", ignoreCase = true)) {
+                            splitArtistNames(explicitAlbumArtist)
+                        } else {
+                            splitArtistNames(currentSong.artist)
+                        }
+                        artists.find { artist -> songArtistNames.any { it.equals(artist.name, ignoreCase = true) } }
                     } else {
                         val songArtistNames = splitArtistNames(currentSong.artist)
                         artists.find { artist -> songArtistNames.any { it.equals(artist.name, ignoreCase = true) } }
@@ -3190,9 +3206,16 @@ fun PlayerScreen(
                                                         song?.let { currentSong ->
                                                             // Respect groupByAlbumArtist setting when finding artist
                                                             val artistForSong = if (groupByAlbumArtist) {
-                                                                // When grouping by album artist, match against albumArtist (with fallback to artist)
-                                                                val songArtistName = (currentSong.albumArtist?.takeIf { it.isNotBlank() } ?: currentSong.artist).trim()
-                                                                artists.find { it.name == songArtistName }
+                                                                // When grouping by album artist, match split albumArtist (with split track fallback).
+                                                                val explicitAlbumArtist = currentSong.albumArtist?.trim().orEmpty()
+                                                                val songArtistNames = if (explicitAlbumArtist.isNotBlank() && !explicitAlbumArtist.equals("<unknown>", ignoreCase = true)) {
+                                                                    splitArtistNames(explicitAlbumArtist)
+                                                                } else {
+                                                                    splitArtistNames(currentSong.artist)
+                                                                }
+                                                                artists.find { artist ->
+                                                                    songArtistNames.any { it.equals(artist.name, ignoreCase = true) }
+                                                                }
                                                             } else {
                                                                 // When not grouping, check if any split artist name matches
                                                                 val songArtistNames = splitArtistNames(currentSong.artist)
