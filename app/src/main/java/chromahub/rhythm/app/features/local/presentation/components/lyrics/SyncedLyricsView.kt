@@ -1,0 +1,300 @@
+package chromahub.rhythm.app.features.local.presentation.components.lyrics
+
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import chromahub.rhythm.app.R
+import chromahub.rhythm.app.util.LyricsParser
+import kotlinx.coroutines.launch
+import kotlin.math.abs
+
+@Composable
+fun SyncedLyricsView(
+    lyrics: String,
+    currentPlaybackTime: Long,
+    modifier: Modifier = Modifier,
+    listState: LazyListState = rememberLazyListState(),
+    onSeek: ((Long) -> Unit)? = null,
+    syncOffset: Long = 0L, // TODO: Add UI controls for adjusting sync offset in real-time
+    showTranslation: Boolean = true,
+    showRomanization: Boolean = true,
+    lyricsSource: String? = null, // Source of lyrics (e.g., "LRCLib", "Embedded", "Local File")
+    textSizeMultiplier: Float = 1.0f, // Scale factor for lyrics text size
+    textAlignment: TextAlign = TextAlign.Center // Alignment of lyrics text
+) {
+    val context = LocalContext.current
+    // TODO: Apply syncOffset to all timestamp comparisons for manual sync adjustment
+    val adjustedPlaybackTime = currentPlaybackTime + syncOffset
+    
+    val parsedLyrics = remember(lyrics) {
+        LyricsParser.parseLyrics(lyrics)
+    }
+
+    val coroutineScope = rememberCoroutineScope()
+    
+    // Track previous line for smooth transitions
+    val previousLineIndex = remember { mutableIntStateOf(-1) }
+    
+    // Find current line index more efficiently (using adjustedPlaybackTime for sync offset)
+    val currentLineIndex by remember(adjustedPlaybackTime, parsedLyrics) {
+        derivedStateOf {
+            parsedLyrics.indexOfLast { it.timestamp <= adjustedPlaybackTime }
+        }
+    }
+
+    // Enhanced auto-scroll with spring animation
+    LaunchedEffect(currentLineIndex) {
+        if (currentLineIndex >= 0 && parsedLyrics.isNotEmpty() && currentLineIndex != previousLineIndex.intValue) {
+            previousLineIndex.intValue = currentLineIndex
+            val offset = listState.layoutInfo.viewportSize.height / 3
+            coroutineScope.launch {
+                listState.animateScrollToItem(currentLineIndex, scrollOffset = -offset)
+            }
+        }
+    }
+
+    if (parsedLyrics.isEmpty()) {
+        Box(
+            modifier = modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = context.getString(R.string.synced_lyrics_unavailable),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                textAlign = TextAlign.Center
+            )
+        }
+    } else {
+        LazyColumn(
+            state = listState,
+            modifier = modifier.fillMaxSize(),
+            horizontalAlignment = when (textAlignment) {
+                TextAlign.Start -> Alignment.Start
+                TextAlign.End -> Alignment.End
+                else -> Alignment.CenterHorizontally
+            },
+            contentPadding = PaddingValues(vertical = 30.dp)
+        ) {
+            itemsIndexed(parsedLyrics) { index, line ->
+                SyncedLyricItem(
+                    line = line,
+                    index = index,
+                    currentLineIndex = currentLineIndex,
+                    currentPlaybackTime = adjustedPlaybackTime, // Use adjusted time for progress calculation
+                    parsedLyrics = parsedLyrics,
+                    onSeek = onSeek,
+                    showTranslation = showTranslation,
+                    showRomanization = showRomanization,
+                    textSizeMultiplier = textSizeMultiplier,
+                    textAlignment = textAlignment
+                )
+            }
+            
+            // Display lyrics source at the bottom
+            if (!lyricsSource.isNullOrBlank()) {
+                item {
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Text(
+                        text = "Lyrics by $lyricsSource",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Individual synced lyric line with enhanced animations
+ */
+@Composable
+private fun SyncedLyricItem(
+    line: chromahub.rhythm.app.util.LyricLine,
+    index: Int,
+    currentLineIndex: Int,
+    currentPlaybackTime: Long,
+    parsedLyrics: List<chromahub.rhythm.app.util.LyricLine>,
+    onSeek: ((Long) -> Unit)?,
+    showTranslation: Boolean,
+    showRomanization: Boolean,
+    textSizeMultiplier: Float = 1.0f,
+    textAlignment: TextAlign = TextAlign.Center
+) {
+    val isCurrentLine = currentLineIndex == index
+    val isPreviousLine = currentLineIndex == index + 1
+    val isNextLine = currentLineIndex == index - 1
+    
+    // Distance-based effects
+    val distanceFromCurrent = abs(index - currentLineIndex)
+    
+    // Calculate progress through current line
+    val progressToNextLine = if (isCurrentLine && index + 1 < parsedLyrics.size) {
+        val nextLineTimestamp = parsedLyrics[index + 1].timestamp
+        val timeDiff = nextLineTimestamp - line.timestamp
+        if (timeDiff > 0) {
+            ((currentPlaybackTime - line.timestamp).toFloat() / timeDiff).coerceIn(0f, 1f)
+        } else 0f
+    } else 0f
+    
+    // Smooth scale animation with spring physics - Apple Music style
+    val scale by animateFloatAsState(
+        targetValue = when {
+            isCurrentLine -> 1.10f
+            isNextLine -> 1.03f + (0.07f * progressToNextLine)
+            else -> 1f
+        },
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMediumLow
+        ),
+        label = "lineScale_$index"
+    )
+    
+    // Enhanced alpha with distance-based gradual fade
+    val alpha by animateFloatAsState(
+        targetValue = when {
+            isCurrentLine -> 1f
+            distanceFromCurrent == 1 -> 0.75f
+            distanceFromCurrent == 2 -> 0.55f
+            distanceFromCurrent == 3 -> 0.40f
+            distanceFromCurrent == 4 -> 0.30f
+            else -> 0.22f
+        },
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "lineAlpha_$index"
+    )
+    
+    // Vertical translation for flowing effect
+    val verticalTranslation by animateFloatAsState(
+        targetValue = if (isCurrentLine) 0f else if (isPreviousLine) -8f else 0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "lineTranslationY_$index"
+    )
+    
+    // Color transition for active line with voice-specific colors
+    val textColor = when {
+        isCurrentLine -> {
+            // Apply different colors based on voice tag
+            when (line.voiceTag) {
+                "v2" -> MaterialTheme.colorScheme.secondary // Different color for second voice
+                "v3" -> MaterialTheme.colorScheme.tertiary  // Third voice
+                else -> MaterialTheme.colorScheme.primary   // Default/v1
+            }
+        }
+        else -> {
+            // Inactive lines also get subtle voice coloring (alpha applied via modifier)
+            when (line.voiceTag) {
+                "v2" -> MaterialTheme.colorScheme.secondary
+                "v3" -> MaterialTheme.colorScheme.tertiary
+                else -> MaterialTheme.colorScheme.onSurface
+            }
+        }
+    }
+    
+    // Dynamic font weight based on position
+    val fontWeight = when {
+        isCurrentLine -> FontWeight.ExtraBold
+        distanceFromCurrent <= 1 -> FontWeight.SemiBold
+        distanceFromCurrent <= 2 -> FontWeight.Medium
+        else -> FontWeight.Normal
+    }
+    
+    // Subtle letter spacing for emphasis
+    val letterSpacing = if (isCurrentLine) 0.05.sp else 0.sp
+
+    val columnAlignment = when (textAlignment) {
+        TextAlign.Start -> Alignment.Start
+        TextAlign.End -> Alignment.End
+        else -> Alignment.CenterHorizontally
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable {
+                onSeek?.invoke(line.timestamp)
+            }
+            .padding(vertical = 14.dp, horizontal = 20.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                translationY = verticalTranslation
+            }
+            .alpha(alpha),
+        horizontalAlignment = columnAlignment
+    ) {
+        // Main lyrics text
+        Text(
+            text = line.text,
+            style = MaterialTheme.typography.headlineSmall.copy(
+                fontWeight = fontWeight,
+                fontSize = MaterialTheme.typography.headlineSmall.fontSize * textSizeMultiplier,
+                lineHeight = MaterialTheme.typography.headlineSmall.lineHeight * 1.5f * textSizeMultiplier,
+                letterSpacing = letterSpacing
+            ),
+            color = textColor,
+            textAlign = textAlignment,
+            modifier = Modifier.fillMaxWidth()
+        )
+        
+        // Translation text (if available and enabled)
+        if (showTranslation && !line.translation.isNullOrBlank()) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = line.translation,
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontWeight = if (isCurrentLine) FontWeight.Medium else FontWeight.Normal,
+                    lineHeight = MaterialTheme.typography.bodyMedium.lineHeight * 1.4f
+                ),
+                color = textColor.copy(alpha = if (isCurrentLine) 0.75f else 0.6f),
+                textAlign = textAlignment,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .alpha(if (isCurrentLine) 0.9f else 0.7f)
+            )
+        }
+        
+        // Romanization text (if available and enabled)
+        if (showRomanization && !line.romanization.isNullOrBlank()) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = line.romanization,
+                style = MaterialTheme.typography.bodySmall.copy(
+                    fontWeight = if (isCurrentLine) FontWeight.Normal else FontWeight.Light,
+                    lineHeight = MaterialTheme.typography.bodySmall.lineHeight * 1.3f,
+                    letterSpacing = 0.02.sp
+                ),
+                color = MaterialTheme.colorScheme.onSurface.copy(
+                    alpha = if (isCurrentLine) 0.65f else 0.5f
+                ),
+                textAlign = textAlignment,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    }
+}
