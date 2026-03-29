@@ -7,6 +7,9 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import chromahub.rhythm.app.shared.data.model.ImmersiveScope
+import chromahub.rhythm.app.shared.data.model.ImmersiveBehaviour
+import chromahub.rhythm.app.shared.data.model.ImmersiveConfig
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -53,7 +56,10 @@ enum class PlaylistViewType {
 class AppSettings private constructor(context: Context) {
     companion object {
         private const val PREFS_NAME = "rhythm_preferences"
-        
+
+        private const val KEY_RHYTHM_GUARD_TIMEOUT_UNTIL_MS = "rhythm_guard_timeout_until_ms"
+        private const val KEY_RHYTHM_GUARD_TIMEOUT_REASON = "rhythm_guard_timeout_reason"
+
         // Playback Settings
         private const val KEY_HIGH_QUALITY_AUDIO = "high_quality_audio"
         private const val KEY_GAPLESS_PLAYBACK = "gapless_playback"
@@ -198,6 +204,8 @@ class AppSettings private constructor(context: Context) {
         
         // Haptic Feedback
         private const val KEY_HAPTIC_FEEDBACK_ENABLED = "haptic_feedback_enabled"
+        private const val KEY_IMMERSIVE_SCOPE = "immersive_scope"
+        private const val KEY_IMMERSIVE_BEHAVIOUR = "immersive_behaviour"
         
         // Notification Settings
     private const val KEY_USE_CUSTOM_NOTIFICATION = "use_custom_notification"
@@ -416,7 +424,19 @@ class AppSettings private constructor(context: Context) {
     
     private val context: Context = context.applicationContext
     private val prefs: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    
+
+    private val _rhythmGuardTimeoutUntilMs = MutableStateFlow(prefs.getLong(KEY_RHYTHM_GUARD_TIMEOUT_UNTIL_MS, 0L))
+    val rhythmGuardTimeoutUntilMs: StateFlow<Long> = _rhythmGuardTimeoutUntilMs
+
+    private val _rhythmGuardTimeoutReason = MutableStateFlow(prefs.getString(KEY_RHYTHM_GUARD_TIMEOUT_REASON, "") ?: "")
+    val rhythmGuardTimeoutReason: StateFlow<String> = _rhythmGuardTimeoutReason
+
+    fun clearRhythmGuardListeningTimeout() {
+        prefs.edit().remove(KEY_RHYTHM_GUARD_TIMEOUT_UNTIL_MS).remove(KEY_RHYTHM_GUARD_TIMEOUT_REASON).apply()
+        _rhythmGuardTimeoutUntilMs.value = 0L
+        _rhythmGuardTimeoutReason.value = ""
+    }
+
     // Playback Settings
     private val _highQualityAudio = MutableStateFlow(prefs.getBoolean(KEY_HIGH_QUALITY_AUDIO, true))
     val highQualityAudio: StateFlow<Boolean> = _highQualityAudio.asStateFlow()
@@ -1031,7 +1051,18 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
     // Haptic Feedback Settings
     private val _hapticFeedbackEnabled = MutableStateFlow(prefs.getBoolean(KEY_HAPTIC_FEEDBACK_ENABLED, true))
     val hapticFeedbackEnabled: StateFlow<Boolean> = _hapticFeedbackEnabled.asStateFlow()
-    
+
+    // Immersive Mode
+    private val _immersiveScope = MutableStateFlow(
+        ImmersiveScope.valueOf(prefs.getString(KEY_IMMERSIVE_SCOPE, ImmersiveScope.OFF.name) ?: ImmersiveScope.OFF.name)
+    )
+    val immersiveScope: StateFlow<ImmersiveScope> = _immersiveScope.asStateFlow()
+
+    private val _immersiveBehaviour = MutableStateFlow(
+        ImmersiveBehaviour.valueOf(prefs.getString(KEY_IMMERSIVE_BEHAVIOUR, ImmersiveBehaviour.STICKY.name) ?: ImmersiveBehaviour.STICKY.name)
+    )
+    val immersiveBehaviour: StateFlow<ImmersiveBehaviour> = _immersiveBehaviour.asStateFlow()
+
     // Notification Settings
     private val _useCustomNotification = MutableStateFlow(prefs.getBoolean(KEY_USE_CUSTOM_NOTIFICATION, false))
     val useCustomNotification: StateFlow<Boolean> = _useCustomNotification.asStateFlow()
@@ -2023,7 +2054,18 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
         prefs.edit().putBoolean(KEY_HAPTIC_FEEDBACK_ENABLED, enabled).apply()
         _hapticFeedbackEnabled.value = enabled
     }
-    
+
+    // Immersive Mode Methods
+    fun setImmersiveScope(scope: ImmersiveScope) {
+        prefs.edit().putString(KEY_IMMERSIVE_SCOPE, scope.name).apply()
+        _immersiveScope.value = scope
+    }
+
+    fun setImmersiveBehaviour(behaviour: ImmersiveBehaviour) {
+        prefs.edit().putString(KEY_IMMERSIVE_BEHAVIOUR, behaviour.name).apply()
+        _immersiveBehaviour.value = behaviour
+    }
+
     // Notification Settings Methods
     fun setUseCustomNotification(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_USE_CUSTOM_NOTIFICATION, enabled).apply()

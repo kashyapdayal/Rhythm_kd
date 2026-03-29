@@ -2782,4 +2782,10 @@
     <string name="theme_mode">Theme Mode</string>
     <string name="theme_mode_desc">Choose your preferred theme</string>
     <string name="ui_apply">Apply</string>
+    
+    <!-- RhythmGuard Timeout -->
+    <string name="settings_rhythm_guard_timeout_activity_title">Take a break!</string>
+    <string name="settings_rhythm_guard_timeout_activity_default_reason">You have reached your time limit.</string>
+    <string name="settings_rhythm_guard_timeout_activity_exit">Exit</string>
+    <string name="settings_rhythm_guard_timeout_activity_close_app">Close App</string>
 </resources>

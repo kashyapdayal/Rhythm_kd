@@ -63,6 +63,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import chromahub.rhythm.app.R
 import chromahub.rhythm.app.shared.presentation.components.icons.RhythmIcons
 import androidx.compose.material.icons.Icons
@@ -150,7 +151,9 @@ class MainActivity : ComponentActivity() {
     private val themeViewModel: ThemeViewModel by viewModels()
     private val appUpdaterViewModel: AppUpdaterViewModel by viewModels() // Inject AppUpdaterViewModel
     private lateinit var appSettings: AppSettings // Declare AppSettings
-    
+
+    lateinit var immersiveManager: chromahub.rhythm.app.util.ImmersiveModeManager
+
     companion object {
         const val DISPLAY_AUDIO_EFFECT_CONTROL_PANEL_REQUEST = 1002
     }
@@ -165,7 +168,23 @@ class MainActivity : ComponentActivity() {
         volumeControlStream = android.media.AudioManager.STREAM_MUSIC
 
         appSettings = AppSettings.getInstance(applicationContext) // Initialize AppSettings
-        
+
+        immersiveManager = chromahub.rhythm.app.util.ImmersiveModeManager(this)
+
+        // Observe preferences and apply immediately
+        lifecycleScope.launch {
+            repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+                kotlinx.coroutines.flow.combine(
+                    appSettings.immersiveScope,
+                    appSettings.immersiveBehaviour
+                ) { scope, behaviour ->
+                    chromahub.rhythm.app.shared.data.model.ImmersiveConfig(scope, behaviour)
+                }.collect { config ->
+                    immersiveManager.applyConfig(config)
+                }
+            }
+        }
+
         // Initialize NetworkClient with AppSettings for dynamic API keys
         chromahub.rhythm.app.network.NetworkClient.initialize(appSettings)
 
@@ -632,6 +651,13 @@ class MainActivity : ComponentActivity() {
             // The PermissionHandler will automatically handle permission state changes
             // through its LaunchedEffect watching permissionsState.allPermissionsGranted
             // So we don't need to do anything special here - the UI will refresh automatically
+        }
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (::immersiveManager.isInitialized) {
+            immersiveManager.onWindowFocusChanged(hasFocus)
         }
     }
 

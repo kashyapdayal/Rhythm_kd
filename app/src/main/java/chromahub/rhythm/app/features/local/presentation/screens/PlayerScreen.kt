@@ -722,7 +722,10 @@ fun PlayerScreen(
     }
 
     DisposableEffect(Unit) {
+        val macActivity = context.findActivity() as? chromahub.rhythm.app.activities.MainActivity
+        macActivity?.immersiveManager?.onPlayerScreenVisibilityChanged(true)
         onDispose {
+            macActivity?.immersiveManager?.onPlayerScreenVisibilityChanged(false)
             onStopDeviceMonitoring()
         }
     }
@@ -4328,3 +4331,5 @@ fun PlaybackPitchDialog(
         }
     )
 }
+
+fun android.content.Context.findActivity(): android.app.Activity? { var context = this; while (context is android.content.ContextWrapper) { if (context is android.app.Activity) return context; context = context.baseContext }; return null }
