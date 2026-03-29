@@ -32,7 +32,6 @@ import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material3.BottomSheetDefaults
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -42,7 +41,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -62,6 +60,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import chromahub.rhythm.app.R
 import chromahub.rhythm.app.shared.data.model.AppSettings
+import chromahub.rhythm.app.shared.presentation.components.common.ButtonGroupStyle
+import chromahub.rhythm.app.shared.presentation.components.common.ExpressiveButtonGroup
+import chromahub.rhythm.app.shared.presentation.components.common.ExpressiveGroupButton
 import chromahub.rhythm.app.shared.presentation.components.icons.RhythmIcons
 import chromahub.rhythm.app.util.HapticUtils
 import kotlinx.coroutines.launch
@@ -320,29 +321,35 @@ fun PlayerChipOrderBottomSheet(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     // Reset to Default button
-                    OutlinedButton(
-                        onClick = {
-                            HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
-                            reorderableList = listOf("FAVORITE", "SPEED", "PITCH", "EQUALIZER", "SLEEP_TIMER", "LYRICS", "ALBUM", "ARTIST", "CAST")
-                            hiddenChipsSet = emptySet()
-                            // Save changes instantly
-                            appSettings.setPlayerChipOrder(reorderableList)
-                            appSettings.setHiddenPlayerChips(hiddenChipsSet)
-                            Toast.makeText(context, "Reset to default order and visibility", Toast.LENGTH_SHORT).show()
-                        },
+                    ExpressiveButtonGroup(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp)
+                        style = ButtonGroupStyle.Tonal
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.RestartAlt,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = context.getString(R.string.player_chip_reset),
-                            style = MaterialTheme.typography.labelLarge
-                        )
+                        ExpressiveGroupButton(
+                            onClick = {
+                                HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
+                                reorderableList = listOf("FAVORITE", "SPEED", "PITCH", "EQUALIZER", "SLEEP_TIMER", "LYRICS", "ALBUM", "ARTIST", "CAST")
+                                hiddenChipsSet = emptySet()
+                                // Save changes instantly
+                                appSettings.setPlayerChipOrder(reorderableList)
+                                appSettings.setHiddenPlayerChips(hiddenChipsSet)
+                                Toast.makeText(context, "Reset to default order and visibility", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            isStart = true,
+                            isEnd = true
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.RestartAlt,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = context.getString(R.string.player_chip_reset),
+                                style = MaterialTheme.typography.labelLarge
+                            )
+                        }
                     }
                 }
             }

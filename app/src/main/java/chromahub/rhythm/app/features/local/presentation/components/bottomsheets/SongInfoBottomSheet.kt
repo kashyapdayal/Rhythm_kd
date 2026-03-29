@@ -3,6 +3,7 @@ package chromahub.rhythm.app.features.local.presentation.components.bottomsheets
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
@@ -125,7 +126,7 @@ fun SongInfoBottomSheet(
     song: Song?,
     onDismiss: () -> Unit,
     appSettings: AppSettings,
-    onEditSong: ((title: String, artist: String, album: String, genre: String, year: Int, trackNumber: Int) -> Unit)? = null,
+    onEditSong: ((title: String, artist: String, album: String, genre: String, year: Int, trackNumber: Int, artworkUri: Uri?, removeArtwork: Boolean) -> Unit)? = null,
     onShowLyricsEditor: (() -> Unit)? = null,
     sheetState: SheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 ) {
@@ -218,6 +219,8 @@ fun SongInfoBottomSheet(
         onDismiss()
         return
     }
+
+    val displaySong = currentSong ?: song
 
     // Load extended metadata
     LaunchedEffect(song.id) {
@@ -638,16 +641,30 @@ fun SongInfoBottomSheet(
             EditSongSheet(
                 song = currentSong ?: song,
                 onDismiss = { showEditSheet = false },
-                onSave = { title: String, artist: String, album: String, genre: String, year: Int, trackNumber: Int ->
+                onSave = { title: String, artist: String, album: String, genre: String, year: Int, trackNumber: Int, artworkUri: Uri?, removeArtwork: Boolean ->
                     currentSong = currentSong?.copy(
                         title = title,
                         artist = artist,
                         album = album,
                         genre = genre,
                         year = year,
-                        trackNumber = trackNumber
+                        trackNumber = trackNumber,
+                        artworkUri = when {
+                            removeArtwork -> null
+                            artworkUri != null -> artworkUri
+                            else -> currentSong?.artworkUri
+                        }
                     )
-                    onEditSong?.invoke(title, artist, album, genre, year, trackNumber)
+                    onEditSong?.invoke(
+                        title,
+                        artist,
+                        album,
+                        genre,
+                        year,
+                        trackNumber,
+                        artworkUri,
+                        removeArtwork
+                    )
                     showEditSheet = false
                 },
                 onShowLyricsEditor = onShowLyricsEditor,
@@ -698,8 +715,8 @@ fun SongInfoBottomSheet(
                                 model = ImageRequest.Builder(context)
                                     .apply(
                                         ImageUtils.buildImageRequest(
-                                            song.artworkUri,
-                                            song.title,
+                                            displaySong.artworkUri,
+                                            displaySong.title,
                                             context.cacheDir,
                                             M3PlaceholderType.TRACK
                                         )
@@ -717,7 +734,7 @@ fun SongInfoBottomSheet(
                             verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Text(
-                                text = song.title,
+                                text = displaySong.title,
                                 style = MaterialTheme.typography.headlineSmall.copy(
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurface
@@ -728,7 +745,7 @@ fun SongInfoBottomSheet(
                             )
                             
                             MarqueeText(
-                                text = song.artist,
+                                text = displaySong.artist,
                                 style = MaterialTheme.typography.titleMedium.copy(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 ),
@@ -1055,7 +1072,7 @@ fun SongInfoBottomSheet(
                     exit = fadeOut() + slideOutVertically { it }
                 ) {
                     SongInfoCard(
-                        song = song,
+                        song = displaySong,
                         extendedInfo = extendedInfo,
                         useHoursFormat = useHoursFormat
                     )
@@ -1085,7 +1102,7 @@ fun SongInfoBottomSheet(
                     exit = fadeOut() + slideOutVertically { it }
                 ) {
                     FileInfoCard(
-                        song = song,
+                        song = displaySong,
                         extendedInfo = extendedInfo,
                         folderPath = folderPath
                     )
@@ -1096,10 +1113,32 @@ fun SongInfoBottomSheet(
         // Show Edit Sheet
         if (showEditSheet) {
             EditSongSheet(
-                song = song,
+                song = currentSong ?: song,
                 onDismiss = { showEditSheet = false },
-                onSave = { title, artist, album, genre, year, trackNumber ->
-                    onEditSong?.invoke(title, artist, album, genre, year, trackNumber)
+                onSave = { title, artist, album, genre, year, trackNumber, artworkUri, removeArtwork ->
+                    currentSong = currentSong?.copy(
+                        title = title,
+                        artist = artist,
+                        album = album,
+                        genre = genre,
+                        year = year,
+                        trackNumber = trackNumber,
+                        artworkUri = when {
+                            removeArtwork -> null
+                            artworkUri != null -> artworkUri
+                            else -> currentSong?.artworkUri
+                        }
+                    )
+                    onEditSong?.invoke(
+                        title,
+                        artist,
+                        album,
+                        genre,
+                        year,
+                        trackNumber,
+                        artworkUri,
+                        removeArtwork
+                    )
                     showEditSheet = false
                 },
                 onShowLyricsEditor = onShowLyricsEditor,
@@ -1674,7 +1713,7 @@ private fun FileInfoGridItem(
 private fun EditSongSheet(
     song: Song,
     onDismiss: () -> Unit,
-    onSave: (title: String, artist: String, album: String, genre: String, year: Int, trackNumber: Int) -> Unit,
+    onSave: (title: String, artist: String, album: String, genre: String, year: Int, trackNumber: Int, artworkUri: Uri?, removeArtwork: Boolean) -> Unit,
     onShowLyricsEditor: (() -> Unit)? = null,
     songArtShape: androidx.compose.ui.graphics.Shape
 ) {
@@ -1700,6 +1739,7 @@ private fun EditSongSheet(
     var year by remember { mutableStateOf(if (song.year > 0) song.year.toString() else "") }
     var trackNumber by remember { mutableStateOf(if (song.trackNumber > 0) song.trackNumber.toString() else "") }
     var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
+    var removeArtwork by remember { mutableStateOf(false) }
     val haptics = LocalHapticFeedback.current
     var showWarningDialog by remember { mutableStateOf(false) }
     var isSaving by remember { mutableStateOf(false) }
@@ -1720,6 +1760,7 @@ private fun EditSongSheet(
         year = originalYear
         trackNumber = originalTrackNumber
         selectedImageUri = null
+        removeArtwork = false
         HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
     }
     
@@ -1728,16 +1769,20 @@ private fun EditSongSheet(
         val yearInt = year.toIntOrNull() ?: 0
         val trackInt = trackNumber.toIntOrNull() ?: 0
         
-        // Pass the basic metadata to the save callback
-        onSave(title.trim(), artist.trim(), album.trim(), genre.trim(), yearInt, trackInt)
+        // Pass metadata with artwork intent to the save callback
+        onSave(
+            title.trim(),
+            artist.trim(),
+            album.trim(),
+            genre.trim(),
+            yearInt,
+            trackInt,
+            selectedImageUri,
+            removeArtwork
+        )
         
         // Reset saving state after initiating save
         isSaving = false
-        
-        // TODO: Handle artwork saving separately if selectedImageUri is not null
-        if (selectedImageUri != null) {
-            Toast.makeText(context, "Artwork editing coming soon!", Toast.LENGTH_SHORT).show()
-        }
     }
 
     // Permission launchers for different scenarios
@@ -1778,6 +1823,35 @@ private fun EditSongSheet(
         ActivityResultContracts.GetContent()
     ) { uri ->
         selectedImageUri = uri
+        if (uri != null) {
+            removeArtwork = false
+        }
+    }
+
+    val artworkPreviewUri = when {
+        removeArtwork -> null
+        selectedImageUri != null -> selectedImageUri
+        else -> song.artworkUri
+    }
+    var hasArtworkPreview by remember(artworkPreviewUri, removeArtwork, selectedImageUri) {
+        mutableStateOf(selectedImageUri != null)
+    }
+
+    LaunchedEffect(artworkPreviewUri, removeArtwork, selectedImageUri) {
+        hasArtworkPreview = when {
+            removeArtwork -> false
+            selectedImageUri != null -> true
+            artworkPreviewUri == null -> false
+            else -> withContext(Dispatchers.IO) {
+                runCatching {
+                    context.contentResolver.openInputStream(artworkPreviewUri)?.use { stream ->
+                        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                        BitmapFactory.decodeStream(stream, null, bounds)
+                        bounds.outWidth > 0 && bounds.outHeight > 0
+                    } ?: false
+                }.getOrDefault(false)
+            }
+        }
     }
     
     // Function to handle save with permission checks
@@ -1887,22 +1961,20 @@ private fun EditSongSheet(
                                 ) {
                                     AsyncImage(
                                         model = ImageRequest.Builder(context)
-                                            .data(selectedImageUri ?: song.artworkUri)
+                                            .apply(
+                                                ImageUtils.buildImageRequest(
+                                                    artworkPreviewUri,
+                                                    song.title,
+                                                    context.cacheDir,
+                                                    M3PlaceholderType.TRACK
+                                                )
+                                            )
                                             .crossfade(true)
                                             .build(),
                                         contentDescription = "Album artwork",
                                         modifier = Modifier.fillMaxSize(),
                                         contentScale = ContentScale.Crop
                                     )
-                                    // Show fallback icon if no image
-                                    if (selectedImageUri == null && (song.artworkUri == null || song.artworkUri.toString().isEmpty())) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.MusicNote,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(100.dp),
-                                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
-                                        )
-                                    }
 
                                     // Change artwork button in top corner
                                     IconButton(
@@ -1926,6 +1998,28 @@ private fun EditSongSheet(
                                             modifier = Modifier.size(22.dp)
                                         )
                                     }
+                                }
+
+                                Spacer(modifier = Modifier.height(16.dp))
+
+                                OutlinedButton(
+                                    onClick = {
+                                        selectedImageUri = null
+                                        removeArtwork = true
+                                    },
+                                    enabled = hasArtworkPreview,
+                                    shape = RoundedCornerShape(14.dp),
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        contentColor = MaterialTheme.colorScheme.error
+                                    )
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Delete,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Remove Artwork")
                                 }
 
 
@@ -2254,312 +2348,328 @@ private fun EditSongSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 24.dp)
+                .fillMaxHeight()
+                .navigationBarsPadding()
+                .padding(vertical = 8.dp)
         ) {
-            // Header
-            AnimatedVisibility(
-                visible = showContent,
-                enter = fadeIn() + slideInVertically { it },
-                exit = fadeOut() + slideOutVertically { it }
+            StandardBottomSheetHeader(
+                title = context.getString(R.string.edit_metadata),
+                subtitle = "Update artwork and tags",
+                visible = showContent
+            )
+
+            Spacer(modifier = Modifier.height(6.dp))
+            
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Start
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = showContent,
+                    enter = fadeIn() + slideInVertically { it },
+                    exit = fadeOut() + slideOutVertically { it },
+                    modifier = Modifier.fillMaxSize()
                 ) {
-                    Text(
-                        text = context.getString(R.string.edit_metadata),
-                        style = MaterialTheme.typography.displayMedium,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                    Spacer(modifier = Modifier.height(2.dp))
+
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp),
+                        shape = RoundedCornerShape(24.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        tonalElevation = 1.dp
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(196.dp)
+                                    .clip(songArtShape)
+                                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                AsyncImage(
+                                    model = ImageRequest.Builder(context)
+                                        .apply(
+                                            ImageUtils.buildImageRequest(
+                                                artworkPreviewUri,
+                                                song.title,
+                                                context.cacheDir,
+                                                M3PlaceholderType.TRACK
+                                            )
+                                        )
+                                        .crossfade(true)
+                                        .build(),
+                                    contentDescription = "Album artwork",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
+
+                                IconButton(
+                                    onClick = { imagePickerLauncher.launch("image/*") },
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .size(40.dp)
+                                        .background(
+                                            color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.86f),
+                                            shape = CircleShape
+                                        )
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Image,
+                                        contentDescription = "Change artwork",
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+
+                            ExpressiveButtonGroup(
+                                modifier = Modifier.fillMaxWidth(),
+                                style = ButtonGroupStyle.Tonal
+                            ) {
+                                ExpressiveGroupButton(
+                                    onClick = { imagePickerLauncher.launch("image/*") },
+                                    modifier = Modifier.weight(1f),
+                                    isStart = true,
+                                    isEnd = !hasArtworkPreview
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Image,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = if (selectedImageUri != null) "Change" else "Select",
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+
+                                if (hasArtworkPreview) {
+                                    ExpressiveGroupButton(
+                                        onClick = {
+                                            selectedImageUri = null
+                                            removeArtwork = true
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                        isEnd = true
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Delete,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = "Remove",
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp),
+                        shape = RoundedCornerShape(24.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        tonalElevation = 1.dp
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Text(
+                                text = context.getString(R.string.song_info_title),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+
+                            OutlinedTextField(
+                                value = title,
+                                onValueChange = { title = it },
+                                label = { Text("Title") },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Rounded.MusicNote,
+                                        contentDescription = null
+                                    )
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(16.dp),
+                                singleLine = true
+                            )
+
+                            OutlinedTextField(
+                                value = artist,
+                                onValueChange = { artist = it },
+                                label = { Text("Artist") },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Person,
+                                        contentDescription = null
+                                    )
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(16.dp),
+                                singleLine = true
+                            )
+
+                            OutlinedTextField(
+                                value = album,
+                                onValueChange = { album = it },
+                                label = { Text("Album") },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Album,
+                                        contentDescription = null
+                                    )
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(16.dp),
+                                singleLine = true
+                            )
+
+                            OutlinedTextField(
+                                value = genre,
+                                onValueChange = { genre = it },
+                                label = { Text("Genre") },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Category,
+                                        contentDescription = null
+                                    )
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(16.dp),
+                                singleLine = true
+                            )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                OutlinedTextField(
+                                    value = year,
+                                    onValueChange = { input ->
+                                        if (input.all { it.isDigit() } && input.length <= 4) {
+                                            year = input
+                                        }
+                                    },
+                                    label = { Text("Year") },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Rounded.DateRange,
+                                            contentDescription = null
+                                        )
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(16.dp),
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                                )
+
+                                OutlinedTextField(
+                                    value = trackNumber,
+                                    onValueChange = { input ->
+                                        if (input.all { it.isDigit() } && input.length <= 3) {
+                                            trackNumber = input
+                                        }
+                                    },
+                                    label = { Text("Track") },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Rounded.FormatListNumbered,
+                                            contentDescription = null
+                                        )
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(16.dp),
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                                )
+                            }
+                        }
+                    }
+                    }
                 }
             }
 
             Spacer(modifier = Modifier.height(12.dp))
-            
-            AnimatedVisibility(
-                visible = showContent,
-                enter = fadeIn() + slideInVertically { it },
-                exit = fadeOut() + slideOutVertically { it }
+
+            ExpressiveButtonGroup(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp),
+                style = ButtonGroupStyle.Tonal
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ExpressiveGroupButton(
+                    onClick = {
+                        HapticUtils.performHapticFeedback(
+                            context,
+                            haptics,
+                            HapticFeedbackType.LongPress
+                        )
+                        resetToOriginal()
+                    },
+                    modifier = Modifier.weight(1f),
+                    enabled = !isSaving,
+                    isStart = true
                 ) {
-            
-            // Artwork section - clean and simple
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                // Artwork display with rounded corners
-                Box(
-                    modifier = Modifier
-                        .size(200.dp)
-                        .clip(songArtShape)
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
-                    contentAlignment = Alignment.Center
-                ) {
-                    AsyncImage(
-                        model = ImageRequest.Builder(context)
-                            .data(selectedImageUri ?: song.artworkUri)
-                            .crossfade(true)
-                            .build(),
-                        contentDescription = "Album artwork",
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
+                    Icon(
+                        imageVector = Icons.Rounded.RestartAlt,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
                     )
-                    // Show fallback icon if no image
-                    if (selectedImageUri == null && (song.artworkUri == null || song.artworkUri.toString().isEmpty())) {
-                        Icon(
-                            imageVector = Icons.Rounded.MusicNote,
-                            contentDescription = null,
-                            modifier = Modifier.size(80.dp),
-                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
-                        )
-                    }
-
-                    // Change artwork button in top corner
-                    IconButton(
-                        onClick = {
-                            imagePickerLauncher.launch("image/*")
-                        },
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .size(40.dp)
-                            .background(
-                                color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.8f),
-                                shape = CircleShape
-                            ),
-                        colors = IconButtonDefaults.iconButtonColors(
-                            contentColor = MaterialTheme.colorScheme.onSurface
-                        )
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Image,
-                            contentDescription = "Change artwork",
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Reset")
                 }
-                
 
-                
-                // Remove artwork button (only show if artwork is selected)
-                if (selectedImageUri != null) {
-                    OutlinedButton(
-                        onClick = { selectedImageUri = null },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.error
+                ExpressiveGroupButton(
+                    onClick = { handleSave() },
+                    modifier = Modifier.weight(1f),
+                    enabled = title.isNotBlank() && artist.isNotBlank() && !isSaving,
+                    isEnd = true
+                ) {
+                    if (isSaving) {
+                        ActionProgressLoader(
+                            size = 18.dp,
+                            color = MaterialTheme.colorScheme.onPrimary
                         )
-                    ) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Saving...")
+                    } else {
                         Icon(
-                            imageVector = Icons.Rounded.Close,
+                            imageVector = Icons.Rounded.Save,
                             contentDescription = null,
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Remove Selected Image")
+                        Text("Save")
                     }
                 }
             }
-            
-            // Metadata Fields Section
-            Text(
-                text = context.getString(R.string.song_info_title),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            
-            // Title field
-            OutlinedTextField(
-                value = title,
-                onValueChange = { title = it },
-                label = { Text("Title") },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Rounded.MusicNote,
-                        contentDescription = null
-                    )
-                },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                singleLine = true
-            )
-            
-            // Artist field
-            OutlinedTextField(
-                value = artist,
-                onValueChange = { artist = it },
-                label = { Text("Artist") },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Rounded.Person,
-                        contentDescription = null
-                    )
-                },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                singleLine = true
-            )
-            
-            // Album field
-            OutlinedTextField(
-                value = album,
-                onValueChange = { album = it },
-                label = { Text("Album") },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Rounded.Album,
-                        contentDescription = null
-                    )
-                },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                singleLine = true
-            )
-            
-            // Genre field
-            OutlinedTextField(
-                value = genre,
-                onValueChange = { genre = it },
-                label = { Text("Genre") },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Rounded.Category,
-                        contentDescription = null
-                    )
-                },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                singleLine = true
-            )
-            
-            // Year and Track Number in a row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                // Year field
-                OutlinedTextField(
-                    value = year,
-                    onValueChange = { input ->
-                        // Only allow digits and limit to 4 characters
-                        if (input.all { it.isDigit() } && input.length <= 4) {
-                            year = input
-                        }
-                    },
-                    label = { Text("Year") },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Rounded.DateRange,
-                            contentDescription = null
-                        )
-                    },
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(16.dp),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                )
-                
-                // Track Number field
-                OutlinedTextField(
-                    value = trackNumber,
-                    onValueChange = { input ->
-                        // Only allow digits and limit to 3 characters
-                        if (input.all { it.isDigit() } && input.length <= 3) {
-                            trackNumber = input
-                        }
-                    },
-                    label = { Text("Track") },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Rounded.FormatListNumbered,
-                            contentDescription = null
-                        )
-                    },
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(16.dp),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                )
-            }
-            
-                // Action buttons
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    // Reset button
-                    OutlinedButton(
-                        onClick = {
-                            HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
-                            resetToOriginal()
-                        },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(16.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.RestartAlt,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Reset")
-                    }
 
-                    // Cancel button
-                    OutlinedButton(
-                        onClick = onDismiss,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(16.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Close,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Cancel")
-                    }
-
-                    // Save button
-                    Button(
-                        onClick = { handleSave() },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(16.dp),
-                        enabled = title.isNotBlank() && artist.isNotBlank() && !isSaving
-                    ) {
-                        if (isSaving) {
-                            ActionProgressLoader(
-                                size = 20.dp,
-                                color = MaterialTheme.colorScheme.onPrimary
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Saving...")
-                        } else {
-                            Icon(
-                                imageVector = Icons.Rounded.Save,
-                                contentDescription = null,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Save")
-                        }
-                    }
-                }
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                }
-            }
+            Spacer(modifier = Modifier.height(8.dp))
         }
     }
     

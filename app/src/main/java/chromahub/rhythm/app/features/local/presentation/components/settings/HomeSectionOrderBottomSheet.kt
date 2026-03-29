@@ -36,7 +36,6 @@ import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.WavingHand
 import androidx.compose.material3.BottomSheetDefaults
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -67,6 +66,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import chromahub.rhythm.app.R
 import chromahub.rhythm.app.shared.data.model.AppSettings
+import chromahub.rhythm.app.shared.presentation.components.common.ButtonGroupStyle
+import chromahub.rhythm.app.shared.presentation.components.common.ExpressiveButtonGroup
+import chromahub.rhythm.app.shared.presentation.components.common.ExpressiveGroupButton
 import chromahub.rhythm.app.shared.presentation.components.icons.RhythmIcons
 import chromahub.rhythm.app.util.HapticUtils
 import kotlinx.coroutines.launch
@@ -426,18 +428,18 @@ fun HomeSectionOrderBottomSheet(
             color = MaterialTheme.colorScheme.surfaceContainer,
             tonalElevation = 3.dp
         ) {
-            Row(
+            ExpressiveButtonGroup(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 24.dp, vertical = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                style = ButtonGroupStyle.Tonal
             ) {
                 // Reset button
-                OutlinedButton(
+                ExpressiveGroupButton(
                     onClick = {
                         HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
                         val defaultOrder = listOf(
-                            "RECENTLY_PLAYED", "ARTISTS", 
+                            "RECENTLY_PLAYED", "ARTISTS",
                             "NEW_RELEASES", "RECENTLY_ADDED", "RECOMMENDED", "STATS"
                         )
                         reorderableList = defaultOrder
@@ -453,7 +455,7 @@ fun HomeSectionOrderBottomSheet(
                         Toast.makeText(context, "Section order and visibility reset to default", Toast.LENGTH_SHORT).show()
                     },
                     modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(16.dp)
+                    isStart = true
                 ) {
                     Icon(
                         imageVector = Icons.Default.RestartAlt,
@@ -463,16 +465,16 @@ fun HomeSectionOrderBottomSheet(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(context.getString(R.string.bottomsheet_reset))
                 }
-                
+
                 // Save button
-                Button(
+                ExpressiveGroupButton(
                     onClick = {
                         HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
-                        
+
                         // Save section order (GREETING first, DISCOVER second, then user-ordered sections)
                         val finalOrder = listOf("GREETING", "DISCOVER") + reorderableList
                         appSettings.setHomeSectionOrder(finalOrder)
-                        
+
                         // Save visibility for each section (greeting always visible)
                         appSettings.setHomeShowRecentlyPlayed(visibilityMap["RECENTLY_PLAYED"] ?: true)
                         appSettings.setHomeShowDiscoverCarousel(visibilityMap["DISCOVER"] ?: true)
@@ -481,7 +483,7 @@ fun HomeSectionOrderBottomSheet(
                         appSettings.setHomeShowRecentlyAdded(visibilityMap["RECENTLY_ADDED"] ?: true)
                         appSettings.setHomeShowRecommended(visibilityMap["RECOMMENDED"] ?: true)
                         appSettings.setHomeShowListeningStats(visibilityMap["STATS"] ?: true)
-                        
+
                         Toast.makeText(context, "Home section order and visibility saved", Toast.LENGTH_SHORT).show()
                         scope.launch {
                             sheetState.hide()
@@ -492,7 +494,7 @@ fun HomeSectionOrderBottomSheet(
                         }
                     },
                     modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(16.dp)
+                    isEnd = true
                 ) {
                     Icon(
                         imageVector = Icons.Default.Check,

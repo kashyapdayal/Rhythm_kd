@@ -67,6 +67,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import chromahub.rhythm.app.R
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import chromahub.rhythm.app.shared.presentation.components.common.ButtonGroupStyle
+import chromahub.rhythm.app.shared.presentation.components.common.ExpressiveButtonGroup
+import chromahub.rhythm.app.shared.presentation.components.common.ExpressiveGroupButton
 import chromahub.rhythm.app.util.HapticUtils
 import kotlinx.coroutines.delay
 
@@ -552,23 +555,20 @@ fun LyricsEditorBottomSheet(
             Spacer(modifier = Modifier.height(16.dp))
 
             // Action Buttons Row (sticky at bottom like LibraryTabOrderBottomSheet)
-            Row(
+            ExpressiveButtonGroup(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 24.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                style = ButtonGroupStyle.Tonal
             ) {
                 // Load File Button
-                OutlinedButton(
+                ExpressiveGroupButton(
                     onClick = {
                         HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.LongPress)
                         loadLyricsLauncher.launch(arrayOf("text/plain", "text/*", "*/*"))
                     },
                     modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.primary
-                    )
+                    isStart = true
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.FileOpen,
@@ -580,7 +580,7 @@ fun LyricsEditorBottomSheet(
                 }
 
                 // Save File Button
-                FilledTonalButton(
+                ExpressiveGroupButton(
                     onClick = {
                         HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.LongPress)
                         if (editedLyrics.isNotBlank()) {
@@ -589,12 +589,8 @@ fun LyricsEditorBottomSheet(
                         }
                     },
                     modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(16.dp),
                     enabled = editedLyrics.isNotBlank(),
-                    colors = ButtonDefaults.filledTonalButtonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary
-                    )
+                    isEnd = true
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.Save,
@@ -609,30 +605,32 @@ fun LyricsEditorBottomSheet(
             Spacer(modifier = Modifier.height(12.dp))
 
             // Embed in File Button
-            FilledTonalButton(
-                onClick = {
-                    HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.LongPress)
-                    if (editedLyrics.isNotBlank()) {
-                        onEmbedInFile(editedLyrics)
-                    }
-                },
+            ExpressiveButtonGroup(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 24.dp),
-                shape = RoundedCornerShape(16.dp),
-                enabled = editedLyrics.isNotBlank(),
-                colors = ButtonDefaults.filledTonalButtonColors(
-                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer
-                )
+                style = ButtonGroupStyle.Tonal
             ) {
-                Icon(
-                    imageVector = Icons.Rounded.MusicNote,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(context.getString(R.string.bottomsheet_lyrics_embed))
+                ExpressiveGroupButton(
+                    onClick = {
+                        HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.LongPress)
+                        if (editedLyrics.isNotBlank()) {
+                            onEmbedInFile(editedLyrics)
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = editedLyrics.isNotBlank(),
+                    isStart = true,
+                    isEnd = true
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.MusicNote,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(context.getString(R.string.bottomsheet_lyrics_embed))
+                }
             }
 
             Spacer(modifier = Modifier.height(16.dp))

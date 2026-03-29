@@ -40,6 +40,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
+import java.io.ByteArrayOutputStream
 import java.net.URL
 import chromahub.rhythm.app.shared.data.model.LyricsData
 import chromahub.rhythm.app.shared.data.model.Song
@@ -125,6 +126,7 @@ class MusicRepository(context: Context) {
     
     // Genre cache using SharedPreferences
     private val genrePrefs: SharedPreferences by lazy { context.getSharedPreferences("genre_cache", Context.MODE_PRIVATE) }
+    private val artworkPrefs: SharedPreferences by lazy { context.getSharedPreferences("artwork_overrides", Context.MODE_PRIVATE) }
     
     // Scan progress tracking
     private val _scanProgress = MutableStateFlow(ScanProgress(0, 0, "Idle"))
@@ -233,9 +235,17 @@ class MusicRepository(context: Context) {
 
             for (song in songs) {
                 // For groupByAlbumArtist = true
-                val albumArtistName = (song.albumArtist?.takeIf { it.isNotBlank() } ?: song.artist).trim()
-                if (albumArtistName.isNotBlank() && albumArtistName != "<unknown>") {
-                    relationships.add(SongArtistEntity(song.id, albumArtistName, true))
+                val explicitAlbumArtist = song.albumArtist?.trim().orEmpty()
+                val albumArtistNames = if (explicitAlbumArtist.isNotBlank() && !explicitAlbumArtist.equals("<unknown>", ignoreCase = true)) {
+                    splitArtistNames(explicitAlbumArtist, preloadedCharDelimiters)
+                } else {
+                    splitArtistNames(song.artist, preloadedCharDelimiters)
+                }
+                for (artistName in albumArtistNames) {
+                    val cleanName = artistName.trim()
+                    if (cleanName.isNotBlank() && !cleanName.equals("<unknown>", ignoreCase = true)) {
+                        relationships.add(SongArtistEntity(song.id, cleanName, true))
+                    }
                 }
 
                 // For groupByAlbumArtist = false (split track artists)
@@ -895,6 +905,10 @@ class MusicRepository(context: Context) {
                 Uri.parse("content://media/external/audio/albumart"),
                 albumId
             )
+            val artworkRemovedOverride = artworkPrefs.getBoolean("removed_${id}", false)
+            val artworkUriOverride = artworkPrefs.getString("uri_${id}", null)
+                ?.let { runCatching { Uri.parse(it) }.getOrNull() }
+
             val useEmbeddedArt = appSettings.ignoreMediaStoreCovers.value || appSettings.losslessArtwork.value
             val effectiveArtUri = if (useEmbeddedArt) {
                 // Check if embedded art was previously extracted to cache
@@ -922,6 +936,23 @@ class MusicRepository(context: Context) {
                 albumArtUri
             }
 
+            val finalArtworkUri = when {
+                artworkRemovedOverride -> null
+                artworkUriOverride != null -> {
+                    val isUsable = when (artworkUriOverride.scheme) {
+                        "file", null -> artworkUriOverride.path?.let { File(it).exists() } == true
+                        else -> true
+                    }
+                    if (isUsable) {
+                        artworkUriOverride
+                    } else {
+                        artworkPrefs.edit().remove("uri_${id}").apply()
+                        effectiveArtUri
+                    }
+                }
+                else -> effectiveArtUri
+            }
+
             // Load cached genre if available
             val cachedGenre = try {
                 genrePrefs.getString("genre_$id", null)?.takeIf { it.isNotBlank() }
@@ -944,7 +975,7 @@ class MusicRepository(context: Context) {
                 albumId = albumId.toString(),
                 duration = duration,
                 uri = contentUri,
-                artworkUri = effectiveArtUri,
+                artworkUri = finalArtworkUri,
                 trackNumber = track,
                 year = year,
                 dateAdded = dateAdded,
@@ -1386,6 +1417,9 @@ class MusicRepository(context: Context) {
 
         Log.d(TAG, "Loading artists (groupByAlbumArtist=$groupByAlbumArtist)")
 
+        // Separator config affects relationship rows; refresh relationships/cache when it changes.
+        refreshArtistRelationshipsIfNeeded(appSettings)
+
         // Try to load from Room cache first
         val cachedArtists = loadArtistsFromRoom(groupByAlbumArtist)
         if (cachedArtists != null && cachedArtists.isNotEmpty()) {
@@ -1402,6 +1436,28 @@ class MusicRepository(context: Context) {
         Log.d(TAG, "Cached ${artists.size} artists to Room (groupByAlbumArtist=$groupByAlbumArtist)")
 
         artists
+    }
+
+    private var cachedArtistSplitConfig: String? = null
+
+    private suspend fun refreshArtistRelationshipsIfNeeded(appSettings: AppSettings) {
+        val artistSeparatorEnabled = appSettings.artistSeparatorEnabled.value
+        val delimiters = if (artistSeparatorEnabled) appSettings.artistSeparatorDelimiters.value else ""
+        val configKey = "$artistSeparatorEnabled|$delimiters"
+
+        if (configKey == cachedArtistSplitConfig) {
+            return
+        }
+
+        val songs = loadSongs()
+        saveSongArtistRelationships(songs)
+        roomDb.artistDao().deleteAll()
+        cachedArtistSplitConfig = configKey
+
+        Log.d(
+            TAG,
+            "Refreshed artist relationships for separators (enabled=$artistSeparatorEnabled, delimiters='$delimiters')"
+        )
     }
 
     /**
@@ -2745,9 +2801,16 @@ class MusicRepository(context: Context) {
                 Log.w(TAG, "Failed to read complete tag data")
                 return@use null
             }
+
+            // ID3 unsynchronization inserts 0x00 bytes after 0xFF; remove them before frame parsing.
+            val normalizedTagData = if ((flags and 0x80) != 0) {
+                removeId3Unsynchronization(tagData)
+            } else {
+                tagData
+            }
             
             // Parse frames and find USLT
-            parseID3v2Frames(tagData, majorVersion)
+            parseID3v2Frames(normalizedTagData, majorVersion)
         }
     }
     
@@ -2759,6 +2822,25 @@ class MusicRepository(context: Context) {
                ((b2 and 0x7F) shl 14) or
                ((b3 and 0x7F) shl 7) or
                (b4 and 0x7F)
+    }
+
+    private fun removeId3Unsynchronization(data: ByteArray): ByteArray {
+        if (data.isEmpty()) return data
+
+        val output = ByteArrayOutputStream(data.size)
+        var i = 0
+        while (i < data.size) {
+            val current = data[i]
+            output.write(current.toInt())
+
+            if (current == 0xFF.toByte() && i + 1 < data.size && data[i + 1] == 0.toByte()) {
+                i += 2
+            } else {
+                i += 1
+            }
+        }
+
+        return output.toByteArray()
     }
     
     /**
@@ -2833,21 +2915,35 @@ class MusicRepository(context: Context) {
             val encoding = data[offset].toInt() and 0xFF
             // Skip language (3 bytes)
             var pos = offset + 4
+            val frameEnd = offset + size
             
-            // Skip content descriptor (null-terminated)
-            val terminator = if (encoding == 1 || encoding == 2) 2 else 1 // UTF-16 uses 2-byte null
-            var nullCount = 0
-            while (pos < offset + size && nullCount < terminator) {
-                if (data[pos] == 0.toByte()) nullCount++
-                pos++
-                if (pos - offset > 256) break // Safety: max 256 bytes for descriptor
+            // Skip content descriptor (null-terminated, encoding-aware).
+            if (encoding == 1 || encoding == 2) {
+                val maxDescriptorEnd = minOf(frameEnd, offset + 4 + 512)
+                while (pos + 1 < maxDescriptorEnd) {
+                    if (data[pos] == 0.toByte() && data[pos + 1] == 0.toByte()) {
+                        pos += 2
+                        break
+                    }
+                    pos += 2
+                }
+            } else {
+                val maxDescriptorEnd = minOf(frameEnd, offset + 4 + 256)
+                while (pos < maxDescriptorEnd && data[pos] != 0.toByte()) {
+                    pos++
+                }
+                if (pos < frameEnd && data[pos] == 0.toByte()) {
+                    pos++
+                }
             }
             
             // Extract lyrics text
-            val lyricsEnd = offset + size
-            if (pos >= lyricsEnd) return null
+            if (pos >= frameEnd) return null
+            if ((encoding == 1 || encoding == 2) && ((pos - offset) % 2 != 0) && pos + 1 < frameEnd) {
+                pos++
+            }
             
-            val lyricsBytes = data.copyOfRange(pos, lyricsEnd)
+            val lyricsBytes = data.copyOfRange(pos, frameEnd)
             
             // Decode based on encoding
             val charset = when (encoding) {
@@ -2860,7 +2956,7 @@ class MusicRepository(context: Context) {
             
             val lyricsText = String(lyricsBytes, charset)
                 .trim()
-                .replace("\u0000", "") // Remove null characters
+                .replace("\u0000", "")
             
             if (lyricsText.isBlank()) return null
             
@@ -2926,10 +3022,12 @@ class MusicRepository(context: Context) {
         Log.d(TAG, "Parsing lyrics data: ${lyrics.take(200)}${if (lyrics.length > 200) "..." else ""}")
         
         // Clean up the lyrics text
-        val cleanedLyrics = lyrics
-            .trim()
-            .replace("\r\n", "\n") // Normalize line endings
-            .replace("\r", "\n")
+        val cleanedLyrics = sanitizeLyricsText(lyrics)
+
+        if (cleanedLyrics.isBlank()) {
+            Log.w(TAG, "Rejected lyrics: text became empty after sanitization")
+            return null
+        }
         
         // Check if this looks like just a song title or metadata
         val lines = cleanedLyrics.lines().filter { it.trim().isNotEmpty() }
@@ -3028,7 +3126,8 @@ class MusicRepository(context: Context) {
                 trimmed.isNotEmpty() && 
                 !trimmed.startsWith("//") &&
                 !trimmed.startsWith("#") &&
-                trimmed.length > 2
+                trimmed.length > 2 &&
+                isLikelyLyricsLine(trimmed)
             }
             
             if (meaningfulLines.isNotEmpty()) {
@@ -3036,6 +3135,82 @@ class MusicRepository(context: Context) {
             } else {
                 null
             }
+        }
+    }
+
+    private fun sanitizeLyricsText(input: String): String {
+        val normalized = input
+            .replace("\uFEFF", "")
+            .replace("\r\n", "\n")
+            .replace("\r", "\n")
+
+        val cleanedLines = normalized.lines().mapNotNull { rawLine ->
+            val cleaned = rawLine
+                .filter { ch ->
+                    when {
+                        ch == '\t' -> true
+                        ch == '\uFFFD' -> false
+                        Character.isISOControl(ch) -> false
+                        else -> true
+                    }
+                }
+                .trimEnd()
+
+            if (cleaned.isBlank()) {
+                null
+            } else {
+                cleaned
+            }
+        }.filter { line ->
+            isLikelyLyricsLine(line)
+        }
+
+        return cleanedLines
+            .joinToString("\n")
+            .replace(Regex("\n{3,}"), "\n\n")
+            .trim()
+    }
+
+    private fun isLikelyLyricsLine(line: String): Boolean {
+        val trimmed = line.trim()
+        if (trimmed.isEmpty()) return false
+
+        // Keep standard LRC metadata/timestamp lines that are part of synced lyrics.
+        if (trimmed.matches(Regex("\\[[a-zA-Z]{1,10}:[^\\]]*]"))) return true
+        if (trimmed.matches(Regex("(\\[\\d{1,2}:\\d{2}(?:\\.\\d{2,3})?])+.*"))) return true
+
+        val body = trimmed
+            .replace(Regex("\\[[^\\]]*]"), "")
+            .replace(Regex("<[^>]*>"), "")
+            .trim()
+
+        if (body.isEmpty()) return true
+        if (body.length < 20) return true
+
+        val readableChars = body.count { ch ->
+            ch.isLetterOrDigit() ||
+                ch.isWhitespace() ||
+                isLyricsPunctuation(ch)
+        }
+
+        val ratio = readableChars.toDouble() / body.length.toDouble()
+        return ratio >= 0.55
+    }
+
+    private fun isLyricsPunctuation(ch: Char): Boolean {
+        return when (Character.getType(ch)) {
+            Character.CONNECTOR_PUNCTUATION.toInt(),
+            Character.DASH_PUNCTUATION.toInt(),
+            Character.START_PUNCTUATION.toInt(),
+            Character.END_PUNCTUATION.toInt(),
+            Character.INITIAL_QUOTE_PUNCTUATION.toInt(),
+            Character.FINAL_QUOTE_PUNCTUATION.toInt(),
+            Character.OTHER_PUNCTUATION.toInt(),
+            Character.MATH_SYMBOL.toInt(),
+            Character.CURRENCY_SYMBOL.toInt(),
+            Character.MODIFIER_SYMBOL.toInt(),
+            Character.OTHER_SYMBOL.toInt() -> true
+            else -> false
         }
     }
     
@@ -3937,9 +4112,14 @@ class MusicRepository(context: Context) {
         // Filter songs that match the artist's name
         val artistSongs = allSongs.filter { song ->
             if (groupByAlbumArtist) {
-                // When grouping by album artist, match exactly against album artist (with fallback to track artist)
-                val songArtistName = (song.albumArtist?.takeIf { it.isNotBlank() } ?: song.artist).trim()
-                songArtistName == artist.name
+                // Match against split album artist names, falling back to split track artists.
+                val explicitAlbumArtist = song.albumArtist?.trim().orEmpty()
+                val songArtistNames = if (explicitAlbumArtist.isNotBlank() && !explicitAlbumArtist.equals("<unknown>", ignoreCase = true)) {
+                    splitArtistNames(explicitAlbumArtist)
+                } else {
+                    splitArtistNames(song.artist)
+                }
+                songArtistNames.any { it.equals(artist.name, ignoreCase = true) }
             } else {
                 // When not grouping, check if artist name appears in the track artist field (exact or as part of collaboration)
                 val artistNames = splitArtistNames(song.artist)
@@ -3974,9 +4154,16 @@ class MusicRepository(context: Context) {
             if (groupByAlbumArtist) {
                 // When grouping by album artist, check if any song in the album has matching album artist
                 allSongs.any { song ->
+                    val explicitAlbumArtist = song.albumArtist?.trim().orEmpty()
+                    val songArtistNames = if (explicitAlbumArtist.isNotBlank() && !explicitAlbumArtist.equals("<unknown>", ignoreCase = true)) {
+                        splitArtistNames(explicitAlbumArtist)
+                    } else {
+                        splitArtistNames(song.artist)
+                    }
+
                     song.album == album.title &&
                     song.albumId == album.id &&
-                    (song.albumArtist?.takeIf { it.isNotBlank() } ?: song.artist).trim() == artist.name
+                    songArtistNames.any { it.equals(artist.name, ignoreCase = true) }
                 }
             } else {
                 // When not grouping, check if artist appears in any song's track artist field for this album

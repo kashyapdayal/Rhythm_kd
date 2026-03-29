@@ -17,6 +17,7 @@ import android.webkit.MimeTypeMap
 import org.jaudiotagger.audio.AudioFileIO
 import org.jaudiotagger.tag.FieldKey
 import org.jaudiotagger.tag.Tag
+import org.jaudiotagger.tag.images.ArtworkFactory
 import androidx.core.net.toUri
 import chromahub.rhythm.app.shared.data.model.Song
 import chromahub.rhythm.app.features.local.presentation.components.bottomsheets.ExtendedSongInfo
@@ -47,7 +48,9 @@ data class PendingWriteRequest(
     val newGenre: String,
     val newYear: Int,
     val newTrackNumber: Int,
-    val tempFilePath: String
+    val tempFilePath: String,
+    val artworkUriString: String?,
+    val removeArtwork: Boolean
 )
 
 /**
@@ -65,6 +68,44 @@ data class PendingLyricsWriteRequest(
  */
 object MediaUtils {
     private const val TAG = "MediaUtils"
+
+    private fun applyArtworkToTag(
+        context: Context,
+        tag: Tag,
+        artworkUri: Uri?,
+        removeArtwork: Boolean
+    ) {
+        if (!removeArtwork && artworkUri == null) return
+
+        try {
+            tag.deleteArtworkField()
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not clear existing artwork field", e)
+        }
+
+        if (removeArtwork || artworkUri == null) return
+
+        try {
+            val mimeType = context.contentResolver.getType(artworkUri) ?: "image/jpeg"
+            val artworkBytes =
+                context.contentResolver.openInputStream(artworkUri)?.use { it.readBytes() }
+
+            if (artworkBytes == null || artworkBytes.isEmpty()) {
+                Log.w(TAG, "Selected artwork URI has no readable data: $artworkUri")
+                return
+            }
+
+            val artwork = ArtworkFactory.getNew().apply {
+                setMimeType(mimeType)
+                setBinaryData(artworkBytes)
+                setPictureType(3) // 3 = front cover
+            }
+            tag.setField(artwork)
+            Log.d(TAG, "Applied artwork to audio tag ($mimeType, ${artworkBytes.size} bytes)")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to apply artwork to audio tag", e)
+        }
+    }
 
     /**
      * Finds a song in MediaStore that matches the given external file URI.
@@ -1072,7 +1113,9 @@ object MediaUtils {
         newAlbum: String,
         newGenre: String,
         newYear: Int = 0,
-        newTrackNumber: Int
+        newTrackNumber: Int,
+        artworkUri: Uri? = null,
+        removeArtwork: Boolean = false
     ): Boolean {
         return try {
             val contentResolver = context.contentResolver
@@ -1083,7 +1126,7 @@ object MediaUtils {
             Log.d(TAG, "Song ID: ${song.id}")
             Log.d(
                 TAG,
-                "New values - Title: $newTitle, Artist: $newArtist, Album: $newAlbum, Genre: $newGenre, Year: $newYear, Track: $newTrackNumber"
+                "New values - Title: $newTitle, Artist: $newArtist, Album: $newAlbum, Genre: $newGenre, Year: $newYear, Track: $newTrackNumber, ReplaceArtwork=${artworkUri != null}, RemoveArtwork=$removeArtwork"
             )
 
             // Check if URI is valid and accessible
@@ -1240,6 +1283,7 @@ object MediaUtils {
                         if (newTrackNumber > 0) {
                             tag.setField(FieldKey.TRACK, newTrackNumber.toString())
                         }
+                        applyArtworkToTag(context, tag, artworkUri, removeArtwork)
 
                         audioFileObj.tag = tag
                         AudioFileIO.write(audioFileObj)
@@ -1376,6 +1420,7 @@ object MediaUtils {
                             if (newTrackNumber > 0) {
                                 tag.setField(FieldKey.TRACK, newTrackNumber.toString())
                             }
+                            applyArtworkToTag(context, tag, artworkUri, removeArtwork)
 
                             audioFileObj.tag = tag
                             AudioFileIO.write(audioFileObj)
@@ -1477,7 +1522,9 @@ object MediaUtils {
         newAlbum: String,
         newGenre: String,
         newYear: Int,
-        newTrackNumber: Int
+        newTrackNumber: Int,
+        artworkUri: Uri? = null,
+        removeArtwork: Boolean = false
     ): PendingWriteRequest? {
         return try {
             val contentResolver = context.contentResolver
@@ -1497,7 +1544,9 @@ object MediaUtils {
                     newAlbum = newAlbum,
                     newGenre = newGenre,
                     newYear = newYear,
-                    newTrackNumber = newTrackNumber
+                    newTrackNumber = newTrackNumber,
+                    artworkUri = artworkUri,
+                    removeArtwork = removeArtwork
                 )
             } catch (e: Exception) {
                 Log.w(TAG, "Could not pre-prepare metadata temp file; will retry after permission: ${e.message}")
@@ -1513,7 +1562,9 @@ object MediaUtils {
                 newGenre = newGenre,
                 newYear = newYear,
                 newTrackNumber = newTrackNumber,
-                tempFilePath = tempFilePath ?: "" // empty string = retry in completion
+                tempFilePath = tempFilePath ?: "", // empty string = retry in completion
+                artworkUriString = artworkUri?.toString(),
+                removeArtwork = removeArtwork
             )
         } catch (e: Exception) {
             Log.e(TAG, "Failed to create write request for song: ${song.title}", e)
@@ -1532,7 +1583,9 @@ object MediaUtils {
         newAlbum: String,
         newGenre: String,
         newYear: Int,
-        newTrackNumber: Int
+        newTrackNumber: Int,
+        artworkUri: Uri? = null,
+        removeArtwork: Boolean = false
     ): String? {
         return try {
             val contentResolver = context.contentResolver
@@ -1589,6 +1642,7 @@ object MediaUtils {
             if (newTrackNumber > 0) {
                 tag.setField(FieldKey.TRACK, newTrackNumber.toString())
             }
+            applyArtworkToTag(context, tag, artworkUri, removeArtwork)
 
             audioFileObj.tag = tag
             AudioFileIO.write(audioFileObj)
@@ -1629,7 +1683,9 @@ object MediaUtils {
                     newAlbum = pendingRequest.newAlbum,
                     newGenre = pendingRequest.newGenre,
                     newYear = pendingRequest.newYear,
-                    newTrackNumber = pendingRequest.newTrackNumber
+                    newTrackNumber = pendingRequest.newTrackNumber,
+                    artworkUri = pendingRequest.artworkUriString?.toUri(),
+                    removeArtwork = pendingRequest.removeArtwork
                 )
                 if (retryPath == null) {
                     Log.e(TAG, "Cannot write metadata: format not supported or file unreadable")

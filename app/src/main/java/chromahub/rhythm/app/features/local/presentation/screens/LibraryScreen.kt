@@ -521,7 +521,7 @@ fun LibraryScreen(
             song = displaySong,
             onDismiss = { showSongInfoSheet = false },
             appSettings = appSettings,
-            onEditSong = { title, artist, album, genre, year, trackNumber ->
+            onEditSong = { title, artist, album, genre, year, trackNumber, artworkUri, removeArtwork ->
                 // Use the ViewModel's new metadata saving function with callbacks
                 musicViewModel.saveMetadataChanges(
                     song = displaySong!!,
@@ -531,6 +531,8 @@ fun LibraryScreen(
                     genre = genre,
                     year = year,
                     trackNumber = trackNumber,
+                    artworkUri = artworkUri,
+                    removeArtwork = removeArtwork,
                     onSuccess = { fileWriteSucceeded ->
                         if (fileWriteSucceeded) {
                             Toast.makeText(context, "Metadata saved successfully to file!", Toast.LENGTH_SHORT).show()
@@ -720,13 +722,15 @@ fun LibraryScreen(
                 showBatchEditSheet = false
                 multiSelectionState.clearSelection()
             },
-            onSave = { artist, album, genre, year ->
+            onSave = { artist, album, genre, year, artworkUri, removeArtwork ->
                 musicViewModel.batchEditMetadata(
                     songs = selectedSongs,
                     artist = artist,
                     album = album,
                     genre = genre,
                     year = year,
+                    artworkUri = artworkUri,
+                    removeArtwork = removeArtwork,
                     onProgress = { _, _ -> },
                     onComplete = { successCount, failCount ->
                         showBatchEditSheet = false
@@ -2676,9 +2680,16 @@ fun SingleCardSongsContent(
                             onGoToArtist = { 
                                 // Find the artist from the list - respect groupByAlbumArtist setting
                                 val artist = if (groupByAlbumArtist) {
-                                    // When grouping by album artist, match against albumArtist (with fallback to artist)
-                                    val songArtistName = (song.albumArtist?.takeIf { it.isNotBlank() } ?: song.artist).trim()
-                                    artists.find { it.name.equals(songArtistName, ignoreCase = true) }
+                                    // When grouping by album artist, match split albumArtist (with split track fallback).
+                                    val explicitAlbumArtist = song.albumArtist?.trim().orEmpty()
+                                    val songArtistNames = if (explicitAlbumArtist.isNotBlank() && !explicitAlbumArtist.equals("<unknown>", ignoreCase = true)) {
+                                        splitArtistNames(explicitAlbumArtist)
+                                    } else {
+                                        splitArtistNames(song.artist)
+                                    }
+                                    artists.find { artist ->
+                                        songArtistNames.any { it.equals(artist.name, ignoreCase = true) }
+                                    }
                                 } else {
                                     // When not grouping, check if any split artist name matches
                                     val songArtistNames = splitArtistNames(song.artist)

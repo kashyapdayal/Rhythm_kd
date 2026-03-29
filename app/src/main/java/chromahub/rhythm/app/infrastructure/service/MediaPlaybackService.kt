@@ -2474,6 +2474,16 @@ class MediaPlaybackService : MediaLibraryService(),
     }
     override fun onDestroy() {
         Log.d(TAG, "Service onDestroy — cleaning up all resources")
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            val mediaAttributes = android.media.AudioAttributes.Builder()
+                .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
+                .build()
+            clearUsbPreferredMixerAttributes(audioManager, mediaAttributes)
+        }
+
         isServicePlayerInitialized.set(false)
         
         // Cancel all coroutines and pending jobs

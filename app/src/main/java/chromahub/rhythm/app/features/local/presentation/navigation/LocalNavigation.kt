@@ -1093,6 +1093,7 @@ private fun LocalNavigationContent(
                     }
                 ) {
                     HomeScreen(
+                        musicViewModel = viewModel,
                         songs = songs,
                         albums = albums,
                         artists = artists,
@@ -1920,6 +1921,7 @@ private fun LocalNavigationContent(
                 ) { backStackEntry ->
                     val playlistId = backStackEntry.arguments?.getString("playlistId") ?: ""
                     val playlist = playlists.find { it.id == playlistId }
+                    val favoriteSongs by viewModel.favoriteSongs.collectAsState()
 
                     // Album/Artist data for bottom sheets
                     val allAlbums by viewModel.albums.collectAsState()
@@ -2014,6 +2016,8 @@ private fun LocalNavigationContent(
                             sheetState = albumSheetState,
                             haptics = playlistHaptics,
                             onPlayNext = { song -> viewModel.playNext(song) },
+                            onToggleFavorite = { song -> viewModel.toggleFavorite(song) },
+                            favoriteSongs = favoriteSongs,
                             currentSong = currentSong,
                             isPlaying = isPlaying
                         )
@@ -2157,7 +2161,7 @@ private fun LocalNavigationContent(
                                 selectedSongForInfo = null
                             },
                             appSettings = appSettings,
-                            onEditSong = { title, artist, album, genre, year, trackNumber ->
+                            onEditSong = { title, artist, album, genre, year, trackNumber, artworkUri, removeArtwork ->
                                 viewModel.saveMetadataChanges(
                                     song = selectedSongForInfo!!,
                                     title = title,
@@ -2166,6 +2170,8 @@ private fun LocalNavigationContent(
                                     genre = genre,
                                     year = year,
                                     trackNumber = trackNumber,
+                                    artworkUri = artworkUri,
+                                    removeArtwork = removeArtwork,
                                     onSuccess = { fileWriteSucceeded ->
                                         if (fileWriteSucceeded) {
                                             android.widget.Toast.makeText(context, "Metadata saved successfully to file!", android.widget.Toast.LENGTH_SHORT).show()

@@ -80,6 +80,8 @@ fun ArtistDetailScreen(
     val viewModel: MusicViewModel = viewModel()
     val appSettings = remember { AppSettings.getInstance(context) }
     val groupByAlbumArtist by appSettings.groupByAlbumArtist.collectAsState()
+    val artistSeparatorEnabled by appSettings.artistSeparatorEnabled.collectAsState()
+    val artistSeparatorDelimiters by appSettings.artistSeparatorDelimiters.collectAsState()
     val useHoursFormat by appSettings.useHoursInTimeFormat.collectAsState()
     
     // Get songs and albums from viewModel
@@ -117,24 +119,36 @@ fun ArtistDetailScreen(
     }
     
     // Filter songs and albums for this artist based on grouping preference
-    val artistSongs = remember(allSongs, artistName, groupByAlbumArtist) {
+    val artistSongs = remember(allSongs, artistName, groupByAlbumArtist, artistSeparatorEnabled, artistSeparatorDelimiters) {
         allSongs.filter { song ->
             if (groupByAlbumArtist) {
-                val songArtistName = (song.albumArtist?.takeIf { it.isNotBlank() } ?: song.artist).trim()
-                songArtistName == artistName
+                val explicitAlbumArtist = song.albumArtist?.trim().orEmpty()
+                val songArtistNames = if (explicitAlbumArtist.isNotBlank() && !explicitAlbumArtist.equals("<unknown>", ignoreCase = true)) {
+                    splitArtistNames(explicitAlbumArtist)
+                } else {
+                    splitArtistNames(song.artist)
+                }
+                songArtistNames.any { it.equals(artistName, ignoreCase = true) }
             } else {
                 splitArtistNames(song.artist).any { it.equals(artistName, ignoreCase = true) }
             }
         }
     }
     
-    val artistAlbums = remember(allAlbums, allSongs, artistName, groupByAlbumArtist) {
+    val artistAlbums = remember(allAlbums, allSongs, artistName, groupByAlbumArtist, artistSeparatorEnabled, artistSeparatorDelimiters) {
         if (groupByAlbumArtist) {
             allAlbums.filter { album ->
                 allSongs.any { song ->
+                    val explicitAlbumArtist = song.albumArtist?.trim().orEmpty()
+                    val songArtistNames = if (explicitAlbumArtist.isNotBlank() && !explicitAlbumArtist.equals("<unknown>", ignoreCase = true)) {
+                        splitArtistNames(explicitAlbumArtist)
+                    } else {
+                        splitArtistNames(song.artist)
+                    }
+
                     song.album == album.title &&
                     song.albumId == album.id &&
-                    (song.albumArtist?.takeIf { it.isNotBlank() } ?: song.artist).trim() == artistName
+                    songArtistNames.any { it.equals(artistName, ignoreCase = true) }
                 }
             }
         } else {

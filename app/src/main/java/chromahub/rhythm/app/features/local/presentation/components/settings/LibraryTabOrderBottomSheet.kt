@@ -29,7 +29,6 @@ import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.BottomSheetDefaults
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -59,6 +58,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import chromahub.rhythm.app.R
 import chromahub.rhythm.app.shared.data.model.AppSettings
+import chromahub.rhythm.app.shared.presentation.components.common.ButtonGroupStyle
+import chromahub.rhythm.app.shared.presentation.components.common.ExpressiveButtonGroup
+import chromahub.rhythm.app.shared.presentation.components.common.ExpressiveGroupButton
 import chromahub.rhythm.app.shared.presentation.components.icons.RhythmIcons
 import chromahub.rhythm.app.util.HapticUtils
 import kotlinx.coroutines.launch
@@ -300,12 +302,12 @@ fun LibraryTabOrderBottomSheet(
                 Spacer(modifier = Modifier.height(24.dp))
                 
                 // Action buttons
-                Row(
+                ExpressiveButtonGroup(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    style = ButtonGroupStyle.Tonal
                 ) {
                     // Reset button
-                    OutlinedButton(
+                    ExpressiveGroupButton(
                         onClick = {
                             HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
                             appSettings.resetLibraryTabOrder()
@@ -315,7 +317,7 @@ fun LibraryTabOrderBottomSheet(
                             Toast.makeText(context, "Tab order and visibility reset to default", Toast.LENGTH_SHORT).show()
                         },
                         modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(16.dp)
+                        isStart = true
                     ) {
                         Icon(
                             imageVector = Icons.Default.RestartAlt,
@@ -325,9 +327,9 @@ fun LibraryTabOrderBottomSheet(
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(context.getString(R.string.bottomsheet_reset))
                     }
-                    
+
                     // Save button
-                    Button(
+                    ExpressiveGroupButton(
                         onClick = {
                             HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
                             appSettings.setLibraryTabOrder(reorderableList)
@@ -342,7 +344,7 @@ fun LibraryTabOrderBottomSheet(
                             }
                         },
                         modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(16.dp)
+                        isEnd = true
                     ) {
                         Icon(
                             imageVector = Icons.Default.Check,

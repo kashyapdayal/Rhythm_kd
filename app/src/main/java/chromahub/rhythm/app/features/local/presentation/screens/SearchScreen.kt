@@ -138,6 +138,7 @@ import chromahub.rhythm.app.features.local.presentation.components.bottomsheets.
 import chromahub.rhythm.app.features.local.presentation.components.bottomsheets.SongInfoBottomSheet
 import chromahub.rhythm.app.util.ImageUtils
 import chromahub.rhythm.app.util.M3ImageUtils
+import chromahub.rhythm.app.util.GenreUtils
 import chromahub.rhythm.app.util.HapticUtils
 import chromahub.rhythm.app.shared.presentation.components.common.M3PlaceholderType
 import chromahub.rhythm.app.shared.presentation.components.common.rememberExpressiveShapeFor
@@ -196,9 +197,11 @@ fun SearchScreen(
             else {
                 val query = searchQuery.lowercase()
                 songs.filter { song ->
-                    listOf(song.title, song.artist, song.album, song.genre)
-                        .any { it?.contains(query, ignoreCase = true) == true }
+                    listOf(song.title, song.artist, song.album)
+                        .any { it.contains(query, ignoreCase = true) } ||
+                        GenreUtils.matchesGenreQuery(song.genre, query)
                 }.sortedWith(compareBy<Song> { song ->
+                    val splitGenres = GenreUtils.splitGenres(song.genre)
                     // Prioritize exact matches in title
                     when {
                         song.title.lowercase() == query -> 0
@@ -207,8 +210,8 @@ fun SearchScreen(
                         song.artist.lowercase().startsWith(query) -> 3
                         song.album.lowercase() == query -> 4
                         song.album.lowercase().startsWith(query) -> 5
-                        song.genre?.lowercase() == query -> 6
-                        song.genre?.lowercase()?.startsWith(query) == true -> 7
+                        splitGenres.any { it.equals(query, ignoreCase = true) } -> 6
+                        splitGenres.any { it.startsWith(query, ignoreCase = true) } -> 7
                         else -> 8
                     }
                 }.thenBy { it.title })
@@ -862,7 +865,7 @@ fun SearchScreen(
             song = selectedSong,
             onDismiss = { showSongInfoSheet = false },
             appSettings = AppSettings.getInstance(context),
-            onEditSong = { title, artist, album, genre, year, trackNumber ->
+            onEditSong = { title, artist, album, genre, year, trackNumber, artworkUri, removeArtwork ->
                 viewModel.saveMetadataChanges(
                     song = selectedSong!!,
                     title = title,
@@ -871,6 +874,8 @@ fun SearchScreen(
                     genre = genre,
                     year = year,
                     trackNumber = trackNumber,
+                    artworkUri = artworkUri,
+                    removeArtwork = removeArtwork,
                     onSuccess = { fileWriteSucceeded ->
                         if (fileWriteSucceeded) {
                             Toast.makeText(context, "Metadata saved successfully to file!", Toast.LENGTH_SHORT).show()
@@ -2906,10 +2911,10 @@ private fun GenreBrowseSection(
     
     // Extract unique genres from songs - split multi-genre strings on comma/semicolon
     val genres = remember(songs) {
-        songs.flatMap { song ->
-            val raw = song.genre?.takeIf { it.isNotBlank() && it.lowercase() != "unknown" }
-            raw?.split(",", ";")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
-        }.distinct().sorted()
+        songs
+            .flatMap { song -> GenreUtils.splitGenres(song.genre) }
+            .distinctBy { it.lowercase() }
+            .sortedBy { it.lowercase() }
     }
     
     // Determine actual loading state: show loading only if detection not complete AND no genres exist
@@ -3013,7 +3018,7 @@ private fun GenreBrowseSection(
                             contentType = { "genre" }
                         ) { genre ->
                             val songCount = songs.count { song ->
-                                song.genre?.split(",", ";")?.any { it.trim().equals(genre, ignoreCase = true) } == true
+                                GenreUtils.matchesGenre(song.genre, genre)
                             }
                             
                             Card(

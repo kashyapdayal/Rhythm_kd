@@ -216,6 +216,7 @@ import androidx.core.text.HtmlCompat
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun HomeScreen(
+    musicViewModel: chromahub.rhythm.app.viewmodel.MusicViewModel,
     songs: List<Song>,
     albums: List<Album>,
     artists: List<Artist>,
@@ -244,7 +245,6 @@ fun HomeScreen(
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val coroutineScope = rememberCoroutineScope()
-    val musicViewModel = viewModel<chromahub.rhythm.app.viewmodel.MusicViewModel>()
     val haptics = LocalHapticFeedback.current
     val context = LocalContext.current
     val appSettings = remember { AppSettings.getInstance(context) }
@@ -411,7 +411,7 @@ fun HomeScreen(
             song = selectedSongForPlaylist,
             onDismiss = { showSongInfoSheet = false },
             appSettings = AppSettings.getInstance(context),
-            onEditSong = { title, artist, album, genre, year, trackNumber ->
+            onEditSong = { title, artist, album, genre, year, trackNumber, artworkUri, removeArtwork ->
                 musicViewModel.saveMetadataChanges(
                     song = selectedSongForPlaylist!!,
                     title = title,
@@ -420,6 +420,8 @@ fun HomeScreen(
                     genre = genre,
                     year = year,
                     trackNumber = trackNumber,
+                    artworkUri = artworkUri,
+                    removeArtwork = removeArtwork,
                     onSuccess = { fileWriteSucceeded ->
                         if (fileWriteSucceeded) {
                             Toast.makeText(context, "Metadata saved successfully to file!", Toast.LENGTH_SHORT).show()
@@ -449,7 +451,6 @@ fun HomeScreen(
     }
 
     if (showAddToPlaylistSheet && selectedSongForPlaylist != null) {
-        val musicViewModel = viewModel<chromahub.rhythm.app.viewmodel.MusicViewModel>()
         val playlists by musicViewModel.playlists.collectAsState()
 
         AddToPlaylistBottomSheet(

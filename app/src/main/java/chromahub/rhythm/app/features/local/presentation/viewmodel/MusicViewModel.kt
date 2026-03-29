@@ -14,8 +14,10 @@ import android.net.Uri
 import android.provider.MediaStore
 import android.util.Log
 import android.util.LruCache
+import androidx.core.net.toUri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
@@ -66,10 +68,36 @@ import java.io.File
 import chromahub.rhythm.app.shared.data.model.LyricsData // Import LyricsData
 import chromahub.rhythm.app.util.PendingWriteRequest // Import for metadata write requests
 import chromahub.rhythm.app.util.PendingLyricsWriteRequest
+import chromahub.rhythm.app.util.QueueUtils
+import chromahub.rhythm.app.util.GenreUtils
 import chromahub.rhythm.app.shared.data.repository.PlaybackStatsRepository // Import for enhanced stats tracking
 
 class MusicViewModel(application: Application) : AndroidViewModel(application) {
-    private val TAG = "MusicViewModel"
+
+    companion object {
+        private const val TAG = "MusicViewModel"
+        /**
+         * Threshold above which we skip per-item moveMediaItem calls and use
+         * a single setMediaItems call instead. moveMediaItem triggers an IPC
+         * round-trip for each call, which freezes the UI on large queues.
+         */
+        private const val BULK_REPLACE_THRESHOLD = 80
+
+        // SharedPreferences keys
+        private const val PREF_HIGH_QUALITY_AUDIO = "high_quality_audio"
+        private const val PREF_GAPLESS_PLAYBACK = "gapless_playback"
+        private const val PREF_CROSSFADE = "crossfade"
+        private const val PREF_CROSSFADE_DURATION = "crossfade_duration"
+        private const val PREF_AUDIO_NORMALIZATION = "audio_normalization"
+        private const val PREF_REPLAY_GAIN = "replay_gain"
+        private const val PREF_SHOW_LYRICS = "show_lyrics"
+        private const val PREF_ONLINE_ONLY_LYRICS = "online_only_lyrics"
+        private const val PREF_SONG_PLAY_COUNTS = "song_play_counts"
+        
+        // Player control constants
+        private const val REWIND_THRESHOLD_MS = 3000L // 3 seconds
+    }
+
     private val repository = MusicRepository(application)
     
     // Job for debouncing ContentObserver-triggered refreshes
@@ -86,6 +114,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     
     // AutoEQ manager
     private val autoEQManager = chromahub.rhythm.app.utils.AutoEQManager(application)
+    
+    // Queue state manager
+    private val queueStateHolder = QueueStateHolder()
     
     // Settings
     val showLyrics = appSettings.showLyrics
@@ -108,6 +139,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     val shuffleUsesExoplayer = appSettings.shuffleUsesExoplayer
     val autoAddToQueue = appSettings.autoAddToQueue
     val clearQueueOnNewSong = appSettings.clearQueueOnNewSong
+    val shuffleModePersistence = appSettings.shuffleModePersistence
     val repeatModePersistence = appSettings.repeatModePersistence
     val playbackSpeed = appSettings.playbackSpeed
     val playbackPitch = appSettings.playbackPitch
@@ -173,7 +205,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     private var currentPlaybackSongId: String? = null
     private var isCurrentlyPlaying: Boolean = false
 
-    // Broadcast receiver for favorite changes from service
+    // Broadcast receiver for service/widget state changes
     private val favoriteChangeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
@@ -189,6 +221,29 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         viewModelScope.launch {
                             toggleFavorite(song)
                         }
+                    }
+                }
+                MediaPlaybackService.ACTION_SHUFFLE_STATE_CHANGED -> {
+                    val shuffleEnabled = intent.getBooleanExtra(
+                        MediaPlaybackService.EXTRA_SHUFFLE_ENABLED,
+                        _isShuffleEnabled.value
+                    )
+                    Log.d(TAG, "Received shuffle state notification from service: $shuffleEnabled")
+
+                    if (_isShuffleEnabled.value != shuffleEnabled) {
+                        _isShuffleEnabled.value = shuffleEnabled
+                    }
+
+                    if (shuffleEnabled && !queueStateHolder.hasOriginalQueue() && _currentQueue.value.songs.isNotEmpty()) {
+                        queueStateHolder.saveOriginalQueueState(
+                            _currentQueue.value.songs,
+                            queueStateHolder.currentQueueSourceName.value
+                        )
+                    }
+
+                    viewModelScope.launch {
+                        delay(75)
+                        syncQueueWithMediaController()
                     }
                 }
             }
@@ -238,17 +293,27 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     // Sync the Liked playlist with the current favorite song IDs
     private suspend fun syncLikedPlaylistWithFavorites(favoriteIds: Set<String>) {
         try {
-            // Get all songs and filter to favorites
-            val allSongs = _songs.value
-            val favoriteSongsList = allSongs.filter { favoriteIds.contains(it.id) }
-            
-            Log.d(TAG, "Syncing Liked playlist: ${favoriteIds.size} favorite IDs, ${favoriteSongsList.size} songs found")
-            
-            // Update the Liked playlist
+            // Update the Liked playlist directory without losing existing custom song order
             _playlists.value = _playlists.value.map { playlist ->
-                if (playlist.id == "1" && playlist.name == "Liked") {
+                if (playlist.id == "1") {
+                    // 1. Keep all existing songs that are STILL in favorites
+                    val existingSongsToKeep = playlist.songs.filter { favoriteIds.contains(it.id) }
+                    
+                    // 2. Find any new favorites that are NOT in the playlist yet
+                    val existingIds = existingSongsToKeep.map { it.id }.toSet()
+                    val newFavoriteIds = favoriteIds.filter { !existingIds.contains(it) }
+                    
+                    // 3. Find the Song objects for these new favorites from the global _songs list
+                    val allSongs = _songs.value
+                    val newSongs = allSongs.filter { newFavoriteIds.contains(it.id) }
+                    
+                    // 4. Append them
+                    val finalSongsList = existingSongsToKeep + newSongs
+                    
+                    Log.d(TAG, "Syncing Liked playlist: kept ${existingSongsToKeep.size}, added ${newSongs.size} new songs")
+                    
                     playlist.copy(
-                        songs = favoriteSongsList,
+                        songs = finalSongsList,
                         dateModified = System.currentTimeMillis()
                     )
                 } else {
@@ -454,27 +519,35 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     val filteredArtists: StateFlow<List<Artist>> = kotlinx.coroutines.flow.combine(
         _artists,
         filteredSongs,
-        appSettings.groupByAlbumArtist
-    ) { artists, filteredSongs, groupByAlbumArtist ->
+        appSettings.groupByAlbumArtist,
+        appSettings.artistSeparatorEnabled,
+        appSettings.artistSeparatorDelimiters
+    ) { artists, filteredSongs, groupByAlbumArtist, artistSeparatorEnabled, artistSeparatorDelimiters ->
+        val charDelimiters = if (artistSeparatorEnabled) {
+            artistSeparatorDelimiters.map { it.toString() }
+        } else {
+            emptyList()
+        }
+
         artists.filter { artist ->
             // Include artist if they have at least one non-blacklisted song
             // Check against the appropriate field based on grouping mode
             if (groupByAlbumArtist) {
-                // When grouping by album artist, match against song's albumArtist (with fallback to artist)
+                // When grouping by album artist, split albumArtist when present,
+                // otherwise split track artist fallback.
                 filteredSongs.any { song -> 
-                    val songAlbumArtist = song.albumArtist ?: song.artist
-                    songAlbumArtist == artist.name 
+                    val explicitAlbumArtist = song.albumArtist?.trim().orEmpty()
+                    val songArtistNames = if (explicitAlbumArtist.isNotBlank() && !explicitAlbumArtist.equals("<unknown>", ignoreCase = true)) {
+                        repository.splitArtistNames(explicitAlbumArtist, charDelimiters)
+                    } else {
+                        repository.splitArtistNames(song.artist, charDelimiters)
+                    }
+                    songArtistNames.any { it.equals(artist.name, ignoreCase = true) }
                 }
             } else {
                 // When grouping by track artist, match if artist appears in song's artist field (split collaborations)
                 filteredSongs.any { song -> 
-                    // Split artist names on common separators
-                    val separators = listOf(" & ", " and ", ", ", " feat. ", " feat ", " ft. ", " ft ", " featuring ", " x ", " X ", " vs ", " vs. ", " with ", ";", " / ", " + ", " · ", " - ")
-                    var names = listOf(song.artist)
-                    for (separator in separators) {
-                        names = names.flatMap { it.split(separator, ignoreCase = true) }
-                    }
-                    val artistNames = names.map { it.trim() }.filter { it.isNotBlank() }
+                    val artistNames = repository.splitArtistNames(song.artist, charDelimiters)
                     artistNames.any { it.equals(artist.name, ignoreCase = true) }
                 }
             }
@@ -501,9 +574,6 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _currentQueue = MutableStateFlow(Queue(emptyList(), -1))
     val currentQueue: StateFlow<Queue> = _currentQueue.asStateFlow()
-
-    // Store original queue order before shuffle so we can restore it when unshuffling
-    private var preShuffleQueue: List<Song> = emptyList()
 
     private val _progress = MutableStateFlow(0f)
     val progress: StateFlow<Float> = _progress.asStateFlow()
@@ -694,6 +764,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 _currentQueue.value = Queue(currentQueueSongs, insertIndex)
                 controller.seekToDefaultPosition(insertIndex)
                 controller.prepare()
+                if (!canStartPlayback("handleQueueActionChoice")) return@let
                 controller.play()
                 
                 _currentSong.value = song
@@ -755,24 +826,50 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         
-        // Reload artists when groupByAlbumArtist setting changes
-        // The _artists list must be rebuilt from the repository since
-        // track-artist vs album-artist grouping produces different lists
+        // Reload artists when grouping mode or track-artist separator settings change.
         viewModelScope.launch {
-            var previousValue = appSettings.groupByAlbumArtist.value
-            appSettings.groupByAlbumArtist.collect { newValue ->
-                if (newValue != previousValue && _isInitialized.value) {
-                    previousValue = newValue
-                    Log.d(TAG, "groupByAlbumArtist changed to $newValue, reloading artists")
-                    try {
-                        val freshArtists = withContext(Dispatchers.IO) {
-                            repository.loadArtists()
-                        }
-                        _artists.value = freshArtists
-                        Log.d(TAG, "Reloaded ${freshArtists.size} artists after groupByAlbumArtist toggle")
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error reloading artists after groupByAlbumArtist toggle", e)
+            var previousState = Triple(
+                appSettings.groupByAlbumArtist.value,
+                appSettings.artistSeparatorEnabled.value,
+                appSettings.artistSeparatorDelimiters.value
+            )
+
+            combine(
+                appSettings.groupByAlbumArtist,
+                appSettings.artistSeparatorEnabled,
+                appSettings.artistSeparatorDelimiters
+            ) { groupByAlbumArtist, artistSeparatorEnabled, artistSeparatorDelimiters ->
+                Triple(groupByAlbumArtist, artistSeparatorEnabled, artistSeparatorDelimiters)
+            }.collect { newState ->
+                if (!_isInitialized.value || newState == previousState) {
+                    return@collect
+                }
+
+                val groupChanged = newState.first != previousState.first
+                val separatorChanged =
+                    newState.second != previousState.second || newState.third != previousState.third
+                previousState = newState
+
+                val shouldReloadArtists = groupChanged || separatorChanged
+                if (!shouldReloadArtists) {
+                    return@collect
+                }
+
+                val reason = if (groupChanged) {
+                    "groupByAlbumArtist changed to ${newState.first}"
+                } else {
+                    "artist separator settings changed (enabled=${newState.second}, delimiters='${newState.third}')"
+                }
+
+                Log.d(TAG, "$reason, reloading artists")
+                try {
+                    val freshArtists = withContext(Dispatchers.IO) {
+                        repository.loadArtists()
                     }
+                    _artists.value = freshArtists
+                    Log.d(TAG, "Reloaded ${freshArtists.size} artists after artist settings update")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error reloading artists after artist settings update", e)
                 }
             }
         }
@@ -781,16 +878,33 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         val filter = IntentFilter().apply {
             addAction("chromahub.rhythm.app.action.FAVORITE_CHANGED")
             addAction("chromahub.rhythm.app.action.WIDGET_TOGGLE_FAVORITE")
+            addAction(MediaPlaybackService.ACTION_SHUFFLE_STATE_CHANGED)
         }
         
         // Resume playback on audio device reconnection (e.g., Bluetooth headphones reconnected)
         viewModelScope.launch {
             audioDeviceManager.deviceReconnected.collect { deviceName ->
-                if (appSettings.resumeOnDeviceReconnect.value && !_isPlaying.value && _currentSong.value != null) {
+                if (
+                    appSettings.resumeOnDeviceReconnect.value &&
+                    !_isPlaying.value &&
+                    _currentSong.value != null &&
+                    !isRhythmGuardTimeoutActive()
+                ) {
                     Log.d(TAG, "Audio device reconnected ($deviceName), resuming playback")
-                    mediaController?.play()
-                    _isPlaying.value = true
-                    startProgressUpdates()
+                    mediaController?.let { controller ->
+                        if (!canStartPlayback("deviceReconnected.resume")) return@let
+                        controller.play()
+                        _isPlaying.value = true
+                        startProgressUpdates()
+                    }
+                }
+            }
+        }
+
+        viewModelScope.launch {
+            appSettings.rhythmGuardTimeoutUntilMs.collect { timeoutUntilMs ->
+                if (timeoutUntilMs > System.currentTimeMillis()) {
+                    enforceRhythmGuardTimeout(reason = "timeout lock updated")
                 }
             }
         }
@@ -1694,8 +1808,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             _albums.value = repository.loadAlbums()
             _artists.value = repository.loadArtists()
             
-            // Persist updated metadata to disk cache
-            repository.persistSongCacheToDisk()
+            // Persist the updated songs list so metadata/artwork edits survive restarts.
+            repository.updateAndPersistSongs(updatedSongs)
             
             Log.d(TAG, "Updated song metadata: ${updatedSong.title} by ${updatedSong.artist}")
         }
@@ -1714,6 +1828,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         year: Int,
         trackNumber: Int,
         artworkUri: Uri? = null,
+        removeArtwork: Boolean = false,
         onSuccess: (fileWriteSucceeded: Boolean) -> Unit,
         onError: (String) -> Unit,
         onPermissionRequired: ((PendingWriteRequest) -> Unit)? = null
@@ -1750,8 +1865,29 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         newAlbum = album,
                         newGenre = genre,
                         newYear = year,
-                        newTrackNumber = trackNumber
+                        newTrackNumber = trackNumber,
+                        artworkUri = artworkUri,
+                        removeArtwork = removeArtwork
                     )
+                }
+
+                val updatedArtworkUri = when {
+                    removeArtwork -> {
+                        clearCachedArtwork(context, song.id)
+                        persistArtworkOverrideRemoved(context, song.id)
+                        null
+                    }
+                    artworkUri != null -> {
+                        try {
+                            val cachedUri = saveArtworkToCache(context, song, artworkUri) ?: artworkUri
+                            persistArtworkOverrideUri(context, song.id, cachedUri)
+                            cachedUri
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Failed to cache updated artwork for ${song.title}", e)
+                            artworkUri
+                        }
+                    }
+                    else -> song.artworkUri
                 }
                 
                 // Always update in-memory data
@@ -1761,7 +1897,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     album = album,
                     genre = genre,
                     year = year,
-                    trackNumber = trackNumber
+                    trackNumber = trackNumber,
+                    artworkUri = updatedArtworkUri
                 )
                 
                 // Update the song using existing function
@@ -1777,17 +1914,6 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
                 
-                // Handle artwork saving if provided
-                if (artworkUri != null && success) {
-                    try {
-                        // Save artwork to cache directory for now
-                        saveArtworkToCache(context, song, artworkUri)
-                        Log.d(TAG, "Artwork saved to cache for: $title")
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Failed to save artwork, but metadata was saved successfully", e)
-                    }
-                }
-                
                 withContext(Dispatchers.Main) {
                     if (success) {
                         Log.d(TAG, "Successfully updated file metadata for: $title by $artist")
@@ -1796,7 +1922,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         // File update failed - on Android 11+, try the permission request approach
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                             Log.d(TAG, "File write failed on Android 11+, attempting createWriteRequest approach")
-                            val pendingRequest = withContext<PendingWriteRequest?>(Dispatchers.IO) {
+                            val pendingRequest = withContext(Dispatchers.IO) {
                                 chromahub.rhythm.app.util.MediaUtils.createWriteRequestForSong(
                                     context = context,
                                     song = song,
@@ -1805,7 +1931,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                                     newAlbum = album,
                                     newGenre = genre,
                                     newYear = year,
-                                    newTrackNumber = trackNumber
+                                    newTrackNumber = trackNumber,
+                                    artworkUri = artworkUri,
+                                    removeArtwork = removeArtwork
                                 )
                             }
                             
@@ -1838,13 +1966,30 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     album = album,
                     genre = genre,
                     year = year,
-                    trackNumber = trackNumber
+                    trackNumber = trackNumber,
+                    artworkUri = when {
+                        removeArtwork -> {
+                            clearCachedArtwork(context, song.id)
+                            persistArtworkOverrideRemoved(context, song.id)
+                            null
+                        }
+                        artworkUri != null -> {
+                            try {
+                                val cachedUri = saveArtworkToCache(context, song, artworkUri) ?: artworkUri
+                                persistArtworkOverrideUri(context, song.id, cachedUri)
+                                cachedUri
+                            } catch (_: Exception) {
+                                artworkUri
+                            }
+                        }
+                        else -> song.artworkUri
+                    }
                 )
                 updateCurrentSongMetadata(updatedSong)
                 
                 // Try to create a write request for Android 11+
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    val pendingRequest = withContext<PendingWriteRequest?>(Dispatchers.IO) {
+                    val pendingRequest = withContext(Dispatchers.IO) {
                         chromahub.rhythm.app.util.MediaUtils.createWriteRequestForSong(
                             context = context,
                             song = song,
@@ -1853,10 +1998,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                             newAlbum = album,
                             newGenre = genre,
                             newYear = year,
-                            newTrackNumber = trackNumber
+                            newTrackNumber = trackNumber,
+                            artworkUri = artworkUri,
+                            removeArtwork = removeArtwork
                         )
                     }
-
                     
                     withContext(Dispatchers.Main) {
                         if (pendingRequest != null) {
@@ -1911,6 +2057,29 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 _pendingWriteRequest.value = null
                 
                 if (success) {
+                    val updatedArtworkUri = when {
+                        pendingRequest.removeArtwork -> {
+                            clearCachedArtwork(context, pendingRequest.song.id)
+                            persistArtworkOverrideRemoved(context, pendingRequest.song.id)
+                            null
+                        }
+                        !pendingRequest.artworkUriString.isNullOrBlank() -> {
+                            val pendingArtworkUri = pendingRequest.artworkUriString.toUri()
+                            try {
+                                val cachedUri = saveArtworkToCache(
+                                    context,
+                                    pendingRequest.song,
+                                    pendingArtworkUri
+                                ) ?: pendingArtworkUri
+                                persistArtworkOverrideUri(context, pendingRequest.song.id, cachedUri)
+                                cachedUri
+                            } catch (_: Exception) {
+                                pendingArtworkUri
+                            }
+                        }
+                        else -> pendingRequest.song.artworkUri
+                    }
+
                     // Update in-memory data
                     val updatedSong = pendingRequest.song.copy(
                         title = pendingRequest.newTitle,
@@ -1918,7 +2087,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         album = pendingRequest.newAlbum,
                         genre = pendingRequest.newGenre,
                         year = pendingRequest.newYear,
-                        trackNumber = pendingRequest.newTrackNumber
+                        trackNumber = pendingRequest.newTrackNumber,
+                        artworkUri = updatedArtworkUri
                     )
                     updateCurrentSongMetadata(updatedSong)
                     
@@ -1966,6 +2136,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         album: String?,
         genre: String?,
         year: Int?,
+        artworkUri: Uri? = null,
+        removeArtwork: Boolean = false,
         onProgress: (Int, Int) -> Unit,
         onComplete: (successCount: Int, failCount: Int) -> Unit
     ) {
@@ -1982,6 +2154,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     val newAlbum = album ?: song.album
                     val newGenre = genre ?: (song.genre ?: "")
                     val newYear = year ?: song.year
+                    val hasArtworkEdit = artworkUri != null || removeArtwork
 
                     // Check if file format is supported before attempting write
                     val fileExtension = try {
@@ -1998,7 +2171,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
                     val success = if (formatSupported) {
                         try {
-                            withContext(Dispatchers.IO) {
+                            val fileWriteSuccess = withContext(Dispatchers.IO) {
                                 chromahub.rhythm.app.util.MediaUtils.updateSongMetadata(
                                     context = context,
                                     song = song,
@@ -2007,8 +2180,22 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                                     newAlbum = newAlbum,
                                     newGenre = newGenre,
                                     newYear = newYear,
-                                    newTrackNumber = song.trackNumber
+                                    newTrackNumber = song.trackNumber,
+                                    artworkUri = artworkUri,
+                                    removeArtwork = removeArtwork
                                 )
+                            }
+
+                            if (!fileWriteSuccess && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                // Batch flow cannot open per-item permission dialogs like single-edit.
+                                // Count this as partial success when MediaStore/app-level state is still updated.
+                                Log.w(
+                                    TAG,
+                                    "Batch edit: file tag write blocked by scoped storage for ${song.title}; counting as partial success"
+                                )
+                                true
+                            } else {
+                                fileWriteSuccess
                             }
                         } catch (e: chromahub.rhythm.app.util.RecoverableSecurityExceptionWrapper) {
                             // On Android 11+, file write requires per-file user permission (scoped storage).
@@ -2019,7 +2206,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     } else {
                         // Unsupported format — update MediaStore only via ContentValues
-                        try {
+                        val mediaStoreSuccess = try {
                             withContext(Dispatchers.IO) {
                                 val values = android.content.ContentValues().apply {
                                     put(android.provider.MediaStore.Audio.Media.ARTIST, newArtist)
@@ -2037,13 +2224,42 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                             Log.w(TAG, "Batch edit: MediaStore-only update failed for ${song.title}", e)
                             false
                         }
+
+                        if (hasArtworkEdit) {
+                            Log.w(
+                                TAG,
+                                "Batch artwork update skipped for unsupported format .$fileExtension (${song.title})"
+                            )
+                            false
+                        } else {
+                            mediaStoreSuccess
+                        }
+                    }
+
+                    val updatedArtworkUri = when {
+                        removeArtwork -> {
+                            clearCachedArtwork(context, song.id)
+                            persistArtworkOverrideRemoved(context, song.id)
+                            null
+                        }
+                        artworkUri != null -> {
+                            try {
+                                val cachedUri = saveArtworkToCache(context, song, artworkUri) ?: artworkUri
+                                persistArtworkOverrideUri(context, song.id, cachedUri)
+                                cachedUri
+                            } catch (_: Exception) {
+                                artworkUri
+                            }
+                        }
+                        else -> song.artworkUri
                     }
 
                     val updatedSong = song.copy(
                         artist = newArtist,
                         album = newAlbum,
                         genre = newGenre,
-                        year = newYear
+                        year = newYear,
+                        artworkUri = updatedArtworkUri
                     )
                     // Track for bulk update
                     updatedSongs[song.id] = updatedSong
@@ -2080,19 +2296,56 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
     
-    private suspend fun saveArtworkToCache(context: Context, song: Song, artworkUri: Uri) {
+    private suspend fun saveArtworkToCache(context: Context, song: Song, artworkUri: Uri): Uri? {
         try {
-            val inputStream = context.contentResolver.openInputStream(artworkUri)
-            if (inputStream != null) {
+            context.contentResolver.openInputStream(artworkUri)?.use { inputStream ->
                 val artworkFile = File(context.cacheDir, "artwork_${song.id}.jpg")
                 artworkFile.outputStream().use { output ->
                     inputStream.copyTo(output)
                 }
                 Log.d(TAG, "Artwork saved to cache: ${artworkFile.absolutePath}")
+                return artworkFile.toUri()
             }
+            return null
         } catch (e: Exception) {
             Log.e(TAG, "Failed to save artwork to cache", e)
             throw e
+        }
+    }
+
+    private fun persistArtworkOverrideRemoved(context: Context, songId: String) {
+        try {
+            context.getSharedPreferences("artwork_overrides", Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean("removed_$songId", true)
+                .remove("uri_$songId")
+                .apply()
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to persist removed artwork override for song $songId", e)
+        }
+    }
+
+    private fun persistArtworkOverrideUri(context: Context, songId: String, artworkUri: Uri?) {
+        if (artworkUri == null) return
+        try {
+            context.getSharedPreferences("artwork_overrides", Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean("removed_$songId", false)
+                .putString("uri_$songId", artworkUri.toString())
+                .apply()
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to persist artwork override URI for song $songId", e)
+        }
+    }
+
+    private fun clearCachedArtwork(context: Context, songId: String) {
+        try {
+            val cachedArtwork = File(context.cacheDir, "artwork_${songId}.jpg")
+            if (cachedArtwork.exists()) {
+                cachedArtwork.delete()
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to clear cached artwork for song $songId", e)
         }
     }
     
@@ -2602,6 +2855,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             Log.d(TAG, "Is playing changed: $isPlaying")
+
+            if (isPlaying && isRhythmGuardTimeoutActive()) {
+                enforceRhythmGuardTimeout(reason = "onIsPlayingChanged")
+                return
+            }
             
             // Only update if the value is different to avoid unnecessary UI updates
             if (_isPlaying.value != isPlaying) {
@@ -2621,7 +2879,28 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         
         override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
             Log.d(TAG, "Shuffle mode changed: $shuffleModeEnabled")
-            _isShuffleEnabled.value = shuffleModeEnabled
+
+            // Only update if the state actually changed to avoid unnecessary updates
+            if (_isShuffleEnabled.value != shuffleModeEnabled) {
+                _isShuffleEnabled.value = shuffleModeEnabled
+
+                // Save shuffle state to preferences if persistence is enabled
+                if (appSettings.shuffleModePersistence.value) {
+                    appSettings.setSavedShuffleState(shuffleModeEnabled)
+                }
+            }
+
+            if (shuffleModeEnabled && !queueStateHolder.hasOriginalQueue() && _currentQueue.value.songs.isNotEmpty()) {
+                queueStateHolder.saveOriginalQueueState(
+                    _currentQueue.value.songs,
+                    queueStateHolder.currentQueueSourceName.value
+                )
+            }
+
+            viewModelScope.launch {
+                delay(75)
+                syncQueueWithMediaController()
+            }
         }
         
         override fun onRepeatModeChanged(repeatMode: Int) {
@@ -2660,7 +2939,37 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             val mediaItem = controller.currentMediaItem
             mediaItem?.let {
                 val id = it.mediaId
-                val song = _songs.value.find { song -> song.id == id }
+                var song = _songs.value.find { song -> song.id == id }
+                var isExternalSong = false
+                
+                if (song == null) {
+                    // Try to create song from mediaItem metadata (for external files)
+                    val metadata = it.mediaMetadata
+                    if (metadata.title != null) {
+                        song = Song(
+                            id = id,
+                            title = metadata.title.toString(),
+                            artist = metadata.artist?.toString() ?: "Unknown Artist",
+                            album = metadata.albumTitle?.toString() ?: "Unknown Album",
+                            albumId = "",
+                            duration = controller.duration,
+                            uri = it.localConfiguration?.uri ?: Uri.EMPTY,
+                            artworkUri = metadata.artworkUri,
+                            trackNumber = 0,
+                            year = 0,
+                            genre = null,
+                            dateAdded = System.currentTimeMillis(),
+                            albumArtist = null,
+                            bitrate = null,
+                            sampleRate = null,
+                            channels = null,
+                            codec = null,
+                            discNumber = 1
+                        )
+                        isExternalSong = true
+                        Log.d(TAG, "Created external song from mediaItem: ${song.title}")
+                    }
+                }
                 
                 if (song != null) {
                     _currentSong.value = song
@@ -2680,9 +2989,15 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     } else {
                         // Song is not in queue - this can happen when resuming from a previous session
-                        // or when playing external files. Sync the entire queue with MediaController
-                        Log.d(TAG, "Song not in queue, syncing entire queue from MediaController for: ${song.title}")
-                        syncQueueWithMediaController()
+                        // or when playing external files.
+                        if (isExternalSong) {
+                            // For external songs, set queue to just this song
+                            _currentQueue.value = Queue(listOf(song), 0)
+                            Log.d(TAG, "Set queue for external song: ${song.title}")
+                        } else {
+                            Log.d(TAG, "Song not in queue, syncing entire queue from MediaController for: ${song.title}")
+                            syncQueueWithMediaController()
+                        }
                     }
                     
                     // Update duration and progress for the current song
@@ -2734,6 +3049,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             Log.e(TAG, "Invalid queue index: $index (queue size: ${_currentQueue.value.songs.size})")
             return
         }
+
+        if (!canStartPlayback("playSongAtIndex")) {
+            return
+        }
         
         val song = _currentQueue.value.songs[index]
         Log.d(TAG, "Playing song at index $index: ${song.title}")
@@ -2742,11 +3061,12 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             controller.seekToDefaultPosition(index)
             _currentQueue.value = _currentQueue.value.copy(currentIndex = index)
             _currentSong.value = song
-            _isPlaying.value = true
             _isFavorite.value = _favoriteSongs.value.contains(song.id)
             
             controller.prepare()
+            if (!canStartPlayback("playSongAtIndex.prepare")) return@let
             controller.play()
+            _isPlaying.value = true
             startProgressUpdates()
             
             // Track song play for statistics
@@ -2760,6 +3080,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun playSong(song: Song) {
         Log.d(TAG, "Playing song: ${song.title}")
+
+        if (!canStartPlayback("playSong")) {
+            return
+        }
 
         // Clear current lyrics to prevent showing stale lyrics from previous song
         _currentLyrics.value = null
@@ -2776,7 +3100,16 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         mediaController?.let { controller ->
             if (shouldClearQueue) {
                 // Clear queue setting enabled - start fresh
-                Log.d(TAG, "Clearing queue and playing single song (clearQueueOnNewSong=true)")
+                if (shouldAutoAddToQueue) {
+                    val contextualQueue = createContextualQueue(song)
+                    if (contextualQueue.size > 1) {
+                        Log.d(TAG, "Clearing queue and creating contextual queue with ${contextualQueue.size} songs (clearQueueOnNewSong=true, autoAddToQueue=true)")
+                        playQueue(contextualQueue)
+                        return
+                    }
+                }
+
+                Log.d(TAG, "Clearing queue and playing single song (clearQueueOnNewSong=true, autoAddToQueue=$shouldAutoAddToQueue)")
                 playQueue(listOf(song))
                 return
             }
@@ -2828,6 +3161,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             controller.prepare()
+            if (!canStartPlayback("playSong.prepare")) return@let
             controller.play()
 
             _currentSong.value = song
@@ -2867,13 +3201,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         // Check if song is part of an album with multiple tracks
         val albumSongs = _songs.value.filter { it.album == song.album && it.artist == song.artist }
         if (albumSongs.size > 1) {
-            // Sort by track number if available, otherwise by title
+            // Keep multi-disc albums in natural disc -> track order.
             val sortedAlbumSongs = albumSongs.sortedWith { a, b ->
-                if (a.trackNumber != 0 || b.trackNumber != 0) {
-                    a.trackNumber.compareTo(b.trackNumber)
-                } else {
-                    a.title.compareTo(b.title)
-                }
+                compareByDiscThenTrack(a, b)
             }
             val startIndex = sortedAlbumSongs.indexOfFirst { it.id == song.id }
             if (startIndex != -1) {
@@ -2902,6 +3232,19 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         // Fallback: return just the single song
         Log.d(TAG, "No context found, returning single song queue")
         return listOf(song)
+    }
+
+    private fun compareByDiscThenTrack(a: Song, b: Song): Int {
+        val discA = if (a.discNumber > 0) a.discNumber else 1
+        val discB = if (b.discNumber > 0) b.discNumber else 1
+
+        return when {
+            discA != discB -> discA.compareTo(discB)
+            a.trackNumber > 0 && b.trackNumber > 0 -> a.trackNumber.compareTo(b.trackNumber)
+            a.trackNumber > 0 -> -1
+            b.trackNumber > 0 -> 1
+            else -> a.title.compareTo(b.title, ignoreCase = true)
+        }
     }
 
     /**
@@ -2936,8 +3279,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             // Seek to the newly added song
             val newIndex = _currentQueue.value.songs.indexOfFirst { it.id == song.id }
             if (newIndex != -1) {
-                mediaController?.seekToDefaultPosition(newIndex)
-                mediaController?.play()
+                mediaController?.let { controller ->
+                    controller.seekToDefaultPosition(newIndex)
+                    if (!canStartPlayback("playSongWithQueueOption")) return
+                    controller.play()
+                }
             }
         }
     }
@@ -3173,9 +3519,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 appSettings.updateWeeklyTopArtists(currentArtists)
                 
                 // Update favorite genres
-                song.genre?.let { genre ->
-                    val genres = appSettings.favoriteGenres.value.toMutableMap()
+                val genres = appSettings.favoriteGenres.value.toMutableMap()
+                GenreUtils.splitGenres(song.genre).forEach { genre ->
                     genres[genre] = (genres[genre] ?: 0) + 1
+                }
+                if (genres != appSettings.favoriteGenres.value) {
                     appSettings.updateFavoriteGenres(genres)
                 }
                 
@@ -3210,14 +3558,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             // Use album's songs directly if available (they're already loaded)
             if (album.songs.isNotEmpty()) {
                 Log.d(TAG, "Using ${album.songs.size} songs from album object")
-                // Sort by track number to maintain album order
+                // Sort by disc then track to maintain multi-disc album order
                 val sortedSongs = album.songs.sortedWith { a, b ->
-                    when {
-                        a.trackNumber > 0 && b.trackNumber > 0 -> a.trackNumber.compareTo(b.trackNumber)
-                        a.trackNumber > 0 -> -1
-                        b.trackNumber > 0 -> 1
-                        else -> a.title.compareTo(b.title, ignoreCase = true)
-                    }
+                    compareByDiscThenTrack(a, b)
                 }
                 playQueue(sortedSongs)
             } else {
@@ -3226,14 +3569,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 val songs = repository.getSongsForAlbumLocal(album.id)
                 Log.d(TAG, "Found ${songs.size} songs for album")
                 if (songs.isNotEmpty()) {
-                    // Sort by track number
+                    // Sort by disc then track to maintain multi-disc album order
                     val sortedSongs = songs.sortedWith { a: Song, b: Song ->
-                        when {
-                            a.trackNumber > 0 && b.trackNumber > 0 -> a.trackNumber.compareTo(b.trackNumber)
-                            a.trackNumber > 0 -> -1
-                            b.trackNumber > 0 -> 1
-                            else -> a.title.compareTo(b.title, ignoreCase = true)
-                        }
+                        compareByDiscThenTrack(a, b)
                     }
                     playQueue(sortedSongs)
                 } else {
@@ -3267,6 +3605,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     fun playQueue(songs: List<Song>, enableShuffle: Boolean? = null, startIndex: Int = 0) {
         Log.d(TAG, "Playing queue with ${songs.size} songs, shuffle: $enableShuffle, startIndex: $startIndex")
+
+        if (!canStartPlayback("playQueue")) {
+            return
+        }
         
         // Clear current lyrics to prevent showing stale lyrics from previous song
         _currentLyrics.value = null
@@ -3326,14 +3668,15 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         // Set the queue in the view model with the correct starting index
                         _currentQueue.value = Queue(songs, validStartIndex)
                         
-                        // Reset pre-shuffle snapshot since this is a new queue
-                        preShuffleQueue = emptyList()
+                        // Clear original queue state since this is a new queue
+                        queueStateHolder.clearOriginalQueue()
                         
                         // Save queue to persistence
                         saveQueueToPersistence()
                         
                         // Start playback from the specified index
                         controller.seekToDefaultPosition(validStartIndex)
+                        if (!canStartPlayback("playQueue.prepare")) return@withContext
                         controller.play()
                         
                         // Update current song and state to the song at startIndex
@@ -3391,6 +3734,28 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     // Store pending queue to play when controller becomes available
     private var pendingQueueToPlay: List<Song>? = null
 
+    private fun isRhythmGuardTimeoutActive(nowMs: Long = System.currentTimeMillis()): Boolean {
+        return appSettings.rhythmGuardTimeoutUntilMs.value > nowMs
+    }
+
+    private fun enforceRhythmGuardTimeout(reason: String) {
+        mediaController?.let { controller ->
+            if (controller.isPlaying) {
+                Log.d(TAG, "Rhythm Guard timeout active, forcing pause ($reason)")
+                controller.pause()
+            }
+        }
+        _isPlaying.value = false
+        progressUpdateJob?.cancel()
+    }
+
+    private fun canStartPlayback(action: String): Boolean {
+        if (!isRhythmGuardTimeoutActive()) return true
+        Log.d(TAG, "Blocked playback action '$action' due to active Rhythm Guard timeout")
+        enforceRhythmGuardTimeout(reason = action)
+        return false
+    }
+
     fun togglePlayPause() {
         Log.d(TAG, "Toggle play/pause, current state: ${_isPlaying.value}")
         mediaController?.let { controller ->
@@ -3399,6 +3764,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 _isPlaying.value = false
                 progressUpdateJob?.cancel()
             } else {
+                if (!canStartPlayback("togglePlayPause")) return
                 controller.play()
                 _isPlaying.value = true
                 startProgressUpdates()
@@ -3413,6 +3779,16 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             controller.pause()
             _isPlaying.value = false
             progressUpdateJob?.cancel()
+        }
+    }
+
+    fun resumeMusic() {
+        Log.d(TAG, "Resuming music playback")
+        mediaController?.let { controller ->
+            if (!canStartPlayback("resumeMusic")) return
+            controller.play()
+            _isPlaying.value = true
+            startProgressUpdates()
         }
     }
     
@@ -3616,138 +3992,275 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     fun toggleShuffle() {
         mediaController?.let { controller ->
-            val newShuffleMode = !controller.shuffleModeEnabled
-            Log.d(TAG, "Toggle shuffle mode to: $newShuffleMode")
-
-            // Save shuffle state to preferences if persistence is enabled
-            if (appSettings.shuffleModePersistence.value) {
-                appSettings.setSavedShuffleState(newShuffleMode)
+            // Don't allow shuffle toggle if queue is empty
+            if (_currentQueue.value.songs.isEmpty()) {
+                Log.w(TAG, "Cannot toggle shuffle - queue is empty")
+                return
             }
 
-            // Check if we should use ExoPlayer's shuffle or manual shuffle
+            val currentSongs = _currentQueue.value.songs
+            val currentSong = _currentSong.value
+            val currentQueueSourceName = queueStateHolder.currentQueueSourceName.value
             val useExoPlayerShuffle = shuffleUsesExoplayer.value
-            Log.d(TAG, "Shuffle setting - useExoPlayerShuffle: $useExoPlayerShuffle")
+            val newShuffleMode = !_isShuffleEnabled.value
+
+            Log.d(TAG, "Toggle shuffle mode to: $newShuffleMode (useExoPlayerShuffle=$useExoPlayerShuffle)")
 
             if (newShuffleMode) {
-                // Enabling shuffle
-                if (useExoPlayerShuffle) {
-                    // Use ExoPlayer's shuffle mode - just enable it
-                    controller.shuffleModeEnabled = true
-                    _isShuffleEnabled.value = true
-
-                    // Sync the queue with MediaController to update the displayed queue order
-                    // This ensures the UI queue list reflects ExoPlayer's shuffled order
-                    viewModelScope.launch {
-                        // Small delay to let ExoPlayer reorganize its internal timeline after shuffle toggle
-                        delay(100)
-                        syncQueueWithMediaController()
-                        Log.d(TAG, "Queue synced after enabling ExoPlayer shuffle")
-                    }
-                } else {
-                    // Manual shuffle - snapshot current queue order first, then shuffle manually
-                    preShuffleQueue = _currentQueue.value.songs.toList()
-                    controller.shuffleModeEnabled = true
-                    _isShuffleEnabled.value = true
-
-                    // Sync the queue with MediaController to update the displayed queue order
-                    viewModelScope.launch {
-                        delay(100)
-                        syncQueueWithMediaController()
-                        Log.d(TAG, "Queue synced after enabling manual shuffle")
-                    }
+                // Enable Shuffle
+                if (!queueStateHolder.hasOriginalQueue()) {
+                    queueStateHolder.setOriginalQueueOrder(currentSongs)
+                    queueStateHolder.saveOriginalQueueState(currentSongs, currentQueueSourceName)
                 }
-            } else {
-                // Disabling shuffle
+
+                val currentMediaId = controller.currentMediaItem?.mediaId ?: currentSong?.id
+                val currentPosition = controller.currentPosition
+                val wasPlaying = controller.isPlaying
+
                 if (useExoPlayerShuffle) {
-                    // Use ExoPlayer's shuffle mode - just disable it (no queue rebuilding needed)
-                    controller.shuffleModeEnabled = false
-                    _isShuffleEnabled.value = false
-                    Log.d(TAG, "Disabled ExoPlayer shuffle mode")
-                } else {
-                    // Manual shuffle - restore original (pre-shuffle) queue order
-                    val currentSong = _currentSong.value
-                    val currentQueue = _currentQueue.value.songs
+                    controller.shuffleModeEnabled = true
+                    _isShuffleEnabled.value = true
 
-                    // Use pre-shuffle queue if available, otherwise use current queue as fallback
-                    val restoredSongs = if (preShuffleQueue.isNotEmpty()) {
-                        // Keep only songs that are still in the current queue (in case songs were added/removed)
-                        val currentIds = currentQueue.map { it.id }.toSet()
-                        preShuffleQueue.filter { it.id in currentIds }
-                            .takeIf { it.isNotEmpty() } ?: currentQueue
-                    } else {
-                        currentQueue
+                    // Sync queue so UI reflects current player timeline after enabling shuffle.
+                    syncQueueWithMediaController()
+                    saveQueueToPersistence()
+
+                    if (wasPlaying && !controller.isPlaying) {
+                        if (!canStartPlayback("toggleShuffle.restoreExo")) return@let
+                        controller.play()
                     }
+                } else {
+                    val currentIndex = currentMediaId
+                        ?.let { mediaId -> currentSongs.indexOfFirst { it.id == mediaId }.takeIf { it >= 0 } }
+                        ?: controller.currentMediaItemIndex.coerceIn(0, (currentSongs.size - 1).coerceAtLeast(0))
 
-                    if (restoredSongs.isNotEmpty()) {
-                        // Find the index of the current song in the restored list
-                        val currentSongIndex = if (currentSong != null) {
-                            restoredSongs.indexOfFirst { it.id == currentSong.id }.coerceAtLeast(0)
-                        } else {
-                            0
+                    // Run heavy shuffle work off main to keep UI and playback responsive.
+                    viewModelScope.launch {
+                        val shuffledQueue = withContext(Dispatchers.Default) {
+                            buildShuffleQueuePreservingPlayed(currentSongs, currentIndex)
                         }
 
-                        Log.d(TAG, "Disabling shuffle - restoring original queue order (current song at index $currentSongIndex)")
-
-                        // Rebuild the queue with restored order
-                        viewModelScope.launch {
-                            // Build media items on a background thread
-                            val mediaItems = withContext(Dispatchers.Default) {
-                                restoredSongs.map { song ->
-                                    MediaItem.Builder()
-                                        .setMediaId(song.id)
-                                        .setUri(song.uri)
-                                        .setMediaMetadata(
-                                            MediaMetadata.Builder()
-                                                .setTitle(song.title)
-                                                .setArtist(song.artist)
-                                                .setAlbumTitle(song.album)
-                                                .setArtworkUri(song.artworkUri)
-                                                .build()
-                                        )
-                                        .build()
+                        withContext(Dispatchers.Main) {
+                            // For large queues, use bulk replace (1 IPC call) instead of
+                            // per-item moveMediaItem (n IPC calls) which freezes the UI.
+                            if (currentSongs.size > BULK_REPLACE_THRESHOLD) {
+                                replacePlayerQueue(controller, shuffledQueue, currentMediaId, currentPosition)
+                            } else {
+                                val reordered = reorderQueueInPlace(controller, shuffledQueue)
+                                if (!reordered) {
+                                    replacePlayerQueue(controller, shuffledQueue, currentMediaId, currentPosition)
                                 }
                             }
 
-                            withContext(Dispatchers.Main) {
-                                val currentPosition = controller.currentPosition
+                            // Keep ExoPlayer shuffle disabled when using manual queue shuffling.
+                            controller.shuffleModeEnabled = false
+                            updateQueueState(shuffledQueue)
+                            _isShuffleEnabled.value = true
 
-                                // Disable shuffle mode first
-                                controller.shuffleModeEnabled = false
-                                _isShuffleEnabled.value = false
-
-                                // Clear and rebuild the queue
-                                controller.stop()
-                                controller.clearMediaItems()
-                                controller.addMediaItems(mediaItems)
-                                controller.prepare()
-
-                                // Seek to the current song in the restored queue and resume playback
-                                controller.seekTo(currentSongIndex, currentPosition)
+                            if (wasPlaying && !controller.isPlaying) {
+                                if (!canStartPlayback("toggleShuffle.restoreManual")) return@withContext
                                 controller.play()
-
-                                // Update the queue state
-                                _currentQueue.value = Queue(restoredSongs, currentSongIndex)
-
-                                // Save queue to persistence
-                                saveQueueToPersistence()
-
-                                // Clear the pre-shuffle snapshot
-                                preShuffleQueue = emptyList()
-
-                                Log.d(TAG, "Queue restored to original order - ${restoredSongs.size} songs, playing index $currentSongIndex")
                             }
                         }
-                    } else {
-                        // Empty queue, just toggle shuffle mode
-                        controller.shuffleModeEnabled = false
-                        _isShuffleEnabled.value = false
-                        preShuffleQueue = emptyList()
                     }
+                }
+
+                // Save shuffle state preference
+                if (shuffleModePersistence.value) {
+                    appSettings.setSavedShuffleState(true)
+                }
+            } else {
+                // Disable Shuffle
+                // Save shuffle state preference
+                if (shuffleModePersistence.value) {
+                    appSettings.setSavedShuffleState(false)
+                }
+
+                if (!queueStateHolder.hasOriginalQueue()) {
+                    controller.shuffleModeEnabled = false
+                    _isShuffleEnabled.value = false
+                    syncQueueWithMediaController()
+                    saveQueueToPersistence()
+                    return
+                }
+
+                val baseOriginalQueue = queueStateHolder.getFilteredOriginalQueue(currentSongs)
+                val originalQueue = buildRestoredQueueWithAdditions(baseOriginalQueue, currentSongs)
+                val wasPlaying = controller.isPlaying
+                val currentPosition = controller.currentPosition
+                val currentSongId = currentSong?.id ?: controller.currentMediaItem?.mediaId
+                val originalIndex = originalQueue.indexOfFirst { it.id == currentSongId }.takeIf { it >= 0 }
+
+                if (originalQueue.isEmpty() || originalIndex == null) {
+                    queueStateHolder.clearOriginalQueue()
+                    controller.shuffleModeEnabled = false
+                    _isShuffleEnabled.value = false
+                    syncQueueWithMediaController()
+                    saveQueueToPersistence()
+                    return
+                }
+
+                // Use bulk replace for large queues to avoid UI freeze
+                if (originalQueue.size > BULK_REPLACE_THRESHOLD) {
+                    replacePlayerQueue(controller, originalQueue, currentSongId, currentPosition)
+                } else {
+                    val reordered = reorderQueueInPlace(controller, originalQueue)
+                    if (!reordered) {
+                        replacePlayerQueue(controller, originalQueue, currentSongId, currentPosition)
+                    }
+                }
+
+                updateQueueState(originalQueue)
+                controller.shuffleModeEnabled = false
+                _isShuffleEnabled.value = false
+                queueStateHolder.clearOriginalQueue()
+
+                if (wasPlaying && !controller.isPlaying) {
+                    if (!canStartPlayback("toggleShuffle.disable")) return@let
+                    controller.play()
                 }
             }
         }
     }
-    
+
+    /**
+     * Preserves the already-played segment and shuffles only upcoming songs.
+     * This prevents unplayed tracks from being moved behind the current index and skipped.
+     */
+    private fun buildShuffleQueuePreservingPlayed(currentSongs: List<Song>, currentIndex: Int): List<Song> {
+        if (currentSongs.size <= 1) return currentSongs.toList()
+
+        val safeIndex = currentIndex.coerceIn(0, currentSongs.lastIndex)
+        val played = if (safeIndex > 0) currentSongs.subList(0, safeIndex) else emptyList()
+        val current = currentSongs[safeIndex]
+        val upcoming = if (safeIndex + 1 < currentSongs.size) {
+            currentSongs.subList(safeIndex + 1, currentSongs.size)
+        } else {
+            emptyList()
+        }
+
+        val shuffledUpcoming = QueueUtils.buildShuffleQueue(upcoming)
+        return buildList(currentSongs.size) {
+            addAll(played)
+            add(current)
+            addAll(shuffledUpcoming)
+        }
+    }
+
+    /**
+     * Restores original queue ordering and preserves songs added while shuffle was enabled.
+     */
+    private fun buildRestoredQueueWithAdditions(originalQueue: List<Song>, currentSongs: List<Song>): List<Song> {
+        if (originalQueue.isEmpty()) return currentSongs.toList()
+
+        val remainingOriginalCounts = originalQueue.groupingBy { it.id }.eachCount().toMutableMap()
+        val additions = mutableListOf<Song>()
+
+        currentSongs.forEach { song ->
+            val remaining = remainingOriginalCounts[song.id] ?: 0
+            if (remaining > 0) {
+                remainingOriginalCounts[song.id] = remaining - 1
+            } else {
+                additions.add(song)
+            }
+        }
+
+        return originalQueue + additions
+    }
+
+    /**
+     * Replaces the player timeline with [newQueue] in a single setMediaItems call,
+     * preserving the currently playing song and its position. This is O(1) IPC calls
+     * versus O(n) for reorderQueueInPlace, making it suitable for large queue shuffles.
+     */
+    private fun replacePlayerQueue(player: androidx.media3.common.Player, newQueue: List<Song>, currentSongId: String?, currentPosition: Long) {
+        val wasPlaying = player.isPlaying
+        val targetIndex = if (currentSongId != null) {
+            newQueue.indexOfFirst { it.id == currentSongId }.takeIf { it != -1 } ?: 0
+        } else 0
+
+        val mediaItems = newQueue.map { song ->
+            androidx.media3.common.MediaItem.Builder()
+                .setMediaId(song.id)
+                .setUri(song.uri)
+                .setMediaMetadata(
+                    androidx.media3.common.MediaMetadata.Builder()
+                        .setTitle(song.title)
+                        .setArtist(song.artist)
+                        .setAlbumTitle(song.album)
+                        .setArtworkUri(song.artworkUri)
+                        .build()
+                )
+                .build()
+        }
+
+        player.setMediaItems(mediaItems, targetIndex, currentPosition)
+        if (wasPlaying && !player.isPlaying) {
+            player.play()
+        }
+    }
+
+    /**
+     * Reorders the player queue in place by moving items to their desired positions.
+     * Returns true if successful, false if the reordering failed and a full replacement is needed.
+     */
+    private fun reorderQueueInPlace(player: androidx.media3.common.Player, desiredQueue: List<Song>): Boolean {
+        return try {
+            val currentIds = mutableListOf<String>()
+            for (i in 0 until player.mediaItemCount) {
+                currentIds.add(player.getMediaItemAt(i).mediaId)
+            }
+
+            val desiredIds = desiredQueue.map { it.id }
+            if (desiredIds.size != currentIds.size) {
+                Log.w(TAG, "Cannot reorder queue in place: size mismatch current=${currentIds.size}, desired=${desiredIds.size}")
+                return false
+            }
+
+            for (targetIndex in desiredIds.indices) {
+                val desiredId = desiredIds[targetIndex]
+                if (currentIds[targetIndex] == desiredId) continue
+
+                var fromIndex = -1
+                for (searchIndex in targetIndex + 1 until currentIds.size) {
+                    if (currentIds[searchIndex] == desiredId) {
+                        fromIndex = searchIndex
+                        break
+                    }
+                }
+
+                if (fromIndex == -1) {
+                    Log.w(TAG, "Cannot reorder queue in place: target mediaId '$desiredId' not found")
+                    return false
+                }
+
+                player.moveMediaItem(fromIndex, targetIndex)
+                val movedId = currentIds.removeAt(fromIndex)
+                currentIds.add(targetIndex, movedId)
+            }
+
+            true
+        } catch (e: Exception) {
+            Log.w(TAG, "Cannot reorder queue in place: player operation failed", e)
+            false
+        }
+    }
+
+    /**
+     * Updates the queue state and persists it.
+     */
+    private fun updateQueueState(newQueue: List<Song>) {
+        val currentSong = _currentSong.value
+        val currentIndex = if (currentSong != null) {
+            newQueue.indexOfFirst { it.id == currentSong.id }.coerceAtLeast(0)
+        } else {
+            0
+        }
+
+        _currentQueue.value = Queue(newQueue, currentIndex)
+        saveQueueToPersistence()
+    }
+
     fun toggleRepeatMode() {
         mediaController?.let { controller ->
             val currentMode = controller.repeatMode
@@ -3804,7 +4317,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             
             // Remove from Favorites playlist
             _playlists.value = _playlists.value.map { playlist ->
-                if (playlist.id == "1" && playlist.name == "Liked") {
+                if (playlist.id == "1") {
                     playlist.copy(songs = playlist.songs.filter { it.id != song.id })
                 } else {
                     playlist
@@ -3822,7 +4335,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             
             // Add to Favorites playlist
             _playlists.value = _playlists.value.map { playlist ->
-                if (playlist.id == "1" && playlist.name == "Liked") {
+                if (playlist.id == "1") {
                     playlist.copy(songs = playlist.songs + song)
                 } else {
                     playlist
@@ -5075,6 +5588,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             if (clampedVolume > 0f) {
                 _isMuted.value = false
             }
+            // Stop playback if volume reaches 0 and setting is enabled
+            if (clampedVolume == 0f && !_isMuted.value && appSettings.stopPlaybackOnZeroVolume.value) {
+                pauseMusic()
+            }
         }
     }
     
@@ -5165,6 +5682,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
      * Add a song to the queue
      */
     fun addSongToQueue(song: Song) {
+        android.widget.Toast.makeText(getApplication<android.app.Application>().applicationContext, "Added to queue: ${song.title}", android.widget.Toast.LENGTH_SHORT).show()
         Log.d(TAG, "Adding song to queue: ${song.title}")
         
         // Clear any previous error
@@ -5191,32 +5709,40 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 // If nothing is currently playing, start playback
                 if (controller.playbackState == Player.STATE_IDLE || controller.playbackState == Player.STATE_ENDED) {
                     controller.prepare()
+                    if (!canStartPlayback("addSongToQueue")) return@let
                     controller.play()
                 }
                 
-                // Update the queue in our state - make a defensive copy
-                val currentQueueSongs = _currentQueue.value.songs.toMutableList()
-                currentQueueSongs.add(song)
-                
-                // Make sure current index is valid and matches MediaController
-                val currentIndex = if (_currentQueue.value.currentIndex == -1 && currentQueueSongs.size == 1) {
-                    // First song added to empty queue
-                    0
-                } else if (controller.currentMediaItemIndex >= 0 && controller.currentMediaItemIndex < currentQueueSongs.size) {
-                    // Use MediaController's current index for accuracy
-                    controller.currentMediaItemIndex
+                // Update the queue in our state
+                if (controller.shuffleModeEnabled) {
+                    // When shuffle is enabled, sync with MediaController to get the correct order
+                    viewModelScope.launch {
+                        delay(50) // Small delay to let MediaController update
+                        syncQueueWithMediaController()
+                    }
                 } else {
-                    _currentQueue.value.currentIndex
+                    // When shuffle is disabled, we can safely update the queue manually
+                    val currentQueueSongs = _currentQueue.value.songs.toMutableList()
+                    currentQueueSongs.add(song)
+                    
+                    // Make sure current index is valid and matches MediaController
+                    val currentIndex = if (_currentQueue.value.currentIndex == -1 && currentQueueSongs.size == 1) {
+                        // First song added to empty queue
+                        0
+                    } else if (controller.currentMediaItemIndex >= 0 && controller.currentMediaItemIndex < currentQueueSongs.size) {
+                        // Use MediaController's current index for accuracy
+                        controller.currentMediaItemIndex
+                    } else {
+                        _currentQueue.value.currentIndex
+                    }
+                    
+                    _currentQueue.value = Queue(currentQueueSongs, currentIndex)
                 }
-                
-                _currentQueue.value = Queue(currentQueueSongs, currentIndex)
                 
                 // Save queue to persistence
                 saveQueueToPersistence()
                 
-                Log.d(TAG, "Successfully added '${song.title}' to queue. Queue now has ${currentQueueSongs.size} songs, current index: $currentIndex")
-                
-                Log.d(TAG, "Successfully added '${song.title}'. Queue now has ${currentQueueSongs.size} songs, current index: $currentIndex")
+                Log.d(TAG, "Successfully added '${song.title}' to queue. Queue now has ${controller.mediaItemCount} songs in MediaController")
             } catch (e: Exception) {
                 Log.e(TAG, "Error adding song to queue", e)
                 _queueOperationError.value = "Failed to add '${song.title}' to queue: ${e.message}"
@@ -5232,6 +5758,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
      * Add a song to play next (right after the current song in the queue)
      */
     fun playNext(song: Song) {
+        android.widget.Toast.makeText(getApplication<android.app.Application>().applicationContext, "Playing next: ${song.title}", android.widget.Toast.LENGTH_SHORT).show()
         Log.d(TAG, "Adding song to play next: ${song.title}")
         
         // Clear any previous error
@@ -5262,27 +5789,37 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 // If nothing is currently playing, start playback
                 if (controller.playbackState == Player.STATE_IDLE || controller.playbackState == Player.STATE_ENDED) {
                     controller.prepare()
+                    if (!canStartPlayback("playNext")) return@let
                     controller.play()
                 }
                 
-                // Update the queue in our state - make a defensive copy
-                val currentQueueSongs = _currentQueue.value.songs.toMutableList()
-                val currentQueueIndex = controller.currentMediaItemIndex.coerceAtLeast(0) // Use MediaController index
-                val queueInsertIndex = if (currentQueueIndex >= 0 && currentQueueIndex < currentQueueSongs.size) {
-                    currentQueueIndex + 1
+                // Update the queue in our state
+                if (controller.shuffleModeEnabled) {
+                    // When shuffle is enabled, sync with MediaController to get the correct shuffled order
+                    viewModelScope.launch {
+                        delay(50) // Small delay to let MediaController update
+                        syncQueueWithMediaController()
+                    }
                 } else {
-                    0
+                    // When shuffle is disabled, we can safely update the queue manually
+                    val currentQueueSongs = _currentQueue.value.songs.toMutableList()
+                    val currentQueueIndex = controller.currentMediaItemIndex.coerceAtLeast(0) // Use MediaController index
+                    val queueInsertIndex = if (currentQueueIndex >= 0 && currentQueueIndex < currentQueueSongs.size) {
+                        currentQueueIndex + 1
+                    } else {
+                        0
+                    }
+                    currentQueueSongs.add(queueInsertIndex, song)
+                    
+                    // Keep current index pointing to the currently playing song
+                    _currentQueue.value = Queue(currentQueueSongs, currentQueueIndex)
+                    
+                    Log.d(TAG, "Successfully added '${song.title}' to play next at position $queueInsertIndex. Queue now has ${currentQueueSongs.size} songs, current index: $currentQueueIndex")
                 }
-                currentQueueSongs.add(queueInsertIndex, song)
-                
-                // Keep current index pointing to the currently playing song
-                _currentQueue.value = Queue(currentQueueSongs, currentQueueIndex)
-                
-                Log.d(TAG, "Successfully added '${song.title}' to play next at position $queueInsertIndex. Queue now has ${currentQueueSongs.size} songs, current index: $currentQueueIndex")
                 
                 // Verify queue sync
-                if (controller.mediaItemCount != currentQueueSongs.size) {
-                    Log.w(TAG, "Queue size mismatch after playNext - MediaController: ${controller.mediaItemCount}, ViewModel: ${currentQueueSongs.size}")
+                if (controller.mediaItemCount != _currentQueue.value.songs.size) {
+                    Log.w(TAG, "Queue size mismatch after playNext - MediaController: ${controller.mediaItemCount}, ViewModel: ${_currentQueue.value.songs.size}")
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error adding song to play next", e)
@@ -5375,6 +5912,13 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         
         // Clear any previous error
         _queueOperationError.value = null
+
+        if (_isShuffleEnabled.value) {
+            val errorMsg = "Cannot move queue item while shuffle is enabled"
+            Log.w(TAG, errorMsg)
+            _queueOperationError.value = errorMsg
+            return
+        }
         
         val currentQueue = _currentQueue.value
         val songs = currentQueue.songs.toMutableList()
@@ -5434,6 +5978,15 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     if (fromIndex < controller.mediaItemCount && toIndex < controller.mediaItemCount) {
                         Log.d(TAG, "Moving media item in controller from $fromIndex to $toIndex")
                         controller.moveMediaItem(fromIndex, toIndex)
+                        
+                        // If shuffle is enabled, sync the queue to get the correct order
+                        if (controller.shuffleModeEnabled) {
+                            viewModelScope.launch {
+                                delay(50) // Small delay to let MediaController update
+                                syncQueueWithMediaController()
+                            }
+                        }
+                        
                         Log.d(TAG, "Successfully moved queue item from $fromIndex to $toIndex, new current index: $newCurrentIndex")
                     } else {
                         throw IndexOutOfBoundsException("Cannot move media item - index out of bounds in controller: from=$fromIndex, to=$toIndex, count=${controller.mediaItemCount}")
@@ -5509,31 +6062,41 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     // If nothing is currently playing, start playback
                     if (controller.playbackState == Player.STATE_IDLE || controller.playbackState == Player.STATE_ENDED) {
                         controller.prepare()
+                        if (!canStartPlayback("addSongsToQueue")) return@launch
                         controller.play()
                     }
                     
-                    // Update the queue in our state - make a defensive copy
-                    val currentQueueSongs = _currentQueue.value.songs.toMutableList()
-                    currentQueueSongs.addAll(songs)
-                    
-                    // Use MediaController index for accuracy
-                    val currentIndex = if (controller.currentMediaItemIndex >= 0) {
-                        controller.currentMediaItemIndex
+                    // Update the queue in our state
+                    if (controller.shuffleModeEnabled) {
+                        // When shuffle is enabled, sync with MediaController to get the correct shuffled order
+                        viewModelScope.launch {
+                            delay(100) // Small delay to let MediaController update
+                            syncQueueWithMediaController()
+                        }
                     } else {
-                        _currentQueue.value.currentIndex
+                        // When shuffle is disabled, we can safely update the queue manually
+                        val currentQueueSongs = _currentQueue.value.songs.toMutableList()
+                        currentQueueSongs.addAll(songs)
+                        
+                        // Use MediaController index for accuracy
+                        val currentIndex = if (controller.currentMediaItemIndex >= 0) {
+                            controller.currentMediaItemIndex
+                        } else {
+                            _currentQueue.value.currentIndex
+                        }
+                        
+                        _currentQueue.value = Queue(currentQueueSongs, currentIndex)
+                        
+                        // Save queue to persistence
+                        saveQueueToPersistence()
+                        
+                        Log.d(TAG, "Successfully added ${songs.size} songs. Queue now has ${currentQueueSongs.size} songs, current index: $currentIndex")
                     }
-                    
-                    _currentQueue.value = Queue(currentQueueSongs, currentIndex)
-                    
-                    // Save queue to persistence
-                    saveQueueToPersistence()
-                    
-                    Log.d(TAG, "Successfully added ${songs.size} songs. Queue now has ${currentQueueSongs.size} songs, current index: $currentIndex")
                     
                     // Verify sync
                     kotlinx.coroutines.delay(200)
-                    if (controller.mediaItemCount != currentQueueSongs.size) {
-                        Log.w(TAG, "Queue size mismatch after addSongsToQueue - MediaController: ${controller.mediaItemCount}, ViewModel: ${currentQueueSongs.size}")
+                    if (controller.mediaItemCount != _currentQueue.value.songs.size) {
+                        Log.w(TAG, "Queue size mismatch after addSongsToQueue - MediaController: ${controller.mediaItemCount}, ViewModel: ${_currentQueue.value.songs.size}")
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Error adding songs to queue", e)
@@ -5734,6 +6297,12 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             controller.clearMediaItems()
             controller.setMediaItem(mediaItem)
             controller.prepare()
+            if (!canStartPlayback("playExternalAudioFile")) {
+                _isPlaying.value = false
+                _currentSong.value = song
+                _currentQueue.value = Queue(listOf(song), 0)
+                return
+            }
             controller.play()
             
             // Update UI state
@@ -5761,6 +6330,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     delay(500)
                     if (!controller.isPlaying) {
                         Log.d(TAG, "Playback didn't start, retry #${retryCount + 1}")
+                        if (!canStartPlayback("playExternalAudioFile.retry")) {
+                            break
+                        }
                         controller.play()
                         retryCount++
                     } else {
@@ -5829,30 +6401,12 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         if (useExoPlayerShuffle) {
             // Let ExoPlayer handle shuffle
             Log.d(TAG, "Playing all songs with ExoPlayer shuffle")
-            playQueue(allSongs)
-            mediaController?.shuffleModeEnabled = true
-            _isShuffleEnabled.value = true
+            playQueue(allSongs, enableShuffle = true)
         } else {
             // Manual shuffle (recommended)
             Log.d(TAG, "Playing all songs with manual shuffle")
-            mediaController?.shuffleModeEnabled = false
-            _isShuffleEnabled.value = false
-            
-            // Manually shuffle the songs
             val shuffledSongs = allSongs.shuffled()
-            
-            // Start with the first song
-            val firstSong = shuffledSongs.first()
-            Log.d(TAG, "Playing shuffled songs starting with: ${firstSong.title} (pre-shuffled)")
-            
-            // Create a new queue with the shuffled songs
-            _currentQueue.value = Queue(shuffledSongs, 0)
-            
-            // Play the first song
-            playSong(firstSong)
-            
-            // Add to recently played
-            updateRecentlyPlayed(firstSong)
+            playQueue(shuffledSongs, enableShuffle = false)
         }
     }
 
@@ -5936,9 +6490,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             
             // Update genre preferences
             val currentGenrePrefs = _genrePreferences.value.toMutableMap()
-            song.genre?.let { genre ->
+            GenreUtils.splitGenres(song.genre).forEach { genre ->
                 val count = currentGenrePrefs.getOrDefault(genre, 0) + 1
                 currentGenrePrefs[genre] = count
+            }
+            if (currentGenrePrefs != _genrePreferences.value) {
                 appSettings.setGenrePreferences(currentGenrePrefs)
             }
 
@@ -5980,9 +6536,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             .sortedByDescending { it.value }
             .take(3)
             .map { it.key }
+        val preferredGenresSet = preferredGenres.map { it.lowercase() }.toSet()
         
         val genreBasedSongs = _songs.value.filter { song ->
-            song.genre in preferredGenres
+            GenreUtils.splitGenres(song.genre).any { it.lowercase() in preferredGenresSet }
         }
         
         // Filter out blacklisted songs
@@ -6135,26 +6692,51 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             Log.d(TAG, "Syncing queue with MediaController")
             Log.d(TAG, "MediaController: ${controller.mediaItemCount} items, current index: ${controller.currentMediaItemIndex}")
             Log.d(TAG, "ViewModel queue: ${_currentQueue.value.songs.size} songs, current index: ${_currentQueue.value.currentIndex}")
-            
+
             if (controller.mediaItemCount > 0) {
-                val mediaItems = (0 until controller.mediaItemCount).map { index ->
-                    controller.getMediaItemAt(index)
+                val mediaItems = if (controller.shuffleModeEnabled) {
+                    // Build queue in shuffle traversal order from the timeline.
+                    val traversal = mutableListOf<MediaItem>()
+                    val visited = BooleanArray(controller.mediaItemCount)
+                    val timeline = controller.currentTimeline
+                    var windowIndex = timeline.getFirstWindowIndex(true)
+                    while (windowIndex != C.INDEX_UNSET && windowIndex in visited.indices && !visited[windowIndex]) {
+                        traversal.add(controller.getMediaItemAt(windowIndex))
+                        visited[windowIndex] = true
+                        windowIndex = timeline.getNextWindowIndex(windowIndex, Player.REPEAT_MODE_OFF, true)
+                    }
+
+                    if (traversal.isEmpty()) {
+                        (0 until controller.mediaItemCount).map { index ->
+                            controller.getMediaItemAt(index)
+                        }
+                    } else {
+                        traversal
+                    }
+                } else {
+                    (0 until controller.mediaItemCount).map { index ->
+                        controller.getMediaItemAt(index)
+                    }
                 }
+
                 val mediaItemSongs = mediaItems.mapNotNull { mediaItem ->
                     _songs.value.find { it.id == mediaItem.mediaId }
                 }
-                
-                val currentMediaIndex = controller.currentMediaItemIndex.coerceAtLeast(0)
+
+                val currentMediaId = controller.currentMediaItem?.mediaId
+                val currentMediaIndex = currentMediaId
+                    ?.let { id -> mediaItemSongs.indexOfFirst { it.id == id }.takeIf { it >= 0 } }
+                    ?: controller.currentMediaItemIndex.coerceAtLeast(0)
                 _currentQueue.value = Queue(mediaItemSongs, currentMediaIndex)
-                
+
                 // Update current song if needed
                 if (mediaItemSongs.isNotEmpty() && currentMediaIndex < mediaItemSongs.size) {
                     val currentSong = mediaItemSongs[currentMediaIndex]
                     _currentSong.value = currentSong
                     _isFavorite.value = _favoriteSongs.value.contains(currentSong.id)
                 }
-                
-                Log.d(TAG, "Synced queue: ${mediaItemSongs.size} songs, index: $currentMediaIndex")
+
+                Log.d(TAG, "Synced queue: ${mediaItemSongs.size} songs, index: $currentMediaIndex, shuffle: ${controller.shuffleModeEnabled}")
             } else {
                 // No items in MediaController, clear queue
                 _currentQueue.value = Queue(emptyList(), -1)
@@ -6212,16 +6794,12 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 
                 if (useExoPlayerShuffle) {
                     // Use ExoPlayer's shuffle mode
-                    playQueue(songs)
-                    mediaController?.shuffleModeEnabled = true
-                    _isShuffleEnabled.value = true
+                    playQueue(songs, enableShuffle = true)
                     Log.d(TAG, "Started playback with ExoPlayer shuffle for album: ${album.title}")
                 } else {
                     // Manually shuffle and disable ExoPlayer shuffle (default behavior)
                     val shuffledSongs = songs.shuffled()
-                    playQueue(shuffledSongs)
-                    mediaController?.shuffleModeEnabled = false
-                    _isShuffleEnabled.value = false
+                    playQueue(shuffledSongs, enableShuffle = false)
                     Log.d(TAG, "Started playback with manual shuffle for album: ${album.title}")
                 }
             } else {
@@ -6240,16 +6818,12 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             
             if (useExoPlayerShuffle) {
                 // Use ExoPlayer's shuffle mode
-                playQueue(playlist.songs)
-                mediaController?.shuffleModeEnabled = true
-                _isShuffleEnabled.value = true
+                playQueue(playlist.songs, enableShuffle = true)
                 Log.d(TAG, "Started playback with ExoPlayer shuffle for playlist: ${playlist.name}")
             } else {
                 // Manually shuffle and disable ExoPlayer shuffle (default behavior)
                 val shuffledSongs = playlist.songs.shuffled()
-                playQueue(shuffledSongs)
-                mediaController?.shuffleModeEnabled = false
-                _isShuffleEnabled.value = false
+                playQueue(shuffledSongs, enableShuffle = false)
                 Log.d(TAG, "Started playback with manual shuffle for playlist: ${playlist.name}")
             }
         } else {
@@ -6691,22 +7265,6 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     private var sleepTimerJob: kotlinx.coroutines.Job? = null
     
     // Sleep timer now uses direct ViewModel state management instead of broadcast receivers
-    
-    companion object {
-        // SharedPreferences keys
-        private const val PREF_HIGH_QUALITY_AUDIO = "high_quality_audio"
-        private const val PREF_GAPLESS_PLAYBACK = "gapless_playback"
-        private const val PREF_CROSSFADE = "crossfade"
-        private const val PREF_CROSSFADE_DURATION = "crossfade_duration"
-        private const val PREF_AUDIO_NORMALIZATION = "audio_normalization"
-        private const val PREF_REPLAY_GAIN = "replay_gain"
-        private const val PREF_SHOW_LYRICS = "show_lyrics"
-        private const val PREF_ONLINE_ONLY_LYRICS = "online_only_lyrics"
-        private const val PREF_SONG_PLAY_COUNTS = "song_play_counts"
-        
-        // Player control constants
-        private const val REWIND_THRESHOLD_MS = 3000L // 3 seconds
-    }
     
     override fun onCleared() {
         super.onCleared()
