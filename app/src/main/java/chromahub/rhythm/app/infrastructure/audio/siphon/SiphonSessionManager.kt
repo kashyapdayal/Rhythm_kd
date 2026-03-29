@@ -83,6 +83,8 @@ class SiphonSessionManager(
     @Volatile
     private var parkedDevice: UsbDevice? = null
 
+    private val handledDeviceExpiry = mutableMapOf<String, Long>()
+
     /** Device currently being managed by this session. */
     @Volatile
     private var activeDevice: UsbDevice? = null
@@ -133,8 +135,16 @@ class SiphonSessionManager(
      * Routes through the session manager gates instead of directly requesting permission.
      */
     fun onDeviceArrived(device: UsbDevice) {
+        val now = System.currentTimeMillis()
+        val lastEvent = handledDeviceExpiry[device.deviceName] ?: 0L
+        if (now - lastEvent < 2000L) {
+            Log.d(TAG, "Ignoring duplicate onDeviceArrived for ${device.productName}")
+            return
+        }
+        handledDeviceExpiry[device.deviceName] = now
+
         Log.i(TAG, "onDeviceArrived: ${device.productName}")
-        
+
         // If the session is already active with this device, ignore duplicate
         if (activeDevice?.deviceId == device.deviceId && 
             _sessionState.value == SessionState.ACTIVE) {
@@ -153,15 +163,27 @@ class SiphonSessionManager(
                 return@launch
             }
 
-            beginClaimSequence(device)
-        }
+            val cachedCaps = usbAudioManager.orchestrator.getCachedCaps(device)
+            if (cachedCaps != null) {
+                Log.d(TAG, "Caps already cached, beginning claim sequence immediately")
+                beginClaimSequence(device)
+            } else {
+                Log.d(TAG, "Caps not cached yet, deferring sequence until Orchestrator provides them")
+            }
     }
 
     /**
      * Called when a USB device is detached.
      */
     fun onDeviceRemoved(device: UsbDevice) {
-        Log.i(TAG, "onDeviceRemoved: ${device.productName}")
+        val now = System.currentTimeMillis()
+        val lastEvent = handledDeviceExpiry[device.deviceName] ?: 0L
+        if (now - lastEvent < 2000L) {
+            Log.d(TAG, "Ignoring duplicate onDeviceRemoved for ${device.productName}")
+            return
+        }
+        handledDeviceExpiry[device.deviceName] = now
+
         sessionJob?.cancel()
         
         if (activeDevice?.deviceId == device.deviceId || 
@@ -257,17 +279,19 @@ class SiphonSessionManager(
             Log.i(TAG, "Evicting AudioFlinger for ${device.productName}")
             evictAudioFlinger()
 
+            // Fix 4: Guard the Eviction
+            kotlinx.coroutines.delay(200L) // Wait for AudioFlinger to release
+
             // Gate 5: Claim interface
             _sessionState.value = SessionState.CLAIMING_INTERFACE
-            Log.i(TAG, "Waiting for enumeration to call claimInterface for ${device.productName}")
             
-            // Note: _isRoutingTransitionInProgress is cleared inside claimInterface
-            // or in a timeout if it never arrives.
-            
-        } catch (e: Exception) {
-            Log.e(TAG, "Claim sequence failed: ${e.message}", e)
-            _sessionState.value = SessionState.IDLE
-            activeDevice = null
+            val cachedCaps = usbAudioManager.orchestrator.getCachedCaps(device)
+            if (cachedCaps != null) {
+                Log.i(TAG, "Using cached enumeration to claimInterface for ${device.productName}")
+                claimInterface(device, cachedCaps.toDeviceCapabilities())
+            } else {
+                Log.i(TAG, "Waiting for enumeration to call claimInterface for ${device.productName}")
+            }
             _isRoutingTransitionInProgress.set(false)
         }
     }
@@ -276,6 +300,12 @@ class SiphonSessionManager(
      * Gate 5 execution. Called by OutputRouter when enumeration is complete.
      */
     fun claimInterface(device: UsbDevice, caps: chromahub.rhythm.app.infrastructure.audio.siphon.SiphonDeviceCapabilities) {
+        if (_sessionState.value == SessionState.IDLE || _sessionState.value == SessionState.WAITING_FOR_DEVICE) {
+            Log.i(TAG, "Received caps from Orchestrator, lifting deferral and beginning claim sequence")
+            scope.launch { beginClaimSequence(device) }
+            return
+        }
+
         if (_sessionState.value != SessionState.CLAIMING_INTERFACE) {
             Log.w(TAG, "claimInterface called but state is ${_sessionState.value}")
             return

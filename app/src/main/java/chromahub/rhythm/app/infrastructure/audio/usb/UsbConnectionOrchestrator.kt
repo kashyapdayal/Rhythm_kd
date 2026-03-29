@@ -63,6 +63,10 @@ class UsbConnectionOrchestrator(
     private val _state = MutableStateFlow(ConnectionState())
     val state: StateFlow<ConnectionState> = _state.asStateFlow()
 
+    private val capsCache = mutableMapOf<String, EnumeratedDevice>()
+
+    fun getCachedCaps(device: UsbDevice): EnumeratedDevice? = capsCache[device.deviceName]
+
     var onEnumerationComplete: ((UsbDevice, EnumeratedDevice) -> Unit)? = null
 
     fun onAttached(device: UsbDevice, usbExclusiveEnabled: Boolean) {
@@ -93,11 +97,11 @@ class UsbConnectionOrchestrator(
             val permissionIntent = PendingIntent.getBroadcast(
                 context,
                 0,
-                Intent(ACTION_USB_PERMISSION).apply { 
+                Intent(ACTION_USB_PERMISSION).apply {
                     setPackage(context.packageName)
                     putExtra(UsbManager.EXTRA_DEVICE, device)
                 },
-                PendingIntent.FLAG_IMMUTABLE
+                PendingIntent.FLAG_CANCEL_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
             usbManager.requestPermission(device, permissionIntent)
             return
@@ -172,6 +176,7 @@ class UsbConnectionOrchestrator(
         }
         currentConnection = null
         currentlyConnectedDeviceId = null  // FIX: Clear device ID on detach
+        capsCache.clear()
         _state.value = ConnectionState(message = "USB device detached")
     }
 
@@ -313,6 +318,7 @@ class UsbConnectionOrchestrator(
         )
 
         Log.d(TAG, "Calling onEnumerationComplete with caps: $enumerated")
+        capsCache[device.deviceName] = enumerated
         onEnumerationComplete?.invoke(device, enumerated)
             ?: Log.e(TAG, "onEnumerationComplete is NULL — OutputRouter not wired!")
 

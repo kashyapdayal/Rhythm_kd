@@ -52,7 +52,7 @@ class UsbAudioManager(
     private val scope = CoroutineScope(Dispatchers.Main + Job())
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private val usbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
-    private val orchestrator = UsbConnectionOrchestrator(context, usbManager)
+    val orchestrator = UsbConnectionOrchestrator(context, usbManager)
     private val settingsStore = audioQualityDataStore ?: AudioQualityDataStore(context)
 
     private val _connectedUsbDevice = MutableStateFlow<UsbDacInfo?>(null)
