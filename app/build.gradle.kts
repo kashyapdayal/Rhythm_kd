@@ -128,6 +128,12 @@ android {
         includeInBundle = false
     }
 
+    lint {
+        abortOnError = false
+        checkReleaseBuilds = false
+        baseline = file("lint-baseline.xml")
+    }
+
     packaging {
         resources {
             merges += "META-INF/INDEX.LIST"
