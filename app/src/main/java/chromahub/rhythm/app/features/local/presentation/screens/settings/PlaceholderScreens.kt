@@ -8827,6 +8827,7 @@ fun BackupRestoreSettingsScreen(onBackClick: () -> Unit) {
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
                                 text = if (lastBackupTimestamp > 0) {
+                                    @android.annotation.SuppressLint("NonObservableLocale")
                                     val sdf = SimpleDateFormat("MMM dd", java.util.Locale.getDefault())
                                     sdf.format(Date(lastBackupTimestamp))
                                 } else "Never",

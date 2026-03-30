@@ -206,13 +206,17 @@ class MediaPlaybackService : MediaLibraryService(),
     private lateinit var siphonSessionManager: chromahub.rhythm.app.infrastructure.audio.siphon.SiphonSessionManager
     
     // Fix 7: Attribution-context AudioManager for playback-related calls
-    private val playbackAudioManager: android.media.AudioManager by lazy {
-        val context = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+    @android.annotation.SuppressLint("NewApi")
+    private fun getAttributionContext(): android.content.Context {
+        return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
             createAttributionContext("playback")
         } else {
             this
         }
-        context.getSystemService(android.media.AudioManager::class.java)
+    }
+
+    private val playbackAudioManager: android.media.AudioManager by lazy {
+        getAttributionContext().getSystemService(android.media.AudioManager::class.java)
     }
     // Discord Rich Presence manager
     private lateinit var discordRichPresenceManager: chromahub.rhythm.app.utils.DiscordRichPresenceManager
@@ -387,19 +391,11 @@ class MediaPlaybackService : MediaLibraryService(),
             addAction("chromahub.rhythm.app.action.VOLUME_DOWN")
         }
         if (!isFavoriteReceiverRegistered) {
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                registerReceiver(favoriteChangeReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-            } else {
-                registerReceiver(favoriteChangeReceiver, filter)
-            }
+            androidx.core.content.ContextCompat.registerReceiver(this, favoriteChangeReceiver, filter, androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
             isFavoriteReceiverRegistered = true
         }
         if (!isVolumeReceiverRegistered) {
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                registerReceiver(volumeKeyReceiver, volFilter, Context.RECEIVER_NOT_EXPORTED)
-            } else {
-                registerReceiver(volumeKeyReceiver, volFilter)
-            }
+            androidx.core.content.ContextCompat.registerReceiver(this, volumeKeyReceiver, volFilter, androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
             isVolumeReceiverRegistered = true
         }
 

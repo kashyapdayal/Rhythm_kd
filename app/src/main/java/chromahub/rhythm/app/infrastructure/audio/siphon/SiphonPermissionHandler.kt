@@ -36,13 +36,13 @@ class SiphonPermissionHandler(
     fun requestPermission(device: UsbDevice, callback: (Boolean) -> Unit) {
         this.callback = callback
         val filter = IntentFilter(ACTION_USB_PERMISSION)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            context.registerReceiver(permissionReceiver, filter, 
-                Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            context.registerReceiver(permissionReceiver, filter)
-        }
-        
+        androidx.core.content.ContextCompat.registerReceiver(
+            context,
+            permissionReceiver,
+            filter,
+            androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+
         if (usbManager.hasPermission(device)) {
             callback(true)
             return

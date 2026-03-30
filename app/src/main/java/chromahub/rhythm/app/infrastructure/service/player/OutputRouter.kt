@@ -132,8 +132,12 @@ class OutputRouter(
     // ── Attribution context AudioManager for siphon operations ──
 
     private val siphonAudioManager: AudioManager by lazy {
-        context.createAttributionContext("siphon")
-            .getSystemService(AudioManager::class.java)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            context.createAttributionContext("siphon")
+                .getSystemService(AudioManager::class.java)
+        } else {
+            context.getSystemService(AudioManager::class.java)
+        }
     }
 
     private val usbManager: UsbManager by lazy {
@@ -313,18 +317,12 @@ class OutputRouter(
                 }
             }
             try {
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                    context.registerReceiver(
-                        vipCloseReceiver,
-                        android.content.IntentFilter(android.media.audiofx.AudioEffect.ACTION_CLOSE_AUDIO_EFFECT_CONTROL_SESSION),
-                        Context.RECEIVER_EXPORTED
-                    )
-                } else {
-                    context.registerReceiver(
-                        vipCloseReceiver,
-                        android.content.IntentFilter(android.media.audiofx.AudioEffect.ACTION_CLOSE_AUDIO_EFFECT_CONTROL_SESSION)
-                    )
-                }
+                androidx.core.content.ContextCompat.registerReceiver(
+                    context,
+                    vipCloseReceiver,
+                    android.content.IntentFilter(android.media.audiofx.AudioEffect.ACTION_CLOSE_AUDIO_EFFECT_CONTROL_SESSION),
+                    androidx.core.content.ContextCompat.RECEIVER_EXPORTED
+                )
                 // Safety timeout — if V4A doesn't respond in 500ms, ignore
                 kotlinx.coroutines.withTimeoutOrNull(500L) {
                     v4aClosedDeferred.await()

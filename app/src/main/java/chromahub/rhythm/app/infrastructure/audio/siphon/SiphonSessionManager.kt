@@ -455,18 +455,12 @@ class SiphonSessionManager(
             }
         }
         try {
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                context.registerReceiver(
-                    vipCloseReceiver,
-                    android.content.IntentFilter(android.media.audiofx.AudioEffect.ACTION_CLOSE_AUDIO_EFFECT_CONTROL_SESSION),
-                    Context.RECEIVER_EXPORTED // Specify flag for Android 14+
-                )
-            } else {
-                context.registerReceiver(
-                    vipCloseReceiver,
-                    android.content.IntentFilter(android.media.audiofx.AudioEffect.ACTION_CLOSE_AUDIO_EFFECT_CONTROL_SESSION)
-                )
-            }
+            androidx.core.content.ContextCompat.registerReceiver(
+                context,
+                vipCloseReceiver,
+                android.content.IntentFilter(android.media.audiofx.AudioEffect.ACTION_CLOSE_AUDIO_EFFECT_CONTROL_SESSION),
+                androidx.core.content.ContextCompat.RECEIVER_EXPORTED // Specify flag for Android 14+   
+            )
             // Safety timeout — if V4A doesn't respond in 500ms, ignore
             kotlinx.coroutines.withTimeoutOrNull(500L) {
                 v4aClosedDeferred.await()
@@ -479,9 +473,12 @@ class SiphonSessionManager(
 
         // Step 2: Tell audio policy to disconnect USB output
         try {
-            val siphonAudioManager = context.createAttributionContext("siphon")
-                .getSystemService(AudioManager::class.java)
-            siphonAudioManager.setParameters("usb_out_connected=false")
+            val siphonAudioManager = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                context.createAttributionContext("siphon").getSystemService(AudioManager::class.java)
+            } else {
+                context.getSystemService(AudioManager::class.java)
+            }
+            siphonAudioManager?.setParameters("usb_out_connected=false")
             Log.d(TAG, "Eviction step 2: setParameters done (${System.currentTimeMillis() - startTime}ms)")
         } catch (e: Exception) {
             Log.w(TAG, "Eviction step 2 failed (non-fatal): ${e.message}")

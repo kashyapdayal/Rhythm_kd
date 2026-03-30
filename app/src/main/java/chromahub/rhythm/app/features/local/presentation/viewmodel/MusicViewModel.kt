@@ -955,13 +955,14 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            getApplication<Application>().registerReceiver(favoriteChangeReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            getApplication<Application>().registerReceiver(favoriteChangeReceiver, filter)
-        }
+        androidx.core.content.ContextCompat.registerReceiver(
+            getApplication<Application>(),
+            favoriteChangeReceiver,
+            filter,
+            androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED
+        )
     }
-    
+
     private suspend fun initializeViewModelSafely() {
         Log.d(TAG, "Starting safe data initialization")
         val initStartTime = System.currentTimeMillis()

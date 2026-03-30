@@ -3548,22 +3548,17 @@ class MusicRepository(context: Context) {
         var syncedLyrics: String? = null
         var wordByWordLyrics: String? = null
 
-            // ---- LRCLib (Enhanced search with multiple strategies - line-by-line synced) ----
-            if (NetworkClient.isLrcLibApiEnabled() && lrclibApiService != null) {
-                try {
-                    // Strategy 1: Search by track name and artist name
-                    var results =
-                    lrclibApiService.searchLyrics(trackName = cleanTitle, artistName = cleanArtist)
+        // ---- LRCLib (Enhanced search with multiple strategies - line-by-line synced) ----
+        if (NetworkClient.isLrcLibApiEnabled() && lrclibApiService != null) {
+            try {
+                // Strategy 1: Search by track name and artist name
+                var results = lrclibApiService.searchLyrics(trackName = cleanTitle, artistName = cleanArtist)
 
                 // If no results, try fallback strategies
                 if (results.isEmpty()) {
                     // Strategy 2: Search with generic query combining artist and title
                     val query = "$cleanArtist $cleanTitle"
                     results = lrclibApiService.searchLyrics(query = query)
-                }
-
-                if (results.isEmpty()) {
-                    // Strategy 3: Try without parenthetical content and with simplified names
                     val simplifiedArtist =
                         cleanArtist.split(" feat.", " ft.", " featuring").first().trim()
                     val simplifiedTitle =

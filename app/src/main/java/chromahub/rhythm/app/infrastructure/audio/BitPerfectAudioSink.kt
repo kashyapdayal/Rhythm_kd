@@ -34,6 +34,7 @@ object BitPerfectAudioSink {
      * Create AudioSink with bit-perfect configuration and Rhythm audio effects
      */
     @Suppress("DEPRECATION")
+    @android.annotation.SuppressLint("WrongConstant")
     fun create(
         context: Context, 
         enableBitPerfect: Boolean,
@@ -133,6 +134,7 @@ object BitPerfectAudioSink {
                         val minBufSize = AudioTrack.getMinBufferSize(nativeSampleRate, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_16BIT)
                         try {
                             @Suppress("DEPRECATION")
+    @android.annotation.SuppressLint("WrongConstant")
                             AudioTrack(
                                 AudioManager.STREAM_MUSIC,
                                 nativeSampleRate,
@@ -167,6 +169,7 @@ object BitPerfectAudioSink {
                             val minBufSize = AudioTrack.getMinBufferSize(nativeSampleRate, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_16BIT)
                             try {
                                 @Suppress("DEPRECATION")
+    @android.annotation.SuppressLint("WrongConstant")
                                 AudioTrack(
                                     AudioManager.STREAM_MUSIC,
                                     nativeSampleRate,
