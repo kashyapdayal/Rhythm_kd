@@ -1,6 +1,8 @@
 package chromahub.rhythm.app.util
 
 import android.util.Log
+import androidx.annotation.OptIn
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.common.Format
@@ -9,6 +11,7 @@ import androidx.media3.common.Format
  * Monitor codec and format information for audio playback
  * Provides insights into codec usage and track details
  */
+@OptIn(UnstableApi::class)
 class CodecMonitor(private val player: ExoPlayer) {
     
     companion object {
