@@ -130,9 +130,20 @@ android {
 
     packaging {
         resources {
-            merges += "/META-INF/INDEX.LIST"
+            merges += "META-INF/INDEX.LIST"
             merges += "**/io.netty.versions.properties"
             excludes += "META-INF/services/reactor.blockhound.integration.BlockHoundIntegration"
+            excludes += "META-INF/DEPENDENCIES"
+            excludes += "META-INF/LICENSE"
+            excludes += "META-INF/LICENSE.txt"
+            excludes += "META-INF/license.txt"
+            excludes += "META-INF/NOTICE"
+            excludes += "META-INF/NOTICE.txt"
+            excludes += "META-INF/notice.txt"
+            excludes += "META-INF/ASL2.0"
+            excludes += "META-INF/AL2.0"
+            excludes += "META-INF/LGPL2.1"
+            excludes += "META-INF/*.md"
         }
     }
 
