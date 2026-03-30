@@ -23,6 +23,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import chromahub.rhythm.app.R
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -41,10 +42,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.*
-import androidx.compose.material.icons.automirrored.rounded.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material.icons.rounded.*
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.*
 import androidx.compose.material3.CircularWavyProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -80,12 +81,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import chromahub.rhythm.app.BuildConfig
 import chromahub.rhythm.app.shared.data.model.AppSettings
 import chromahub.rhythm.app.shared.data.model.Playlist
 import chromahub.rhythm.app.shared.data.model.Song
+import chromahub.rhythm.app.shared.data.repository.PlaybackStatsRepository
+import chromahub.rhythm.app.shared.data.repository.StatsTimeRange
 import chromahub.rhythm.app.util.GsonUtils
 import chromahub.rhythm.app.util.HapticUtils
 import coil.compose.AsyncImage
@@ -93,8 +97,10 @@ import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
 import kotlin.system.exitProcess
 import chromahub.rhythm.app.shared.presentation.components.common.CollapsibleHeaderScreen
+import chromahub.rhythm.app.shared.presentation.components.common.ButtonGroupStyle
 import chromahub.rhythm.app.shared.presentation.components.common.ExpressiveScrollBar
 import chromahub.rhythm.app.shared.presentation.components.common.ExpressiveButtonGroup
+import chromahub.rhythm.app.shared.presentation.components.common.ExpressiveGroupButton
 import chromahub.rhythm.app.shared.presentation.components.icons.RhythmIcons
 import chromahub.rhythm.app.features.local.presentation.components.bottomsheets.StandardBottomSheetHeader
 import chromahub.rhythm.app.shared.presentation.components.common.StyledProgressBar
@@ -120,6 +126,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import android.widget.TextView
 import androidx.compose.foundation.Image
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.core.text.HtmlCompat
 import chromahub.rhythm.app.shared.presentation.components.common.M3FourColorCircularLoader
 import chromahub.rhythm.app.features.local.presentation.components.player.PlayingEqIcon
@@ -132,6 +139,9 @@ import chromahub.rhythm.app.features.local.presentation.components.dialogs.Playl
 import chromahub.rhythm.app.features.local.presentation.components.dialogs.AppRestartDialog
 import chromahub.rhythm.app.features.local.presentation.components.player.PlayerChipOrderBottomSheet
 import chromahub.rhythm.app.features.local.presentation.components.settings.HomeSectionOrderBottomSheet
+import chromahub.rhythm.app.features.local.presentation.components.settings.LibraryTabOrderBottomSheet
+import chromahub.rhythm.app.shared.presentation.components.Material3SettingsGroup
+import chromahub.rhythm.app.shared.presentation.components.Material3SettingsItem
 
 @Composable
 fun TunerSettingRow(item: SettingItem) {
@@ -153,6 +163,7 @@ fun TunerSettingRow(item: SettingItem) {
     
     val iconBackgroundColor by animateColorAsState(
         targetValue = when {
+            !item.enabled -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
             item.toggleState == true -> MaterialTheme.colorScheme.primaryContainer
             isPressed -> MaterialTheme.colorScheme.secondaryContainer
             else -> MaterialTheme.colorScheme.surfaceContainerHighest
@@ -166,6 +177,7 @@ fun TunerSettingRow(item: SettingItem) {
     
     val iconTintColor by animateColorAsState(
         targetValue = when {
+            !item.enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
             item.toggleState == true -> MaterialTheme.colorScheme.onPrimaryContainer
             else -> MaterialTheme.colorScheme.onSurfaceVariant
         },
@@ -180,11 +192,14 @@ fun TunerSettingRow(item: SettingItem) {
         modifier = Modifier
             .fillMaxWidth()
             .graphicsLayer {
+                alpha = if (item.enabled) 1f else 0.6f
+            }
+            .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
             }
             .then(
-                if (item.onClick != null && item.toggleState == null) {
+                if (item.enabled && item.onClick != null && item.toggleState == null) {
                     Modifier.clickable(onClick = {
                         isPressed = true
                         HapticUtils.performHapticFeedback(context, hapticFeedback, HapticFeedbackType.LongPress)
@@ -225,14 +240,22 @@ fun TunerSettingRow(item: SettingItem) {
                 text = item.title,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
+                color = if (item.enabled) {
+                    MaterialTheme.colorScheme.onSurface
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                }
             )
             item.description?.let {
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = it,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (item.enabled) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    },
                     lineHeight = MaterialTheme.typography.bodyMedium.lineHeight
                 )
             }
@@ -250,24 +273,32 @@ fun TunerSettingRow(item: SettingItem) {
             TunerAnimatedSwitch(
                 checked = item.toggleState,
                 onCheckedChange = {
+                    if (!item.enabled) return@TunerAnimatedSwitch
                     HapticUtils.performHapticFeedback(context, hapticFeedback, HapticFeedbackType.TextHandleMove)
                     item.onToggleChange?.invoke(it)
-                }
+                },
+                enabled = item.enabled
             )
         } else if (item.toggleState != null) {
             TunerAnimatedSwitch(
                 checked = item.toggleState,
                 onCheckedChange = {
+                    if (!item.enabled) return@TunerAnimatedSwitch
                     HapticUtils.performHapticFeedback(context, hapticFeedback, HapticFeedbackType.TextHandleMove)
                     item.onToggleChange?.invoke(it)
-                }
+                },
+                enabled = item.enabled
             )
         } else if (item.onClick != null) {
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
                 contentDescription = context.getString(R.string.cd_navigate),
                 modifier = Modifier.size(20.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                tint = if (item.enabled) {
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
+                }
             )
         }
     }
@@ -277,13 +308,16 @@ fun TunerSettingRow(item: SettingItem) {
 fun TunerAnimatedSwitch(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
+    enabled: Boolean = true,
     modifier: Modifier = Modifier
 ) {
+    val isDarkTheme = isSystemInDarkTheme()
     val thumbColor by animateColorAsState(
-        targetValue = if (checked) 
-            MaterialTheme.colorScheme.onPrimary
-        else 
-            MaterialTheme.colorScheme.outline,
+        targetValue = when {
+            checked && !enabled -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
+            checked -> MaterialTheme.colorScheme.onPrimary
+            else -> if (isDarkTheme) Color.White else Color.Black
+        },
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioMediumBouncy,
             stiffness = Spring.StiffnessMedium
@@ -292,20 +326,36 @@ fun TunerAnimatedSwitch(
     )
     
     val trackColor by animateColorAsState(
-        targetValue = if (checked) 
-            MaterialTheme.colorScheme.primary
-        else 
-            MaterialTheme.colorScheme.surfaceContainerHighest,
+        targetValue = when {
+            !enabled && checked -> MaterialTheme.colorScheme.primary.copy(alpha = 0.38f)
+            !enabled -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f)
+            checked -> MaterialTheme.colorScheme.primary
+            else -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.82f)
+        },
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioMediumBouncy,
             stiffness = Spring.StiffnessMedium
         ),
         label = "tuner_track_color"
     )
+
+    val iconTint by animateColorAsState(
+        targetValue = if (checked) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            MaterialTheme.colorScheme.onPrimary.copy(alpha = if (enabled) 1f else 0.55f)
+        },
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "tuner_switch_icon_tint"
+    )
     
     Switch(
         checked = checked,
         onCheckedChange = onCheckedChange,
+        enabled = enabled,
         modifier = modifier,
         colors = SwitchDefaults.colors(
             checkedThumbColor = thumbColor,
@@ -314,18 +364,25 @@ fun TunerAnimatedSwitch(
             uncheckedThumbColor = thumbColor,
             uncheckedTrackColor = trackColor,
             uncheckedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+            disabledCheckedThumbColor = thumbColor,
+            disabledCheckedTrackColor = trackColor,
+            disabledUncheckedThumbColor = thumbColor,
+            disabledUncheckedTrackColor = trackColor,
         ),
         thumbContent = {
-            AnimatedVisibility(
-                visible = checked,
-                enter = scaleIn(spring(dampingRatio = Spring.DampingRatioMediumBouncy)) + fadeIn(),
-                exit = scaleOut(spring(dampingRatio = Spring.DampingRatioMediumBouncy)) + fadeOut()
-            ) {
+            AnimatedContent(
+                targetState = checked,
+                transitionSpec = {
+                    (fadeIn(animationSpec = tween(140)) + scaleIn(initialScale = 0.85f)) togetherWith
+                        (fadeOut(animationSpec = tween(120)) + scaleOut(targetScale = 0.85f))
+                },
+                label = "tuner_switch_icon"
+            ) { isChecked ->
                 Icon(
-                    imageVector = Icons.Default.CheckCircle,
+                    imageVector = if (isChecked) Icons.Default.Check else Icons.Default.Close,
                     contentDescription = null,
-                    modifier = Modifier.size(16.dp),
-                    tint = MaterialTheme.colorScheme.primary
+                    modifier = Modifier.size(14.dp),
+                    tint = iconTint
                 )
             }
         }
@@ -406,11 +463,78 @@ private fun TunerSettingCard(
     }
 }
 
+private fun toMaterial3SettingsItem(
+    context: Context,
+    item: SettingItem,
+    hapticFeedback: HapticFeedback? = null,
+    description: (@Composable () -> Unit)? = item.description?.let { desc -> { Text(desc) } }
+): Material3SettingsItem {
+    return Material3SettingsItem(
+        icon = item.icon,
+        title = { Text(item.title) },
+        description = description,
+        trailingContent = if (item.toggleState != null) {
+            {
+                TunerAnimatedSwitch(
+                    checked = item.toggleState,
+                    onCheckedChange = {
+                        if (!item.enabled) return@TunerAnimatedSwitch
+                        hapticFeedback?.let { haptic ->
+                            HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
+                        }
+                        item.onToggleChange?.invoke(it)
+                    },
+                    enabled = item.enabled
+                )
+            }
+        } else if (item.onClick != null) {
+            {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                    contentDescription = context.getString(R.string.cd_navigate),
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        } else {
+            null
+        },
+        isHighlighted = item.toggleState == true,
+        enabled = item.enabled,
+        onClick = when {
+            item.onClick != null -> {
+                {
+                    if (item.enabled) {
+                        hapticFeedback?.let { haptic ->
+                            HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.LongPress)
+                        }
+                        item.onClick.invoke()
+                    }
+                }
+            }
+
+            item.toggleState != null && item.onToggleChange != null -> {
+                {
+                    if (item.enabled) {
+                        hapticFeedback?.let { haptic ->
+                            HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
+                        }
+                        item.onToggleChange.invoke(!item.toggleState)
+                    }
+                }
+            }
+
+            else -> null
+        }
+    )
+}
+
 // Individual screens with actual settings
 @Composable
 fun NotificationsSettingsScreen(onBackClick: () -> Unit) {
     val context = LocalContext.current
     val appSettings = AppSettings.getInstance(context)
+    val hapticFeedback = LocalHapticFeedback.current
     val useCustomNotification by appSettings.useCustomNotification.collectAsState()
 
     CollapsibleHeaderScreen(
@@ -434,6 +558,7 @@ fun NotificationsSettingsScreen(onBackClick: () -> Unit) {
         )
 
         val lazyListState = rememberSaveable(
+            key = "notifications_settings_scroll_state",
             saver = LazyListStateSaver
         ) {
             androidx.compose.foundation.lazy.LazyListState()
@@ -452,30 +577,61 @@ fun NotificationsSettingsScreen(onBackClick: () -> Unit) {
                 contentType = { "settingGroup" }
             ) { group ->
                 Spacer(modifier = Modifier.height(24.dp))
-                Text(
-                    text = group.title,
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
-                )
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                ) {
-                    Column {
-                        group.items.forEachIndexed { index, item ->
-                            TunerSettingRow(item = item)
-                            if (index < group.items.lastIndex) {
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 20.dp),
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
+
+                val materialItems = group.items.map { item ->
+                    Material3SettingsItem(
+                        icon = item.icon,
+                        title = { Text(item.title) },
+                        description = item.description?.let { desc -> { Text(desc) } },
+                        trailingContent = if (item.toggleState != null) {
+                            {
+                                TunerAnimatedSwitch(
+                                    checked = item.toggleState,
+                                    onCheckedChange = {
+                                        HapticUtils.performHapticFeedback(context, hapticFeedback, HapticFeedbackType.TextHandleMove)
+                                        item.onToggleChange?.invoke(it)
+                                    }
                                 )
                             }
+                        } else if (item.onClick != null) {
+                            {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                                    contentDescription = context.getString(R.string.cd_navigate),
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        } else {
+                            null
+                        },
+                        isHighlighted = item.toggleState == true,
+                        enabled = item.enabled,
+                        onClick = when {
+                            item.onClick != null -> {
+                                {
+                                    HapticUtils.performHapticFeedback(context, hapticFeedback, HapticFeedbackType.LongPress)
+                                    item.onClick.invoke()
+                                }
+                            }
+
+                            item.toggleState != null && item.onToggleChange != null -> {
+                                {
+                                    HapticUtils.performHapticFeedback(context, hapticFeedback, HapticFeedbackType.TextHandleMove)
+                                    item.onToggleChange.invoke(!item.toggleState)
+                                }
+                            }
+
+                            else -> null
                         }
-                    }
+                    )
                 }
+
+                Material3SettingsGroup(
+                    title = group.title,
+                    items = materialItems,
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
             }
         }
     }
@@ -486,24 +642,30 @@ fun NotificationsSettingsScreen(onBackClick: () -> Unit) {
 fun QueuePlaybackSettingsScreen(onBackClick: () -> Unit) {
     val context = LocalContext.current
     val appSettings = AppSettings.getInstance(context)
+    val hapticFeedback = LocalHapticFeedback.current
 
     val shuffleUsesExoplayer by appSettings.shuffleUsesExoplayer.collectAsState()
     val autoAddToQueue by appSettings.autoAddToQueue.collectAsState()
     val clearQueueOnNewSong by appSettings.clearQueueOnNewSong.collectAsState()
+    val hidePlayedQueueSongs by appSettings.hidePlayedQueueSongs.collectAsState()
+    val showAlreadyPlayedSongsInQueue = !hidePlayedQueueSongs
     val showQueueDialog by appSettings.showQueueDialog.collectAsState()
     val repeatModePersistence by appSettings.repeatModePersistence.collectAsState()
     val shuffleModePersistence by appSettings.shuffleModePersistence.collectAsState()
     val queuePersistenceEnabled by appSettings.queuePersistenceEnabled.collectAsState()
-    val useSystemVolume by appSettings.useSystemVolume.collectAsState()
     val playlistClickBehavior by appSettings.playlistClickBehavior.collectAsState(initial = "ask")
+    val listQueueActionBehavior by appSettings.listQueueActionBehavior.collectAsState(initial = "replace")
     val useHoursInTimeFormat by appSettings.useHoursInTimeFormat.collectAsState()
+    val gaplessEnabled by appSettings.gaplessPlayback.collectAsState()
     val crossfadeEnabled by appSettings.crossfade.collectAsState()
     val crossfadeDuration by appSettings.crossfadeDuration.collectAsState()
+    val crossfadeRepeatOne by appSettings.crossfadeRepeatOne.collectAsState()
     val stopPlaybackOnAppClose by appSettings.stopPlaybackOnAppClose.collectAsState()
     val audioRoutingMode by appSettings.audioRoutingMode.collectAsState()
     val bitPerfectMode by appSettings.bitPerfectMode.collectAsState()
 
     var showPlaylistBehaviorDialog by remember { mutableStateOf(false) }
+    var showListQueueBehaviorDialog by remember { mutableStateOf(false) }
     var showQueueDialogSettingDialog by remember { mutableStateOf(false) }
     var showRestartDialog by remember { mutableStateOf(false) }
     var restartDialogMessage by remember { mutableStateOf("") }
@@ -540,12 +702,24 @@ fun QueuePlaybackSettingsScreen(onBackClick: () -> Unit) {
                     ),
                     SettingItem(
                         RhythmIcons.Queue,
-                        context.getString(R.string.settings_queue_action_dialog),
-                        if (showQueueDialog) context.getString(R.string.settings_queue_action_dialog_desc_ask) else context.getString(R.string.settings_queue_action_dialog_desc_always),
-                        onClick = { showQueueDialogSettingDialog = true }
+                        context.getString(R.string.settings_show_played_queue_songs),
+                        context.getString(R.string.settings_show_played_queue_songs_desc),
+                        toggleState = showAlreadyPlayedSongsInQueue,
+                        onToggleChange = { appSettings.setHidePlayedQueueSongs(!it) }
                     ),
                     SettingItem(
-                        Icons.AutoMirrored.Rounded.QueueMusic,
+                        RhythmIcons.Queue,
+                        context.getString(R.string.settings_queue_action_dialog),
+                        when {
+                            clearQueueOnNewSong -> context.getString(R.string.settings_queue_action_dialog_desc_disabled)
+                            showQueueDialog -> context.getString(R.string.settings_queue_action_dialog_desc_ask)
+                            else -> context.getString(R.string.settings_queue_action_dialog_desc_always)
+                        },
+                        onClick = { showQueueDialogSettingDialog = true },
+                        enabled = !clearQueueOnNewSong
+                    ),
+                    SettingItem(
+                        androidx.compose.material.icons.Icons.AutoMirrored.Filled.QueueMusic,
                         context.getString(R.string.settings_playlist_action_dialog),
                         when (playlistClickBehavior) {
                             "play_all" -> context.getString(R.string.settings_playlist_action_play_all)
@@ -553,6 +727,17 @@ fun QueuePlaybackSettingsScreen(onBackClick: () -> Unit) {
                             else -> context.getString(R.string.settings_playlist_action_ask)
                         },
                         onClick = { showPlaylistBehaviorDialog = true }
+                    ),
+                    SettingItem(
+                        androidx.compose.material.icons.Icons.AutoMirrored.Filled.QueueMusic,
+                        context.getString(R.string.settings_list_queue_action_dialog),
+                        when (listQueueActionBehavior) {
+                            "ask" -> context.getString(R.string.settings_list_queue_action_ask)
+                            "play_next" -> context.getString(R.string.settings_list_queue_action_play_next)
+                            "add_to_end" -> context.getString(R.string.settings_list_queue_action_add_to_end)
+                            else -> context.getString(R.string.settings_list_queue_action_replace)
+                        },
+                        onClick = { showListQueueBehaviorDialog = true }
                     )
                 )
             ),
@@ -589,7 +774,46 @@ fun QueuePlaybackSettingsScreen(onBackClick: () -> Unit) {
                     )
                 )
             ),
-
+            SettingGroup(
+                title = context.getString(R.string.settings_audio_effects),
+                items = listOf(
+                    SettingItem(
+                        Icons.Default.GraphicEq,
+                        context.getString(R.string.settings_gapless_playback),
+                        context.getString(R.string.settings_gapless_playback_desc),
+                        toggleState = gaplessEnabled,
+                        onToggleChange = { appSettings.setGaplessPlayback(it) }
+                    ),
+                    SettingItem(
+                        RhythmIcons.Tune,
+                        context.getString(R.string.settings_crossfade),
+                        context.getString(R.string.settings_crossfade_desc),
+                        toggleState = crossfadeEnabled,
+                        onToggleChange = { appSettings.setCrossfade(it) },
+                        // Pass the crossfade duration as extra data for rendering
+                        data = if (crossfadeEnabled) crossfadeDuration else null
+                    ),
+                    SettingItem(
+                        RhythmIcons.Repeat,
+                        context.getString(R.string.settings_crossfade_repeat_one),
+                        context.getString(R.string.settings_crossfade_repeat_one_desc),
+                        toggleState = crossfadeRepeatOne,
+                        onToggleChange = { appSettings.setCrossfadeRepeatOne(it) },
+                        enabled = crossfadeEnabled
+                    ),
+                    SettingItem(
+                        Icons.Default.HighQuality,
+                        context.getString(R.string.settings_bit_perfect_mode),
+                        if (audioRoutingMode == "app") context.getString(R.string.settings_bit_perfect_mode_desc_dac) else context.getString(R.string.settings_bit_perfect_mode_desc_native),
+                        toggleState = bitPerfectMode,
+                        onToggleChange = { 
+                            appSettings.setBitPerfectMode(it)
+                            showRestartDialog = true
+                            restartDialogMessage = "High-resolution audio mode changed. Restart the app to apply the new audio settings."
+                        }
+                    )
+                )
+            ),
             SettingGroup(
                 title = context.getString(R.string.settings_time_display),
                 items = listOf(
@@ -616,8 +840,115 @@ fun QueuePlaybackSettingsScreen(onBackClick: () -> Unit) {
                 contentType = { "settingGroup" }
             ) { group ->
                 Spacer(modifier = Modifier.height(24.dp))
+
+                val materialItems = group.items.map { item ->
+                    Material3SettingsItem(
+                        icon = item.icon,
+                        title = { Text(item.title) },
+                        description = {
+                            Column {
+                                item.description?.let { desc -> Text(desc) }
+
+                                // Keep crossfade duration slider integrated in this item when enabled.
+                                if (item.data is Float && item.toggleState == true) {
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = context.getString(R.string.settings_crossfade_duration),
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                        Text(
+                                            text = context.getString(R.string.settings_crossfade_duration_desc, crossfadeDuration),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Slider(
+                                        value = crossfadeDuration,
+                                        onValueChange = { appSettings.setCrossfadeDuration(it) },
+                                        valueRange = 0.5f..12f,
+                                        steps = 22,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(
+                                            text = context.getString(R.string.settings_crossfade_min),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Text(
+                                            text = context.getString(R.string.settings_crossfade_max),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                        },
+                        trailingContent = if (item.toggleState != null) {
+                            {
+                                TunerAnimatedSwitch(
+                                    checked = item.toggleState,
+                                    onCheckedChange = {
+                                        HapticUtils.performHapticFeedback(context, hapticFeedback, HapticFeedbackType.TextHandleMove)
+                                        item.onToggleChange?.invoke(it)
+                                    }
+                                )
+                            }
+                        } else if (item.onClick != null) {
+                            {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                                    contentDescription = context.getString(R.string.cd_navigate),
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        } else {
+                            null
+                        },
+                        isHighlighted = item.toggleState == true,
+                        enabled = item.enabled,
+                        onClick = when {
+                            item.onClick != null -> {
+                                {
+                                    HapticUtils.performHapticFeedback(context, hapticFeedback, HapticFeedbackType.LongPress)
+                                    item.onClick.invoke()
+                                }
+                            }
+
+                            item.toggleState != null && item.onToggleChange != null -> {
+                                {
+                                    HapticUtils.performHapticFeedback(context, hapticFeedback, HapticFeedbackType.TextHandleMove)
+                                    item.onToggleChange.invoke(!item.toggleState)
+                                }
+                            }
+
+                            else -> null
+                        }
+                    )
+                }
+
+                Material3SettingsGroup(
+                    title = group.title,
+                    items = materialItems,
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
+            }
+            
+            item(key = "audio_routing_section") {
+                Spacer(modifier = Modifier.height(24.dp))
                 Text(
-                    text = group.title,
+                    text = context.getString(R.string.settings_audio_routing),
                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
@@ -628,23 +959,100 @@ fun QueuePlaybackSettingsScreen(onBackClick: () -> Unit) {
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
                     elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                 ) {
-                    Column {
-                        group.items.forEachIndexed { index, item ->
-                            TunerSettingRow(item = item)
-                            
-                            // Add divider between crossfade and bit-perfect settings
-                            if (index < group.items.lastIndex) {
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 20.dp),
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(20.dp)
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Surface(
+                                modifier = Modifier.size(40.dp),
+                                shape = RoundedCornerShape(34.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                tonalElevation = 0.dp
+                            ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier.fillMaxSize()
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Headphones,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(24.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            Column {
+                                Text(
+                                    text = context.getString(R.string.settings_dac_usb_audio),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = context.getString(R.string.settings_dac_usb_audio_desc),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        ExpressiveButtonGroup(
+                            items = listOf(context.getString(R.string.settings_audio_routing_default), context.getString(R.string.settings_audio_routing_app), context.getString(R.string.settings_audio_routing_system)),
+                            selectedIndex = when (audioRoutingMode) {
+                                "default" -> 0
+                                "app" -> 1
+                                "system" -> 2
+                                else -> 0
+                            },
+                            onItemClick = { index ->
+                                when (index) {
+                                    0 -> {
+                                        appSettings.setAudioRoutingMode("default")
+                                        showRestartDialog = true
+                                        restartDialogMessage = "Audio routing changed to Default. Restart the app to apply the changes."
+                                    }
+                                    1 -> {
+                                        appSettings.setAudioRoutingMode("app")
+                                        // App routing enables high-resolution mode for direct DAC output
+                                        if (!appSettings.bitPerfectMode.value) {
+                                            appSettings.setBitPerfectMode(true)
+                                        }
+                                        showRestartDialog = true
+                                        restartDialogMessage = "Audio routing changed to App mode. Restart the app to apply the changes."
+                                    }
+                                    2 -> {
+                                        appSettings.setAudioRoutingMode("system")
+                                        showRestartDialog = true
+                                        restartDialogMessage = "Audio routing changed to System. Restart the app to apply the changes."
+                                    }
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = when (audioRoutingMode) {
+                                "app" -> context.getString(R.string.settings_audio_routing_app_desc)
+                                "system" -> context.getString(R.string.settings_audio_routing_system_desc)
+                                else -> context.getString(R.string.settings_audio_routing_default_desc)
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
-            
-            item() { Spacer(modifier = Modifier.height(100.dp)) }
+
+            item(key = "queue_playback_bottom_spacer") { Spacer(modifier = Modifier.height(100.dp)) }
         }
     }
 
@@ -991,6 +1399,198 @@ fun QueuePlaybackSettingsScreen(onBackClick: () -> Unit) {
         }
     }
 
+    // List Queue Behavior Dialog
+    if (showListQueueBehaviorDialog) {
+        val haptic = LocalHapticFeedback.current
+        val scope = rememberCoroutineScope()
+        val listQueueSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+        var showContent by remember { mutableStateOf(false) }
+
+        val contentAlpha by animateFloatAsState(
+            targetValue = if (showContent) 1f else 0f,
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioMediumBouncy,
+                stiffness = Spring.StiffnessLow
+            ),
+            label = "contentAlpha"
+        )
+
+        LaunchedEffect(Unit) {
+            delay(100)
+            showContent = true
+        }
+
+        ModalBottomSheet(
+            onDismissRequest = { showListQueueBehaviorDialog = false },
+            sheetState = listQueueSheetState,
+            dragHandle = {
+                BottomSheetDefaults.DragHandle(
+                    color = MaterialTheme.colorScheme.primary
+                )
+            },
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .padding(bottom = 24.dp)
+                    .graphicsLayer(alpha = contentAlpha)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 0.dp, vertical = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column {
+                        Text(
+                            text = context.getString(R.string.list_queue_behavior_title),
+                            style = MaterialTheme.typography.displayMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Box(
+                            modifier = Modifier
+                                .padding(top = 6.dp)
+                                .background(
+                                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    shape = CircleShape
+                                )
+                        ) {
+                            Text(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                style = MaterialTheme.typography.labelLarge,
+                                text = context.getString(R.string.list_queue_behavior_desc),
+                                overflow = TextOverflow.Ellipsis,
+                                maxLines = 1,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    val options = listOf(
+                        "replace" to Triple(
+                            context.getString(R.string.list_queue_behavior_replace_title),
+                            context.getString(R.string.list_queue_behavior_replace_desc),
+                            Icons.Default.PlaylistPlay
+                        ),
+                        "ask" to Triple(
+                            context.getString(R.string.list_queue_behavior_ask_title),
+                            context.getString(R.string.list_queue_behavior_ask_desc),
+                            Icons.Default.Help
+                        ),
+                        "play_next" to Triple(
+                            context.getString(R.string.list_queue_behavior_play_next_title),
+                            context.getString(R.string.list_queue_behavior_play_next_desc),
+                            RhythmIcons.Play
+                        ),
+                        "add_to_end" to Triple(
+                            context.getString(R.string.list_queue_behavior_add_end_title),
+                            context.getString(R.string.list_queue_behavior_add_end_desc),
+                            Icons.Default.PlaylistAdd
+                        )
+                    )
+
+                    options.forEach { (value, option) ->
+                        val isSelected = listQueueActionBehavior == value
+
+                        Card(
+                            onClick = {
+                                HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
+                                scope.launch {
+                                    appSettings.setListQueueActionBehavior(value)
+                                    showListQueueBehaviorDialog = false
+                                }
+                            },
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isSelected)
+                                    MaterialTheme.colorScheme.primaryContainer
+                                else
+                                    MaterialTheme.colorScheme.surfaceContainerHigh
+                            ),
+                            shape = RoundedCornerShape(16.dp),
+                            border = if (isSelected) {
+                                BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+                            } else {
+                                null
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(20.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = if (isSelected)
+                                        MaterialTheme.colorScheme.primary
+                                    else
+                                        MaterialTheme.colorScheme.surfaceVariant,
+                                    modifier = Modifier.size(44.dp)
+                                ) {
+                                    Box(
+                                        contentAlignment = Alignment.Center,
+                                        modifier = Modifier.fillMaxSize()
+                                    ) {
+                                        Icon(
+                                            imageVector = option.third,
+                                            contentDescription = null,
+                                            tint = if (isSelected)
+                                                MaterialTheme.colorScheme.onPrimary
+                                            else
+                                                MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(22.dp)
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.width(16.dp))
+
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = option.first,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (isSelected)
+                                            MaterialTheme.colorScheme.onPrimaryContainer
+                                        else
+                                            MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = option.second,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (isSelected)
+                                            MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                                        else
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+
+                                if (isSelected) {
+                                    Icon(
+                                        imageVector = Icons.Filled.CheckCircle,
+                                        contentDescription = context.getString(R.string.ui_selected),
+                                        modifier = Modifier.size(28.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // Show Queue Dialog Setting Dialog
     if (showQueueDialogSettingDialog) {
         val haptic = LocalHapticFeedback.current
@@ -1264,7 +1864,7 @@ fun QueuePlaybackSettingsScreen(onBackClick: () -> Unit) {
     }
 }
 
-// âœ… FULLY MERGED Playlists Screen (simplified playlist management)
+// ✅ FULLY MERGED Playlists Screen (simplified playlist management)
 @Composable
 fun PlaylistsSettingsScreen(onBackClick: () -> Unit) {
     val context = LocalContext.current
@@ -1426,6 +2026,7 @@ fun PlaylistsSettingsScreen(onBackClick: () -> Unit) {
         }
     ) { modifier ->
         val lazyListState = rememberSaveable(
+            key = "playlists_settings_scroll_state",
             saver = LazyListStateSaver
         ) {
             androidx.compose.foundation.lazy.LazyListState()
@@ -1522,44 +2123,67 @@ fun PlaylistsSettingsScreen(onBackClick: () -> Unit) {
 
             items(settingGroups.filter { it.title != context.getString(R.string.settings_playlists_overview) }) { group ->
                 Spacer(modifier = Modifier.height(24.dp))
-                Text(
-                    text = group.title,
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
-                )
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                ) {
-                    Column {
-                        group.items.forEachIndexed { index, item ->
-                            // Check if this is a toggle setting (has both toggleState and onToggleChange)
-                            if (item.toggleState != null && item.onToggleChange != null) {
-                                TunerSettingRow(item = item)
-                            } else if (group.title == context.getString(R.string.settings_default_playlists) || 
-                                       group.title == context.getString(R.string.settings_my_playlists)) {
-                                PlaylistSettingRow(
-                                    item = item,
-                                    isDefaultPlaylist = group.title == context.getString(R.string.settings_default_playlists),
-                                    onDelete = { playlist ->
-                                        playlistToDelete = playlist
+
+                val isDefaultPlaylistGroup =
+                    group.title == context.getString(R.string.settings_default_playlists)
+                val isPlaylistRowsGroup =
+                    isDefaultPlaylistGroup ||
+                        group.title == context.getString(R.string.settings_my_playlists)
+
+                val materialItems = if (isPlaylistRowsGroup) {
+                    group.items.map { item ->
+                        val playlistId = item.data as? String
+                        val playlist = playlists.find { it.id == playlistId }
+
+                        if (item.onClick != null || item.toggleState != null || playlistId == null) {
+                            toMaterial3SettingsItem(
+                                context = context,
+                                item = item,
+                                hapticFeedback = haptic
+                            )
+                        } else {
+                            Material3SettingsItem(
+                                icon = item.icon,
+                                title = { Text(item.title) },
+                                description = item.description?.let { desc -> { Text(desc) } },
+                                trailingContent = if (!isDefaultPlaylistGroup && playlist != null) {
+                                    {
+                                        IconButton(
+                                            onClick = {
+                                                HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.LongPress)
+                                                playlistToDelete = playlist
+                                            }
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Delete,
+                                                contentDescription = context.getString(R.string.dialog_delete),
+                                                tint = MaterialTheme.colorScheme.error,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
                                     }
-                                )
-                            } else {
-                                TunerSettingRow(item = item)
-                            }
-                            if (index < group.items.lastIndex) {
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 20.dp),
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                                )
-                            }
+                                } else {
+                                    null
+                                },
+                                onClick = item.onClick
+                            )
                         }
                     }
+                } else {
+                    group.items.map { item ->
+                        toMaterial3SettingsItem(
+                            context = context,
+                            item = item,
+                            hapticFeedback = haptic
+                        )
+                    }
                 }
+
+                Material3SettingsGroup(
+                    title = group.title,
+                    items = materialItems,
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
             }
         }
     }
@@ -1747,74 +2371,7 @@ fun PlaylistsSettingsScreen(onBackClick: () -> Unit) {
     }
 }
 
-@Composable
-private fun PlaylistSettingRow(
-    item: SettingItem,
-    isDefaultPlaylist: Boolean,
-    onDelete: (Playlist) -> Unit
-) {
-    val hapticFeedback = LocalHapticFeedback.current
-    val context = LocalContext.current
-    val musicViewModel: MusicViewModel = viewModel()
-    val playlists by musicViewModel.playlists.collectAsState()
-
-    // Get playlist from data field (should be playlist ID)
-    val playlistId = item.data as? String
-    val playlist = playlists.find { it.id == playlistId }
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(
-            imageVector = item.icon,
-            contentDescription = item.title,
-            modifier = Modifier
-                .size(40.dp)
-                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(50))
-                .padding(8.dp),
-            tint = MaterialTheme.colorScheme.onSurface
-        )
-        Spacer(modifier = Modifier.width(16.dp))
-        Column(
-            modifier = Modifier.weight(1f)
-        ) {
-            Text(
-                text = item.title,
-                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            item.description?.let {
-                Text(
-                    text = it,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-
-        // Show delete icon only for user playlists
-        if (!isDefaultPlaylist && playlist != null) {
-            IconButton(
-                onClick = {
-                    HapticUtils.performHapticFeedback(context, hapticFeedback, HapticFeedbackType.LongPress)
-                    onDelete(playlist)
-                }
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = "Delete playlist",
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-        }
-    }
-}
-
-// âœ… REDESIGNED Media Scan Screen with improved UI
+// ✅ REDESIGNED Media Scan Screen with improved UI
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MediaScanSettingsScreen(onBackClick: () -> Unit) {
@@ -2015,6 +2572,7 @@ fun MediaScanSettingsScreen(onBackClick: () -> Unit) {
         onBackClick = onBackClick
     ) { modifier ->
         val lazyListState = rememberSaveable(
+            key = "media_scan_settings_scroll_state",
             saver = LazyListStateSaver
         ) {
             androidx.compose.foundation.lazy.LazyListState()
@@ -2084,33 +2642,19 @@ fun MediaScanSettingsScreen(onBackClick: () -> Unit) {
 
             settingGroups.drop(1).forEach { group ->
                 item {
-                    Text(
-                        text = group.title,
-                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
-                    )
-                }
-
-                item {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(18.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                    ) {
-                        Column {
-                            group.items.forEachIndexed { index, item ->
-                                TunerSettingRow(item = item)
-                                if (index < group.items.lastIndex) {
-                                    HorizontalDivider(
-                                        modifier = Modifier.padding(horizontal = 20.dp),
-                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                                    )
-                                }
-                            }
-                        }
+                    val materialItems = group.items.map { item ->
+                        toMaterial3SettingsItem(
+                            context = context,
+                            item = item,
+                            hapticFeedback = haptic
+                        )
                     }
+
+                    Material3SettingsGroup(
+                        title = group.title,
+                        items = materialItems,
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer
+                    )
                 }
             }
 
@@ -2769,6 +3313,7 @@ fun ArtistSeparatorsSettingsScreen(onBackClick: () -> Unit) {
         )
 
         val lazyListState = rememberSaveable(
+            key = "artist_separators_scroll_state",
             saver = LazyListStateSaver
         ) {
             androidx.compose.foundation.lazy.LazyListState()
@@ -2787,54 +3332,27 @@ fun ArtistSeparatorsSettingsScreen(onBackClick: () -> Unit) {
                 contentType = { "settingGroup" }
             ) { group ->
                 Spacer(modifier = Modifier.height(24.dp))
-                Text(
-                    text = group.title,
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
-                )
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                ) {
-                    Column {
-                        when (group.title) {
-                            "Multi-Artist Parsing" -> {
-                                // First item: Enable Artist Separation
-                                TunerSettingRow(item = group.items[0])
 
-                                // Second item: Configure Delimiters with AnimatedVisibility
-                                AnimatedVisibility(
-                                    visible = artistSeparatorEnabled,
-                                    enter = fadeIn(animationSpec = tween(300)) + expandVertically(animationSpec = tween(300)),
-                                    exit = fadeOut(animationSpec = tween(200)) + shrinkVertically(animationSpec = tween(200))
-                                ) {
-                                    Column {
-                                        HorizontalDivider(
-                                            modifier = Modifier.padding(horizontal = 20.dp),
-                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                                        )
-                                        TunerSettingRow(item = group.items[1])
-                                    }
-                                }
-                            }
-                            else -> {
-                                // Default rendering for other groups
-                                group.items.forEachIndexed { index, item ->
-                                    TunerSettingRow(item = item)
-                                    if (index < group.items.lastIndex) {
-                                        HorizontalDivider(
-                                            modifier = Modifier.padding(horizontal = 20.dp),
-                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                                        )
-                                    }
-                                }
-                            }
+                val materialItems = if (group.title == "Multi-Artist Parsing") {
+                    buildList {
+                        if (group.items.isNotEmpty()) {
+                            add(toMaterial3SettingsItem(context = context, item = group.items[0], hapticFeedback = haptic))
+                        }
+                        if (artistSeparatorEnabled && group.items.size > 1) {
+                            add(toMaterial3SettingsItem(context = context, item = group.items[1], hapticFeedback = haptic))
                         }
                     }
+                } else {
+                    group.items.map { item ->
+                        toMaterial3SettingsItem(context = context, item = item, hapticFeedback = haptic)
+                    }
                 }
+
+                Material3SettingsGroup(
+                    title = group.title,
+                    items = materialItems,
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
             }
 
             // Info Card
@@ -2860,7 +3378,7 @@ fun ArtistSeparatorsSettingsScreen(onBackClick: () -> Unit) {
                             )
                             Spacer(modifier = Modifier.width(12.dp))
                             Text(
-                                text = "About Multi-Artist Parsing",
+                                text = context.getString(R.string.settings_about_multi_artist),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -2868,7 +3386,7 @@ fun ArtistSeparatorsSettingsScreen(onBackClick: () -> Unit) {
                         }
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
-                            text = "When enabled, Rhythm will automatically split artist tags containing multiple artists. This is useful for songs downloaded with yt-dlp or other tools that use delimiters like '/' to separate artists.\n\nBackslash (\\\\) can be used to escape delimiters.",
+                            text = context.getString(R.string.settings_multi_artist_parsing_info),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                         )
@@ -2900,7 +3418,7 @@ fun ArtistSeparatorsSettingsScreen(onBackClick: () -> Unit) {
                             )
                             Spacer(modifier = Modifier.width(12.dp))
                             Text(
-                                text = "Examples",
+                                text = context.getString(R.string.settings_examples),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSecondaryContainer
@@ -2981,7 +3499,7 @@ fun ArtistSeparatorsSettingsScreen(onBackClick: () -> Unit) {
                 ) {
                     Column {
                         Text(
-                            text = "Configure Delimiters",
+                            text = context.getString(R.string.settings_configure_delimiters),
                             style = MaterialTheme.typography.displayMedium,
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onSurface
@@ -2997,7 +3515,7 @@ fun ArtistSeparatorsSettingsScreen(onBackClick: () -> Unit) {
                             Text(
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                                 style = MaterialTheme.typography.labelLarge,
-                                text = "Select artist separators",
+                                text = context.getString(R.string.settings_select_artist_separators),
                                 overflow = TextOverflow.Ellipsis,
                                 maxLines = 1,
                                 color = MaterialTheme.colorScheme.onSurface
@@ -3009,11 +3527,11 @@ fun ArtistSeparatorsSettingsScreen(onBackClick: () -> Unit) {
                 Spacer(modifier = Modifier.height(16.dp))
 
                 val commonDelimiters = listOf(
-                    '/' to "Slash",
-                    ';' to "Semicolon",
-                    ',' to "Comma",
-                    '+' to "Plus",
-                    '&' to "Ampersand"
+                    '/' to context.getString(R.string.delimiter_slash),
+                    ';' to context.getString(R.string.delimiter_semicolon),
+                    ',' to context.getString(R.string.delimiter_comma),
+                    '+' to context.getString(R.string.delimiter_plus),
+                    '&' to context.getString(R.string.delimiter_ampersand)
                 )
 
                 // Delimiter options in a grid
@@ -3204,7 +3722,7 @@ fun ArtistSeparatorsSettingsScreen(onBackClick: () -> Unit) {
                             colors = ButtonDefaults.outlinedButtonColors(
                                 contentColor = MaterialTheme.colorScheme.primary
                             ),
-                            border = ButtonDefaults.outlinedButtonBorder(enabled = true).copy(
+                            border = ButtonDefaults.outlinedButtonBorder.copy(
                                 width = 1.5.dp
                             )
                         ) {
@@ -3433,6 +3951,7 @@ fun AboutScreen(
         onBackClick = onBackClick
     ) { modifier ->
         val lazyListState = rememberSaveable(
+            key = "about_screen_scroll_state",
             saver = LazyListStateSaver
         ) {
             androidx.compose.foundation.lazy.LazyListState()
@@ -3676,10 +4195,10 @@ fun AboutScreen(
                         )
 
                         Text(
-                            text = "â€¢ Google Material Design Team for design principles\n" +
-                                  "â€¢ Android Open Source Project contributors\n" +
-                                  "â€¢ Jetpack Compose development team\n" +
-                                  "â€¢ Open source community for inspiration and libraries",
+                            text = "• Google Material Design Team for design principles\n" +
+                                  "• Android Open Source Project contributors\n" +
+                                  "• Jetpack Compose development team\n" +
+                                  "• Open source community for inspiration and libraries",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             lineHeight = 18.sp
@@ -4098,7 +4617,7 @@ fun AboutScreen(
                                 modifier = Modifier.padding(vertical = 6.dp)
                             ) {
                                 Icon(
-                                    imageVector = Icons.AutoMirrored.Rounded.Chat,
+                                    imageVector = Icons.Rounded.Chat,
                                     contentDescription = "Discord",
                                     modifier = Modifier.size(18.dp)
                                 )
@@ -4130,7 +4649,7 @@ fun AboutScreen(
                                 modifier = Modifier.padding(vertical = 6.dp)
                             ) {
                                 Icon(
-                                    imageVector = Icons.AutoMirrored.Rounded.Send,
+                                    imageVector = Icons.Rounded.Send,
                                     contentDescription = "Telegram",
                                     modifier = Modifier.size(18.dp)
                                 )
@@ -4350,7 +4869,7 @@ private fun TechStackItem(
             modifier = Modifier.padding(top = 2.dp)
         ) {
             Text(
-                text = "â€¢",
+                text = "•",
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -4475,6 +4994,7 @@ fun UpdatesSettingsScreen(onBackClick: () -> Unit) {
 //        }
     ) { modifier ->
         val lazyListState = rememberSaveable(
+            key = "updates_settings_scroll_state",
             saver = LazyListStateSaver
         ) {
             androidx.compose.foundation.lazy.LazyListState()
@@ -5051,107 +5571,70 @@ fun UpdatesSettingsScreen(onBackClick: () -> Unit) {
             // Settings Section below
             item {
                 Spacer(modifier = Modifier.height(24.dp))
-                Text(
-                    text = context.getString(R.string.updates_settings),
-                    style = MaterialTheme.typography.titleSmall.copy(
-                        fontWeight = FontWeight.SemiBold
-                    ),
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
-                )
-            }
-
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                ) {
-                    Column {
-                        TunerSettingRow(
-                            item = SettingItem(
-                                Icons.Default.SystemUpdate,
-                                context.getString(R.string.updates_enable),
-                                context.getString(R.string.updates_enable_updates),
-                                toggleState = updatesEnabled,
-                                onToggleChange = { appSettings.setUpdatesEnabled(it) }
+                val updateSettingsItems = buildList {
+                    add(
+                        SettingItem(
+                            Icons.Default.SystemUpdate,
+                            context.getString(R.string.updates_enable),
+                            context.getString(R.string.updates_enable_updates),
+                            toggleState = updatesEnabled,
+                            onToggleChange = { appSettings.setUpdatesEnabled(it) }
+                        )
+                    )
+                    if (updatesEnabled) {
+                        add(
+                            SettingItem(
+                                Icons.Default.Update,
+                                context.getString(R.string.onboarding_periodic_check_title),
+                                context.getString(R.string.onboarding_periodic_check_desc),
+                                toggleState = autoCheckForUpdates,
+                                onToggleChange = { appSettings.setAutoCheckForUpdates(it) }
                             )
                         )
-
-                        AnimatedVisibility(
-                            visible = updatesEnabled,
-                            enter = fadeIn(animationSpec = tween(300)) + expandVertically(animationSpec = tween(300)),
-                            exit = fadeOut(animationSpec = tween(200)) + shrinkVertically(animationSpec = tween(200))
-                        ) {
-                            Column {
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 20.dp),
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                                )
-                                TunerSettingRow(
-                                    item = SettingItem(
-                                        Icons.Default.Update,
-                                        context.getString(R.string.onboarding_periodic_check_title),
-                                        context.getString(R.string.onboarding_periodic_check_desc),
-                                        toggleState = autoCheckForUpdates,
-                                        onToggleChange = { appSettings.setAutoCheckForUpdates(it) }
-                                    )
-                                )
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 20.dp),
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                                )
-                                TunerSettingRow(
-                                    item = SettingItem(
-                                        Icons.Default.Notifications,
-                                        context.getString(R.string.onboarding_update_notifications_title),
-                                        context.getString(R.string.onboarding_update_notifications_desc),
-                                        toggleState = updateNotificationsEnabled,
-                                        onToggleChange = { appSettings.setUpdateNotificationsEnabled(it) }
-                                    )
-                                )
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 20.dp),
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                                )
-                                TunerSettingRow(
-                                    item = SettingItem(
-                                        Icons.Default.CloudSync,
-                                        context.getString(R.string.onboarding_smart_polling_title),
-                                        context.getString(R.string.onboarding_smart_polling_desc),
-                                        toggleState = useSmartUpdatePolling,
-                                        onToggleChange = { appSettings.setUseSmartUpdatePolling(it) }
-                                    )
-                                )
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 20.dp),
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                                )
-                                TunerSettingRow(
-                                    item = SettingItem(
-                                        Icons.Default.Category,
-                                        context.getString(R.string.updates_channel_title),
-                                        "${updateChannel.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }} - Tap to change",
-                                        onClick = { showChannelDialog = true }
-                                    )
-                                )
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 20.dp),
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                                )
-                                TunerSettingRow(
-                                    item = SettingItem(
-                                        Icons.Default.Schedule,
-                                        context.getString(R.string.updates_check_interval_title),
-                                        context.getString(R.string.updates_check_frequency),
-                                        onClick = { showIntervalDialog = true }
-                                    )
-                                )
-                            }
-                        }
+                        add(
+                            SettingItem(
+                                Icons.Default.Notifications,
+                                context.getString(R.string.onboarding_update_notifications_title),
+                                context.getString(R.string.onboarding_update_notifications_desc),
+                                toggleState = updateNotificationsEnabled,
+                                onToggleChange = { appSettings.setUpdateNotificationsEnabled(it) }
+                            )
+                        )
+                        add(
+                            SettingItem(
+                                Icons.Default.CloudSync,
+                                context.getString(R.string.onboarding_smart_polling_title),
+                                context.getString(R.string.onboarding_smart_polling_desc),
+                                toggleState = useSmartUpdatePolling,
+                                onToggleChange = { appSettings.setUseSmartUpdatePolling(it) }
+                            )
+                        )
+                        add(
+                            SettingItem(
+                                Icons.Default.Category,
+                                context.getString(R.string.updates_channel_title),
+                                "${updateChannel.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }} - Tap to change",
+                                onClick = { showChannelDialog = true }
+                            )
+                        )
+                        add(
+                            SettingItem(
+                                Icons.Default.Schedule,
+                                context.getString(R.string.updates_check_interval_title),
+                                context.getString(R.string.updates_check_frequency),
+                                onClick = { showIntervalDialog = true }
+                            )
+                        )
                     }
                 }
+
+                Material3SettingsGroup(
+                    title = context.getString(R.string.updates_settings),
+                    items = updateSettingsItems.map { item ->
+                        toMaterial3SettingsItem(context = context, item = item, hapticFeedback = haptics)
+                    },
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
             }
 
             // Informational card about smart polling
@@ -5389,6 +5872,8 @@ fun ExperimentalFeaturesScreen(onBackClick: () -> Unit) {
     val discordRichPresenceEnabled by appSettings.discordRichPresenceEnabled.collectAsState()
     val broadcastStatusEnabled by appSettings.broadcastStatusEnabled.collectAsState()
     
+    val forcePlayerCompactMode by appSettings.forcePlayerCompactMode.collectAsState()
+    
     val updaterViewModel: AppUpdaterViewModel = viewModel()
     val latestVersion by updaterViewModel.latestVersion.collectAsState()
 
@@ -5456,6 +5941,13 @@ fun ExperimentalFeaturesScreen(onBackClick: () -> Unit) {
                             context.getString(R.string.exp_test_crash),
                             context.getString(R.string.exp_test_crash_desc),
                             onClick = { chromahub.rhythm.app.util.CrashReporter.testCrash() }
+                        ),
+                        SettingItem(
+                            Icons.Default.Smartphone,
+                            context.getString(R.string.exp_force_player_compact_mode),
+                            context.getString(R.string.exp_force_player_compact_mode_desc),
+                            toggleState = forcePlayerCompactMode,
+                            onToggleChange = { appSettings.setForcePlayerCompactMode(it) }
                         )
                     )
                 )
@@ -5500,30 +5992,16 @@ fun ExperimentalFeaturesScreen(onBackClick: () -> Unit) {
         ) {
             items(settingGroups, key = { "setting_${it.title}_${settingGroups.indexOf(it)}" }) { group ->
                 Spacer(modifier = Modifier.height(24.dp))
-                Text(
-                    text = group.title,
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
-                )
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                ) {
-                    Column {
-                        group.items.forEachIndexed { index, item ->
-                            TunerSettingRow(item = item)
-                            if (index < group.items.lastIndex) {
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 20.dp),
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                                )
-                            }
-                        }
-                    }
+
+                val materialItems = group.items.map { item ->
+                    toMaterial3SettingsItem(context = context, item = item)
                 }
+
+                Material3SettingsGroup(
+                    title = group.title,
+                    items = materialItems,
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
             }
             
             item {
@@ -5881,64 +6359,37 @@ private fun FestivalSelectionBottomSheet(
         },
         containerColor = MaterialTheme.colorScheme.surfaceContainer
     ) {
+        val contentHorizontalPadding = 24.dp
+
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp)
+                .padding(horizontal = 0.dp, vertical = 0.dp)
                 .padding(bottom = 24.dp)
                 .graphicsLayer(alpha = contentAlpha)
         ) {
-            // Header
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 0.dp, vertical = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column {
-                    Text(
-                        text = "Select Festival",
-                        style = MaterialTheme.typography.displayMedium,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Box(
-                        modifier = Modifier
-                            .padding(top = 6.dp)
-                            .background(
-                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                shape = CircleShape
-                            )
-                    ) {
-                        Text(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                            style = MaterialTheme.typography.labelLarge,
-                            text = "Choose festive theme",
-                            overflow = TextOverflow.Ellipsis,
-                            maxLines = 1,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                }
-            }
+            StandardBottomSheetHeader(
+                title = context.getString(R.string.settings_select_festival),
+                subtitle = context.getString(R.string.settings_choose_festive_theme),
+                visible = showContent,
+                modifier = Modifier.padding(horizontal = 0.dp, vertical = 0.dp)
+            )
 
             Spacer(modifier = Modifier.height(24.dp))
 
             // Festival Options
             val festivals = listOf(
-                Triple("CHRISTMAS", "Christmas", Icons.Default.AcUnit),
-                Triple("NEW_YEAR", "New Year", Icons.Default.Celebration),
-                Triple("VALENTINES", "Valentine's Day", Icons.Default.Favorite),
-                Triple("HALLOWEEN", "Halloween", Icons.Default.Nightlight)
+                Triple("CHRISTMAS", context.getString(R.string.settings_festival_christmas), Icons.Default.AcUnit),
+                Triple("NEW_YEAR", context.getString(R.string.settings_festival_new_year), Icons.Default.Celebration)
             )
 
             Column(
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(horizontal = contentHorizontalPadding)
             ) {
                 festivals.forEach { (value, name, icon) ->
                     val isSelected = currentFestival == value
-                    val isAvailable = value == "CHRISTMAS" || value == "NEW_YEAR"
+                    val isAvailable = true
 
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -5990,20 +6441,13 @@ private fun FestivalSelectionBottomSheet(
                                             else -> MaterialTheme.colorScheme.onSurface
                                         }
                                     )
-                                    if (!isAvailable) {
-                                        Text(
-                                            text = "Coming soon",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                                        )
-                                    }
                                 }
                             }
 
                             if (isSelected) {
                                 Icon(
                                     imageVector = Icons.Default.CheckCircle,
-                                    contentDescription = "Selected",
+                                    contentDescription = context.getString(R.string.ui_selected),
                                     
                                     modifier = Modifier.size(24.dp)
                                 )
@@ -6021,7 +6465,9 @@ private fun FestivalSelectionBottomSheet(
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
                 ),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = contentHorizontalPadding)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -6035,7 +6481,7 @@ private fun FestivalSelectionBottomSheet(
                     )
                     Spacer(modifier = Modifier.width(12.dp))
                     Text(
-                        text = "More festivals will be added in future updates",
+                        text = context.getString(R.string.settings_more_festivals),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -6049,8 +6495,6 @@ private fun getFestivalDisplayName(festivalType: String): String {
     return when (festivalType) {
         "CHRISTMAS" -> "Christmas"
         "NEW_YEAR" -> "New Year"
-        "VALENTINES" -> "Valentine's Day"
-        "HALLOWEEN" -> "Halloween"
         "NONE" -> "None"
         "CUSTOM" -> "Custom"
         else -> "Not selected"
@@ -6129,17 +6573,17 @@ fun LyricsSourceDialog(
             val sourceOptions = listOf(
                 chromahub.rhythm.app.shared.data.model.LyricsSourcePreference.EMBEDDED_FIRST to Triple(
                     "Embedded First",
-                    "Try audio file metadata â†’ Online APIs â†’ .lrc files",
+                    "Try audio file metadata → Online APIs → .lrc files",
                     Icons.Default.MusicNote
                 ),
                 chromahub.rhythm.app.shared.data.model.LyricsSourcePreference.API_FIRST to Triple(
                     "API First",
-                    "Try online services â†’ Audio metadata â†’ .lrc files",
+                    "Try online services → Audio metadata → .lrc files",
                     Icons.Default.CloudDownload
                 ),
                 chromahub.rhythm.app.shared.data.model.LyricsSourcePreference.LOCAL_FIRST to Triple(
                     "Local .lrc First",
-                    "Try .lrc files â†’ Audio metadata â†’ Online APIs",
+                    "Try .lrc files → Audio metadata → Online APIs",
                     Icons.Default.Folder
                 )
             )
@@ -6252,11 +6696,14 @@ fun LyricsSourceDialog(
 fun LibrarySettingsScreen(onBackClick: () -> Unit) {
     val context = LocalContext.current
     val appSettings = AppSettings.getInstance(context)
+    val haptics = LocalHapticFeedback.current
 
     val enableRatingSystem by appSettings.enableRatingSystem.collectAsState()
     val ignoreMediaStoreCovers by appSettings.ignoreMediaStoreCovers.collectAsState()
     val losslessArtwork by appSettings.losslessArtwork.collectAsState()
     val albumBottomSheetGradientBlur by appSettings.albumBottomSheetGradientBlur.collectAsState()
+
+    var showLibraryTabOrderBottomSheet by remember { mutableStateOf(false) }
 
     CollapsibleHeaderScreen(
         title = context.getString(R.string.settings_library_settings),
@@ -6265,7 +6712,7 @@ fun LibrarySettingsScreen(onBackClick: () -> Unit) {
     ) { modifier ->
         val settingGroups = listOf(
             SettingGroup(
-                title = context.getString(R.string.settings_section_library_content),
+                title = context.getString(R.string.settings_library_group_organization),
                 items = listOf(
                     SettingItem(
                         Icons.Default.Star,
@@ -6273,11 +6720,17 @@ fun LibrarySettingsScreen(onBackClick: () -> Unit) {
                         context.getString(R.string.settings_song_ratings_desc),
                         toggleState = enableRatingSystem,
                         onToggleChange = { appSettings.setEnableRatingSystem(it) }
+                    ),
+                    SettingItem(
+                        Icons.Default.Reorder,
+                        context.getString(R.string.settings_library_tab_order),
+                        context.getString(R.string.settings_library_tab_order_desc),
+                        onClick = { showLibraryTabOrderBottomSheet = true }
                     )
                 )
             ),
             SettingGroup(
-                title = context.getString(R.string.settings_section_appearance),
+                title = context.getString(R.string.settings_library_group_artwork),
                 items = listOf(
                     SettingItem(
                         RhythmIcons.Album,
@@ -6312,37 +6765,1178 @@ fun LibrarySettingsScreen(onBackClick: () -> Unit) {
         ) {
             items(settingGroups, key = { "libsettings_${it.title}" }) { group ->
                 Spacer(modifier = Modifier.height(24.dp))
-                Text(
-                    text = group.title,
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
+
+                val materialItems = group.items.map { item ->
+                    toMaterial3SettingsItem(context = context, item = item)
+                }
+
+                Material3SettingsGroup(
+                    title = group.title,
+                    items = materialItems,
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
                 )
+            }
+            item { Spacer(modifier = Modifier.height(100.dp)) }
+        }
+    }
+
+    if (showLibraryTabOrderBottomSheet) {
+        LibraryTabOrderBottomSheet(
+            onDismiss = { showLibraryTabOrderBottomSheet = false },
+            appSettings = appSettings,
+            haptics = haptics
+        )
+    }
+}
+
+@Composable
+fun RhythmGuardSettingsScreen(onBackClick: () -> Unit) {
+    val context = LocalContext.current
+    val appSettings = AppSettings.getInstance(context)
+    val haptic = LocalHapticFeedback.current
+
+    val auraMode by appSettings.rhythmGuardMode.collectAsState()
+    val auraAge by appSettings.rhythmGuardAge.collectAsState()
+    val manualWarningsEnabled by appSettings.rhythmGuardManualWarningsEnabled.collectAsState()
+    val manualVolumeThreshold by appSettings.rhythmGuardManualVolumeThreshold.collectAsState()
+    val alertThresholdMinutes by appSettings.rhythmGuardAlertThresholdMinutes.collectAsState()
+    val warningTimeoutMinutes by appSettings.rhythmGuardWarningTimeoutMinutes.collectAsState()
+    val breakResumeMinutes by appSettings.rhythmGuardBreakResumeMinutes.collectAsState()
+
+    val dailyListeningStats by appSettings.dailyListeningStats.collectAsState()
+
+    val stopPlaybackOnZeroVolume by appSettings.stopPlaybackOnZeroVolume.collectAsState()
+
+    val currentSystemVolume = rememberSystemMusicVolumeFraction(context)
+    val playbackStatsRepository = remember(context) { PlaybackStatsRepository.getInstance(context) }
+
+    var todayExposureMs by remember { mutableLongStateOf(0L) }
+    var weeklyAverageSessions by remember { mutableFloatStateOf(0f) }
+
+    LaunchedEffect(dailyListeningStats) {
+        val todaySummary = runCatching {
+            playbackStatsRepository.loadSummary(StatsTimeRange.TODAY)
+        }.getOrNull()
+        val weekSummary = runCatching {
+            playbackStatsRepository.loadSummary(StatsTimeRange.WEEK)
+        }.getOrNull()
+
+        todayExposureMs = todaySummary?.totalDurationMs ?: 0L
+        weeklyAverageSessions = weekSummary?.averageSessionsPerDay
+            ?: rhythmGuardWeeklyAverageSessions(dailyListeningStats)
+    }
+
+    val activePolicy = remember(auraAge) { appSettings.getRhythmGuardPolicy(auraAge) }
+    val policyTable = remember { appSettings.getRhythmGuardPolicyBands() }
+    val isRhythmGuardEnabled = auraMode != AppSettings.RHYTHM_GUARD_MODE_OFF
+    val recommendedVolumeThreshold = activePolicy.maxVolumeThreshold
+    val recommendedDailyMinutes = activePolicy.recommendedDailyMinutes
+    val effectiveExposureLimitMinutes = if (auraMode == AppSettings.RHYTHM_GUARD_MODE_AUTO) {
+        recommendedDailyMinutes
+    } else if (alertThresholdMinutes > 0) {
+        alertThresholdMinutes
+    } else {
+        recommendedDailyMinutes
+    }
+    val totalExposureMinutes = (todayExposureMs / 60000L).toInt().coerceAtLeast(0)
+
+    val currentVolumePercent = (currentSystemVolume * 100f).toInt().coerceIn(0, 100)
+    val manualThresholdPercent = (manualVolumeThreshold * 100f).toInt().coerceIn(0, 100)
+    val recommendedThresholdPercent = (recommendedVolumeThreshold * 100f).toInt().coerceIn(0, 100)
+    val formattedTotalExposure = remember(todayExposureMs) {
+        rhythmGuardFormatDurationFromMillis(todayExposureMs)
+    }
+    val formattedDailyTarget = remember(effectiveExposureLimitMinutes) {
+        rhythmGuardFormatDurationFromMinutes(effectiveExposureLimitMinutes)
+    }
+    val formattedTimeout = remember(warningTimeoutMinutes) {
+        rhythmGuardFormatDurationFromMinutes(warningTimeoutMinutes)
+    }
+    val formattedResumeInterval = remember(breakResumeMinutes) {
+        rhythmGuardFormatDurationFromMinutes(breakResumeMinutes)
+    }
+    val activeVolumeThreshold = if (auraMode == AppSettings.RHYTHM_GUARD_MODE_AUTO) {
+        recommendedVolumeThreshold
+    } else {
+        manualVolumeThreshold
+    }
+    val activeThresholdPercent = if (auraMode == AppSettings.RHYTHM_GUARD_MODE_AUTO) {
+        recommendedThresholdPercent
+    } else {
+        manualThresholdPercent
+    }
+
+    val showVolumeWarning = isRhythmGuardEnabled &&
+        auraMode == AppSettings.RHYTHM_GUARD_MODE_MANUAL &&
+        manualWarningsEnabled &&
+        currentSystemVolume > manualVolumeThreshold
+    val showExposureWarning = isRhythmGuardEnabled &&
+        auraMode == AppSettings.RHYTHM_GUARD_MODE_MANUAL &&
+        totalExposureMinutes > effectiveExposureLimitMinutes
+    val volumeLoadRatio = (currentSystemVolume / maxOf(activeVolumeThreshold, 0.01f)).coerceAtLeast(0f)
+    val exposureLoadRatio = (totalExposureMinutes / maxOf(effectiveExposureLimitMinutes, 1).toFloat()).coerceAtLeast(0f)
+    val sessionLoadRatio = (weeklyAverageSessions / 8f).coerceAtLeast(0f)
+    val healthRiskScore = if (isRhythmGuardEnabled) {
+        (
+            (volumeLoadRatio * 0.45f) +
+                (exposureLoadRatio * 0.45f) +
+                (sessionLoadRatio * 0.10f) +
+                if (auraMode == AppSettings.RHYTHM_GUARD_MODE_MANUAL && !manualWarningsEnabled) 0.08f else 0f
+            ).coerceIn(0f, 1.5f)
+    } else {
+        0f
+    }
+    val overallHealthLevel = when {
+        !isRhythmGuardEnabled -> RhythmGuardOverallHealthLevel.OFF
+        healthRiskScore < 0.72f -> RhythmGuardOverallHealthLevel.GOOD
+        healthRiskScore < 1.0f -> RhythmGuardOverallHealthLevel.FAIR
+        else -> RhythmGuardOverallHealthLevel.RISK
+    }
+    val overallHealthProgress = if (isRhythmGuardEnabled) {
+        (1f - healthRiskScore.coerceIn(0f, 1f)).coerceIn(0f, 1f)
+    } else {
+        0f
+    }
+    val formattedWeeklyDensity = remember(weeklyAverageSessions) {
+        String.format(Locale.getDefault(), "%.1f", weeklyAverageSessions)
+    }
+    val overallHealthSummary = remember(
+        currentVolumePercent,
+        activeThresholdPercent,
+        formattedTotalExposure,
+        formattedDailyTarget,
+        formattedWeeklyDensity
+    ) {
+        context.getString(
+            R.string.settings_rhythm_guard_overall_health_summary,
+            currentVolumePercent,
+            activeThresholdPercent,
+            formattedTotalExposure,
+            formattedDailyTarget,
+            formattedWeeklyDensity
+        )
+    }
+
+    LaunchedEffect(auraMode, auraAge) {
+        if (auraMode == AppSettings.RHYTHM_GUARD_MODE_AUTO) {
+            appSettings.applyRhythmGuardAutoProfileForAge(auraAge)
+        }
+    }
+
+    CollapsibleHeaderScreen(
+        title = context.getString(R.string.settings_rhythm_guard),
+        showBackButton = true,
+        onBackClick = onBackClick
+    ) { modifier ->
+        LazyColumn(
+            modifier = modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+                .padding(horizontal = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            item {
+                Spacer(modifier = Modifier.height(8.dp))
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(26.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
+                ) {
+                    Column(modifier = Modifier.padding(20.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = context.getString(R.string.settings_rhythm_guard_health_overview_title),
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = context.getString(R.string.settings_rhythm_guard_health_overview_subtitle),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Icon(
+                                imageVector = Icons.Default.Security,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(26.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(18.dp))
+
+                        RhythmGuardOverallHealthCard(
+                            level = overallHealthLevel,
+                            progress = overallHealthProgress,
+                            summary = overallHealthSummary,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Hero-style metrics inspired by Pixel Player stats
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            RhythmGuardHeroCard(
+                                title = context.getString(R.string.settings_rhythm_guard_snapshot_exposure_title),
+                                value = formattedTotalExposure,
+                                subtitle = "/$formattedDailyTarget",
+                                progress = (totalExposureMinutes / maxOf(effectiveExposureLimitMinutes, 1).toFloat()).coerceIn(0f, 1f),
+                                icon = Icons.Default.Schedule,
+                                isWarning = showExposureWarning,
+                                modifier = Modifier.weight(1f)
+                            )
+
+                            RhythmGuardHeroCard(
+                                title = context.getString(R.string.settings_rhythm_guard_snapshot_volume_title),
+                                value = "$currentVolumePercent%",
+                                subtitle = "of ${activeThresholdPercent}%",
+                                progress = (currentSystemVolume / maxOf(activeVolumeThreshold, 0.01f)).coerceIn(0f, 1f),
+                                icon = Icons.Default.GraphicEq,
+                                isWarning = showVolumeWarning,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = context.getString(R.string.settings_rhythm_guard_desc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
                 ) {
-                    Column {
-                        group.items.forEachIndexed { index, item ->
-                            TunerSettingRow(item = item)
-                            if (index < group.items.lastIndex) {
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 20.dp),
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Surface(
+                                modifier = Modifier.size(40.dp),
+                                shape = RoundedCornerShape(34.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                tonalElevation = 0.dp
+                            ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier.fillMaxSize()
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Security,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(24.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = context.getString(R.string.settings_rhythm_guard_mode_title),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
+                                Text(
+                                    text = context.getString(R.string.settings_rhythm_guard_mode_desc),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = if (isRhythmGuardEnabled) {
+                                        context.getString(R.string.label_enabled)
+                                    } else {
+                                        context.getString(R.string.label_disabled)
+                                    },
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+
+                            TunerAnimatedSwitch(
+                                checked = isRhythmGuardEnabled,
+                                onCheckedChange = { enabled ->
+                                    if (enabled) {
+                                        val restoredMode = if (auraMode == AppSettings.RHYTHM_GUARD_MODE_MANUAL) {
+                                            AppSettings.RHYTHM_GUARD_MODE_MANUAL
+                                        } else {
+                                            AppSettings.RHYTHM_GUARD_MODE_AUTO
+                                        }
+                                        appSettings.setRhythmGuardMode(restoredMode)
+                                    } else {
+                                        appSettings.setRhythmGuardMode(AppSettings.RHYTHM_GUARD_MODE_OFF)
+                                    }
+                                }
+                            )
+                        }
+
+                        if (isRhythmGuardEnabled) {
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            ExpressiveButtonGroup(
+                                items = listOf(
+                                    context.getString(R.string.settings_rhythm_guard_mode_auto),
+                                    context.getString(R.string.settings_rhythm_guard_mode_manual)
+                                ),
+                                selectedIndex = if (auraMode == AppSettings.RHYTHM_GUARD_MODE_MANUAL) 1 else 0,
+                                onItemClick = { index ->
+                                    when (index) {
+                                        0 -> appSettings.setRhythmGuardMode(AppSettings.RHYTHM_GUARD_MODE_AUTO)
+                                        else -> appSettings.setRhythmGuardMode(AppSettings.RHYTHM_GUARD_MODE_MANUAL)
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (isRhythmGuardEnabled) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = context.getString(R.string.settings_rhythm_guard_age_label, auraAge),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = context.getString(
+                                        R.string.settings_rhythm_guard_age_desc,
+                                        recommendedThresholdPercent,
+                                        recommendedDailyMinutes
+                                    ),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Slider(
+                            value = auraAge.toFloat(),
+                            onValueChange = { appSettings.setRhythmGuardAge(it.toInt()) },
+                            valueRange = 8f..80f,
+                            steps = 71
+                        )
+                    }
+                }
+            }
+
+            if (auraMode == AppSettings.RHYTHM_GUARD_MODE_MANUAL) {
+                item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Text(
+                            text = context.getString(R.string.settings_rhythm_guard_alert_controls_title),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+
+                        // Threshold control
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = context.getString(
+                                    R.string.settings_rhythm_guard_alert_threshold_title,
+                                    if (alertThresholdMinutes > 0) {
+                                        rhythmGuardFormatDurationFromMinutes(alertThresholdMinutes)
+                                    } else {
+                                        context.getString(R.string.settings_rhythm_guard_alert_threshold_policy_default)
+                                    }
+                                ),
+                                style = MaterialTheme.typography.labelLarge
+                            )
+                            Row(
+                                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                listOf(-1, 60, 90, 120).forEach { option ->
+                                    FilterChip(
+                                        selected = alertThresholdMinutes == option,
+                                        onClick = { appSettings.setRhythmGuardAlertThresholdMinutes(option) },
+                                        label = {
+                                            Text(
+                                                if (option > 0) {
+                                                    rhythmGuardFormatDurationFromMinutes(option)
+                                                } else {
+                                                    context.getString(R.string.settings_rhythm_guard_alert_threshold_policy_default)
+                                                }
+                                            )
+                                        }
+                                    )
+                                }
+                            }
+                            Slider(
+                                value = maxOf(alertThresholdMinutes, 15).toFloat(),
+                                onValueChange = { appSettings.setRhythmGuardAlertThresholdMinutes(it.toInt()) },
+                                valueRange = 15f..360f,
+                                steps = 344
+                            )
+                        }
+
+                        // Timeout control
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = context.getString(
+                                    R.string.settings_rhythm_guard_alert_timeout_title,
+                                    formattedTimeout
+                                ),
+                                style = MaterialTheme.typography.labelLarge
+                            )
+                            Row(
+                                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                listOf(2, 5, 10, 15).forEach { option ->
+                                    FilterChip(
+                                        selected = warningTimeoutMinutes == option,
+                                        onClick = { appSettings.setRhythmGuardWarningTimeoutMinutes(option) },
+                                        label = { Text(rhythmGuardFormatDurationFromMinutes(option)) }
+                                    )
+                                }
+                            }
+                            Slider(
+                                value = warningTimeoutMinutes.toFloat(),
+                                onValueChange = { appSettings.setRhythmGuardWarningTimeoutMinutes(it.toInt()) },
+                                valueRange = 1f..30f,
+                                steps = 28
+                            )
+                        }
+
+                        // Break interval control
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = context.getString(
+                                    R.string.settings_rhythm_guard_break_resume_default_title,
+                                    formattedResumeInterval
+                                ),
+                                style = MaterialTheme.typography.labelLarge
+                            )
+                            Row(
+                                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                listOf(10, 15, 30, 60).forEach { option ->
+                                    FilterChip(
+                                        selected = breakResumeMinutes == option,
+                                        onClick = { appSettings.setRhythmGuardBreakResumeMinutes(option) },
+                                        label = { Text(rhythmGuardFormatDurationFromMinutes(option)) }
+                                    )
+                                }
+                            }
+                            Slider(
+                                value = breakResumeMinutes.toFloat(),
+                                onValueChange = { appSettings.setRhythmGuardBreakResumeMinutes(it.toInt()) },
+                                valueRange = 1f..120f,
+                                steps = 118
+                            )
+                        }
+                    }
+                }
+            }
+            }
+
+            if (auraMode == AppSettings.RHYTHM_GUARD_MODE_AUTO) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                text = context.getString(R.string.settings_rhythm_guard_auto_policy_table_title),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            policyTable.forEachIndexed { index, band ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = context.getString(
+                                            R.string.settings_rhythm_guard_auto_policy_band,
+                                            band.minAge,
+                                            band.maxAge
+                                        ),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = context.getString(
+                                            R.string.settings_rhythm_guard_auto_policy_value,
+                                            (band.maxVolumeThreshold * 100f).toInt(),
+                                            band.recommendedDailyMinutes
+                                        ),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = if (auraAge in band.minAge..band.maxAge) {
+                                            MaterialTheme.colorScheme.primary
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        },
+                                        fontWeight = if (auraAge in band.minAge..band.maxAge) {
+                                            FontWeight.SemiBold
+                                        } else {
+                                            FontWeight.Normal
+                                        }
+                                    )
+                                }
+                                if (index < policyTable.lastIndex) {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                }
                             }
                         }
                     }
                 }
             }
+
+            if (auraMode == AppSettings.RHYTHM_GUARD_MODE_MANUAL) {
+                item {
+                    val manualSettingItems = listOf(
+                        SettingItem(
+                            Icons.Default.Warning,
+                            context.getString(R.string.settings_rhythm_guard_manual_warning_toggle),
+                            context.getString(R.string.settings_rhythm_guard_manual_warning_toggle_desc),
+                            toggleState = manualWarningsEnabled,
+                            onToggleChange = { appSettings.setRhythmGuardManualWarningsEnabled(it) }
+                        ),
+                        SettingItem(
+                            Icons.Default.Stop,
+                            context.getString(R.string.settings_stop_playback_on_zero_volume),
+                            context.getString(R.string.settings_stop_playback_on_zero_volume_desc),
+                            toggleState = stopPlaybackOnZeroVolume,
+                            onToggleChange = { appSettings.setStopPlaybackOnZeroVolume(it) }
+                        )
+                    )
+
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(18.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Text(
+                                    text = context.getString(R.string.settings_rhythm_guard_manual_threshold_title, manualThresholdPercent),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = context.getString(R.string.settings_rhythm_guard_manual_threshold_desc),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Slider(
+                                    value = manualVolumeThreshold,
+                                    onValueChange = { appSettings.setRhythmGuardManualVolumeThreshold(it) },
+                                    valueRange = 0.40f..0.95f
+                                )
+                            }
+                        }
+
+                        val materialItems = manualSettingItems.map { item ->
+                            toMaterial3SettingsItem(context = context, item = item, hapticFeedback = haptic)
+                        }
+
+                        Material3SettingsGroup(
+                            title = context.getString(R.string.settings_rhythm_guard_manual_controls_title),
+                            items = materialItems,
+                            containerColor = MaterialTheme.colorScheme.surfaceContainer
+                        )
+                    }
+                }
+            }
+
+            if (showVolumeWarning || showExposureWarning) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                text = context.getString(R.string.settings_rhythm_guard_warning_title),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = when {
+                                    showExposureWarning -> context.getString(
+                                        R.string.settings_rhythm_guard_warning_daily_exposure,
+                                        formattedTotalExposure,
+                                        formattedDailyTarget
+                                    )
+                                    else -> context.getString(
+                                        R.string.settings_rhythm_guard_warning_high_volume,
+                                        activeThresholdPercent
+                                    )
+                                },
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+            }
+
             item { Spacer(modifier = Modifier.height(100.dp)) }
         }
     }
 }
 
-// Cache Management Screen (merged from CacheManagementBottomSheet)
+private fun rhythmGuardWeeklyAverageSessions(stats: Map<String, Long>): Float {
+    if (stats.isEmpty()) return 0f
+    val recentDays = stats.toList()
+        .sortedByDescending { it.first }
+        .take(7)
+        .map { it.second }
+
+    if (recentDays.isEmpty()) return 0f
+    return recentDays.average().toFloat()
+}
+
+@Composable
+private fun rememberSystemMusicVolumeFraction(context: Context): Float {
+    var systemVolume by remember { mutableFloatStateOf(0f) }
+
+    DisposableEffect(context) {
+        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+
+        fun refreshVolume() {
+            val maxVolume = audioManager.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC)
+            val currentVolume = audioManager.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
+            systemVolume = if (maxVolume > 0) currentVolume.toFloat() / maxVolume.toFloat() else 0f
+        }
+
+        refreshVolume()
+
+        val observer = object : android.database.ContentObserver(
+            android.os.Handler(android.os.Looper.getMainLooper())
+        ) {
+            override fun onChange(selfChange: Boolean) {
+                refreshVolume()
+            }
+        }
+
+        context.contentResolver.registerContentObserver(
+            android.provider.Settings.System.CONTENT_URI,
+            true,
+            observer
+        )
+
+        onDispose {
+            context.contentResolver.unregisterContentObserver(observer)
+        }
+    }
+
+    return systemVolume
+}
+
+private fun rhythmGuardFormatDurationFromMinutes(minutes: Int): String {
+    val safeMinutes = minutes.coerceAtLeast(0)
+    val days = safeMinutes / (24 * 60)
+    val hours = (safeMinutes % (24 * 60)) / 60
+    val mins = safeMinutes % 60
+
+    return when {
+        days > 0 && hours > 0 && mins > 0 -> "${days}d ${hours}h ${mins}m"
+        days > 0 && hours > 0 -> "${days}d ${hours}h"
+        days > 0 && mins > 0 -> "${days}d ${mins}m"
+        days > 0 -> "${days}d"
+        hours > 0 && mins > 0 -> "${hours}h ${mins}m"
+        hours > 0 -> "${hours}h"
+        else -> "${mins}m"
+    }
+}
+
+private fun rhythmGuardFormatDurationFromMillis(durationMs: Long): String {
+    return rhythmGuardFormatDurationFromMinutes((durationMs / 60000L).toInt())
+}
+
+@Composable
+private fun RhythmGuardOverviewGauge(
+    modifier: Modifier = Modifier,
+    title: String,
+    value: String,
+    progress: Float,
+    isWarning: Boolean,
+    icon: ImageVector
+) {
+    val progressValue = progress.coerceIn(0f, 1f)
+    val progressPercent = (progressValue * 100f).toInt()
+    val containerColor = if (isWarning) {
+        MaterialTheme.colorScheme.tertiaryContainer
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerHighest
+    }
+    val contentColor = if (isWarning) {
+        MaterialTheme.colorScheme.onTertiaryContainer
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
+
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(20.dp),
+        color = containerColor,
+        border = BorderStroke(1.dp, contentColor.copy(alpha = 0.14f))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = contentColor,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = contentColor.copy(alpha = 0.92f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(999.dp),
+                    color = contentColor.copy(alpha = 0.14f)
+                ) {
+                    Text(
+                        text = if (isWarning) "Risk" else "Safe",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = contentColor,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            Text(
+                text = value,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = contentColor,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            LinearWavyProgressIndicator(
+                progress = { progressValue },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .clip(RoundedCornerShape(14.dp)),
+                color = if (isWarning) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary,
+                trackColor = contentColor.copy(alpha = 0.16f)
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = if (isWarning) {
+                        stringResource(R.string.settings_rhythm_guard_snapshot_widget_above_limit)
+                    } else {
+                        stringResource(R.string.settings_rhythm_guard_snapshot_widget_within_limit)
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = contentColor.copy(alpha = 0.8f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    text = "$progressPercent%",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = contentColor
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RhythmGuardMetricCard(
+    modifier: Modifier = Modifier,
+    title: String,
+    value: String,
+    icon: ImageVector,
+    progress: Float,
+    containerColor: Color,
+    contentColor: Color
+) {
+    val progressValue = progress.coerceIn(0f, 1f)
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(20.dp),
+        color = containerColor,
+        border = BorderStroke(1.dp, contentColor.copy(alpha = 0.14f))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = contentColor,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = contentColor.copy(alpha = 0.92f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Text(
+                    text = "${(progressValue * 100f).toInt()}%",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = contentColor
+                )
+            }
+
+            Text(
+                text = value,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = contentColor,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            LinearWavyProgressIndicator(
+                progress = { progressValue },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .clip(RoundedCornerShape(14.dp)),
+                color = contentColor.copy(alpha = 0.78f),
+                trackColor = contentColor.copy(alpha = 0.2f)
+            )
+
+            Text(
+                text = stringResource(R.string.settings_rhythm_guard_snapshot_widget_load_label),
+                style = MaterialTheme.typography.labelMedium,
+                color = contentColor.copy(alpha = 0.76f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+private fun RhythmGuardHeroCard(
+    title: String,
+    value: String,
+    subtitle: String,
+    progress: Float,
+    icon: ImageVector,
+    isWarning: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val progressValue = progress.coerceIn(0f, 1.5f)
+    val visualLevel = when {
+        isWarning || progressValue >= 1f -> RhythmGuardWidgetVisualLevel.CRITICAL
+        progressValue >= 0.82f -> RhythmGuardWidgetVisualLevel.ELEVATED
+        progressValue >= 0.56f -> RhythmGuardWidgetVisualLevel.WATCH
+        else -> RhythmGuardWidgetVisualLevel.STABLE
+    }
+    val iconColor = when (visualLevel) {
+        RhythmGuardWidgetVisualLevel.STABLE -> MaterialTheme.colorScheme.primary
+        RhythmGuardWidgetVisualLevel.WATCH -> MaterialTheme.colorScheme.tertiary
+        RhythmGuardWidgetVisualLevel.ELEVATED -> MaterialTheme.colorScheme.secondary
+        RhythmGuardWidgetVisualLevel.CRITICAL -> MaterialTheme.colorScheme.error
+    }
+    val containerColor = when (visualLevel) {
+        RhythmGuardWidgetVisualLevel.STABLE -> iconColor.copy(alpha = 0.16f)
+        RhythmGuardWidgetVisualLevel.WATCH -> iconColor.copy(alpha = 0.18f)
+        RhythmGuardWidgetVisualLevel.ELEVATED -> iconColor.copy(alpha = 0.2f)
+        RhythmGuardWidgetVisualLevel.CRITICAL -> iconColor.copy(alpha = 0.24f)
+    }
+    val contentColor = MaterialTheme.colorScheme.onSurface
+    val dynamicValueFontSize = rememberRhythmGuardHeroValueFontSize(value)
+
+    Column(
+        modifier = modifier
+            .height(184.dp)
+            .clip(RoundedCornerShape(24.dp))
+            .background(containerColor)
+            .padding(20.dp),
+        verticalArrangement = Arrangement.Top
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Start,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(28.dp),
+                tint = iconColor
+            )
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Medium,
+            color = contentColor.copy(alpha = 0.85f),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Text(
+            text = value,
+            style = MaterialTheme.typography.headlineSmall.copy(
+                fontSize = dynamicValueFontSize,
+                lineHeight = (dynamicValueFontSize.value + 3f).sp
+            ),
+            fontWeight = FontWeight.Bold,
+            color = contentColor,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+
+        Spacer(modifier = Modifier.weight(1f))
+
+        Text(
+            text = subtitle,
+            style = MaterialTheme.typography.bodySmall,
+            color = contentColor.copy(alpha = 0.7f),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        LinearWavyProgressIndicator(
+            progress = { progress.coerceIn(0f, 1f) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(6.dp)
+                .clip(RoundedCornerShape(3.dp)),
+            color = iconColor,
+            trackColor = contentColor.copy(alpha = 0.2f)
+        )
+    }
+}
+
+@Composable
+private fun rememberRhythmGuardHeroValueFontSize(value: String): TextUnit {
+    val targetSize = when {
+        value.length <= 5 -> 34.sp
+        value.length <= 8 -> 30.sp
+        value.length <= 11 -> 26.sp
+        value.length <= 15 -> 22.sp
+        else -> 20.sp
+    }
+    val animatedSize by animateFloatAsState(
+        targetValue = targetSize.value,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "rhythm_guard_hero_value_font_size"
+    )
+    return animatedSize.sp
+}
+
+private enum class RhythmGuardOverallHealthLevel {
+    OFF,
+    GOOD,
+    FAIR,
+    RISK
+}
+
+private enum class RhythmGuardWidgetVisualLevel {
+    STABLE,
+    WATCH,
+    ELEVATED,
+    CRITICAL
+}
+
+@Composable
+private fun RhythmGuardOverallHealthCard(
+    level: RhythmGuardOverallHealthLevel,
+    progress: Float,
+    summary: String,
+    modifier: Modifier = Modifier
+) {
+    val indicatorColor = when (level) {
+        RhythmGuardOverallHealthLevel.GOOD -> Color(0xFF2E7D32)
+        RhythmGuardOverallHealthLevel.FAIR -> Color(0xFFB26A00)
+        RhythmGuardOverallHealthLevel.RISK -> Color(0xFFC62828)
+        RhythmGuardOverallHealthLevel.OFF -> MaterialTheme.colorScheme.outline
+    }
+    val containerColor = if (level == RhythmGuardOverallHealthLevel.OFF) {
+        MaterialTheme.colorScheme.surfaceContainerHighest
+    } else {
+        indicatorColor.copy(alpha = 0.2f)
+    }
+    val contentColor = MaterialTheme.colorScheme.onSurface
+    val statusLabel = when (level) {
+        RhythmGuardOverallHealthLevel.GOOD -> stringResource(R.string.settings_rhythm_guard_health_good)
+        RhythmGuardOverallHealthLevel.FAIR -> stringResource(R.string.settings_rhythm_guard_health_fair)
+        RhythmGuardOverallHealthLevel.RISK -> stringResource(R.string.settings_rhythm_guard_health_risk)
+        RhythmGuardOverallHealthLevel.OFF -> stringResource(R.string.settings_rhythm_guard_health_off)
+    }
+
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(24.dp),
+        color = containerColor,
+        border = BorderStroke(1.dp, indicatorColor.copy(alpha = if (level == RhythmGuardOverallHealthLevel.OFF) 0.16f else 0.3f))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Security,
+                        contentDescription = null,
+                        tint = indicatorColor,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text(
+                        text = stringResource(R.string.settings_rhythm_guard_overall_health_title),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = contentColor,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(999.dp),
+                    color = if (level == RhythmGuardOverallHealthLevel.OFF) {
+                        contentColor.copy(alpha = 0.14f)
+                    } else {
+                        indicatorColor.copy(alpha = 0.2f)
+                    }
+                ) {
+                    Text(
+                        text = statusLabel,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (level == RhythmGuardOverallHealthLevel.OFF) contentColor else indicatorColor,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                    )
+                }
+            }
+
+            Text(
+                text = summary,
+                style = MaterialTheme.typography.bodySmall,
+                color = contentColor.copy(alpha = 0.86f),
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            LinearWavyProgressIndicator(
+                progress = { progress.coerceIn(0f, 1f) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(7.dp)
+                    .clip(RoundedCornerShape(8.dp)),
+                color = indicatorColor,
+                trackColor = contentColor.copy(alpha = 0.18f)
+            )
+        }
+    }
+}
 @Composable
 fun CacheManagementSettingsScreen(onBackClick: () -> Unit) {
     val context = LocalContext.current
@@ -6487,7 +8081,7 @@ fun CacheManagementSettingsScreen(onBackClick: () -> Unit) {
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Text(
-                                            text = "  â€¢ $label:",
+                                            text = "  • $label:",
                                             style = MaterialTheme.typography.bodyMedium,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
@@ -6533,32 +8127,32 @@ fun CacheManagementSettingsScreen(onBackClick: () -> Unit) {
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
                 )
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                    shape = RoundedCornerShape(18.dp),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column {
-                        SettingRow(
-                            icon = Icons.Filled.DataUsage,
-                            title = context.getString(R.string.cache_max_size),
-                            description = "${String.format("%.1f", maxCacheSize / (1024f * 1024f))} MB",
-                            onClick = { showCacheSizeDialog = true }
+                Material3SettingsGroup(
+                    items = listOf(
+                        toMaterial3SettingsItem(
+                            context = context,
+                            hapticFeedback = haptics,
+                            item = SettingItem(
+                                icon = Icons.Filled.DataUsage,
+                                title = context.getString(R.string.cache_max_size),
+                                description = "${String.format("%.1f", maxCacheSize / (1024f * 1024f))} MB",
+                                onClick = { showCacheSizeDialog = true }
+                            )
+                        ),
+                        toMaterial3SettingsItem(
+                            context = context,
+                            hapticFeedback = haptics,
+                            item = SettingItem(
+                                icon = Icons.Filled.AutoDelete,
+                                title = context.getString(R.string.cache_clear_on_exit),
+                                description = context.getString(R.string.settings_cache_clear_on_exit_desc),
+                                toggleState = clearCacheOnExit,
+                                onToggleChange = { appSettings.setClearCacheOnExit(it) }
+                            )
                         )
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 20.dp),
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                        )
-                        SettingRow(
-                            icon = Icons.Filled.AutoDelete,
-                            title = context.getString(R.string.cache_clear_on_exit),
-                            description = context.getString(R.string.settings_cache_clear_on_exit_desc),
-                            toggleState = clearCacheOnExit,
-                            onToggleChange = { appSettings.setClearCacheOnExit(it) }
-                        )
-                    }
-                }
+                    ),
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
             }
 
             // Cache Actions
@@ -6570,102 +8164,76 @@ fun CacheManagementSettingsScreen(onBackClick: () -> Unit) {
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
                 )
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                    shape = RoundedCornerShape(18.dp),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column {
-                        SettingRow(
-                            icon = Icons.Filled.MusicNote,
-                            title = context.getString(R.string.settings_clear_lyrics_cache),
-                            description = context.getString(R.string.settings_clear_lyrics_cache_desc),
+                Material3SettingsGroup(
+                    items = listOf(
+                        toMaterial3SettingsItem(
+                            context = context,
+                            hapticFeedback = haptics,
+                            item = SettingItem(
+                                icon = Icons.Filled.MusicNote,
+                                title = context.getString(R.string.settings_clear_lyrics_cache),
+                                description = context.getString(R.string.settings_clear_lyrics_cache_desc),
+                                onClick = {
+                                    scope.launch {
+                                        try {
+                                            isClearingCache = true
+                                            musicViewModel.clearLyricsCacheAndRefetch()
+                                            currentCacheSize = chromahub.rhythm.app.util.CacheManager.getCacheSize(context)
+                                            cacheDetails = chromahub.rhythm.app.util.CacheManager.getDetailedCacheSize(context)
+                                            Toast.makeText(context, context.getString(R.string.settings_lyrics_cache_cleared), Toast.LENGTH_SHORT).show()
+                                        } catch (e: Exception) {
+                                            Log.e("CacheManagement", "Error clearing lyrics cache", e)
+                                            Toast.makeText(context, context.getString(R.string.settings_lyrics_cache_clear_failed), Toast.LENGTH_SHORT).show()
+                                        } finally {
+                                            isClearingCache = false
+                                        }
+                                    }
+                                }
+                            )
+                        ),
+                        Material3SettingsItem(
+                            icon = Icons.Filled.DeleteSweep,
+                            title = { Text(context.getString(R.string.settings_clear_all_cache)) },
+                            description = { Text(context.getString(R.string.settings_clear_all_cache_desc)) },
+                            trailingContent = {
+                                if (isClearingCache) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        strokeWidth = 2.dp,
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                                        contentDescription = context.getString(R.string.cd_navigate),
+                                        modifier = Modifier.size(16.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            },
                             onClick = {
                                 scope.launch {
                                     try {
                                         isClearingCache = true
-                                        musicViewModel.clearLyricsCacheAndRefetch()
+                                        chromahub.rhythm.app.util.CacheManager.clearAllCache(context, null)
+                                        musicViewModel.getMusicRepository().clearInMemoryCaches()
+                                        musicViewModel.getMusicRepository().clearSongCacheData()
                                         currentCacheSize = chromahub.rhythm.app.util.CacheManager.getCacheSize(context)
                                         cacheDetails = chromahub.rhythm.app.util.CacheManager.getDetailedCacheSize(context)
-                                        Toast.makeText(context, context.getString(R.string.settings_lyrics_cache_cleared), Toast.LENGTH_SHORT).show()
+                                        showClearCacheSuccess = true
+                                        Toast.makeText(context, context.getString(R.string.settings_all_cache_cleared), Toast.LENGTH_SHORT).show()
                                     } catch (e: Exception) {
-                                        Log.e("CacheManagement", "Error clearing lyrics cache", e)
-                                        Toast.makeText(context, context.getString(R.string.settings_lyrics_cache_clear_failed), Toast.LENGTH_SHORT).show()
+                                        Log.e("CacheManagement", "Error clearing cache", e)
+                                        Toast.makeText(context, context.getString(R.string.settings_cache_clear_failed), Toast.LENGTH_SHORT).show()
                                     } finally {
                                         isClearingCache = false
                                     }
                                 }
                             }
                         )
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 20.dp),
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                        )
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    scope.launch {
-                                        try {
-                                            isClearingCache = true
-                                            chromahub.rhythm.app.util.CacheManager.clearAllCache(context, null)
-                                            musicViewModel.getMusicRepository().clearInMemoryCaches()
-                                            musicViewModel.getMusicRepository().clearSongCacheData()
-                                            currentCacheSize = chromahub.rhythm.app.util.CacheManager.getCacheSize(context)
-                                            cacheDetails = chromahub.rhythm.app.util.CacheManager.getDetailedCacheSize(context)
-                                            showClearCacheSuccess = true
-                                            Toast.makeText(context, context.getString(R.string.settings_all_cache_cleared), Toast.LENGTH_SHORT).show()
-                                        } catch (e: Exception) {
-                                            Log.e("CacheManagement", "Error clearing cache", e)
-                                            Toast.makeText(context, context.getString(R.string.settings_cache_clear_failed), Toast.LENGTH_SHORT).show()
-                                        } finally {
-                                            isClearingCache = false
-                                        }
-                                    }
-                                }
-                                .padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.DeleteSweep,
-                                contentDescription = context.getString(R.string.settings_clear_all_cache),
-                                modifier = Modifier
-                                    .size(40.dp)
-                                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(50))
-                                    .padding(8.dp),
-                                tint = MaterialTheme.colorScheme.onSurface
-                            )
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = context.getString(R.string.settings_clear_all_cache),
-                                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
-                                    color = MaterialTheme.colorScheme.error
-                                )
-                                Text(
-                                    text = context.getString(R.string.settings_clear_all_cache_desc),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            if (isClearingCache) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(20.dp),
-                                    strokeWidth = 2.dp,
-                                    color = MaterialTheme.colorScheme.error
-                                )
-                            } else {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
-                                    contentDescription = "Clear",
-                                    modifier = Modifier.size(16.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-                }
+                    ),
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
 
                 Spacer(modifier = Modifier.height(12.dp))
             }
@@ -6679,53 +8247,51 @@ fun CacheManagementSettingsScreen(onBackClick: () -> Unit) {
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
                 )
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                    shape = RoundedCornerShape(18.dp),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column {
-                        // Room stats
-                        SettingRow(
+                Material3SettingsGroup(
+                    items = listOf(
+                        Material3SettingsItem(
                             icon = Icons.Filled.TableChart,
-                            title = context.getString(R.string.settings_storage_room_stats),
-                            description = if (roomSongCount >= 0)
-                                context.getString(R.string.settings_storage_song_count, roomSongCount)
-                            else context.getString(R.string.settings_storage_not_available)
-                        )
-
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 20.dp),
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                        )
-
-                        // Rebuild Room Database
-                        SettingRow(
-                            icon = Icons.Filled.Sync,
-                            title = context.getString(R.string.settings_storage_rebuild_room),
-                            description = context.getString(R.string.settings_storage_rebuild_room_desc),
-                            onClick = {
-                                if (!isRebuildingRoom) {
-                                    scope.launch {
-                                        isRebuildingRoom = true
-                                        try {
-                                            musicViewModel.getMusicRepository().clearSongCacheData()
-                                            musicViewModel.refreshLibrary()
-                                            roomSongCount = musicViewModel.getMusicRepository().getRoomSongCount()
-                                            Toast.makeText(context, context.getString(R.string.settings_storage_rebuild_success), Toast.LENGTH_SHORT).show()
-                                        } catch (e: Exception) {
-                                            Log.e("CacheManagement", "Error rebuilding Room DB", e)
-                                            Toast.makeText(context, context.getString(R.string.settings_storage_rebuild_failed), Toast.LENGTH_SHORT).show()
-                                        } finally {
-                                            isRebuildingRoom = false
+                            title = { Text(context.getString(R.string.settings_storage_room_stats)) },
+                            description = {
+                                Text(
+                                    if (roomSongCount >= 0) {
+                                        context.getString(R.string.settings_storage_song_count, roomSongCount)
+                                    } else {
+                                        context.getString(R.string.settings_storage_not_available)
+                                    }
+                                )
+                            }
+                        ),
+                        toMaterial3SettingsItem(
+                            context = context,
+                            hapticFeedback = haptics,
+                            item = SettingItem(
+                                icon = Icons.Filled.Sync,
+                                title = context.getString(R.string.settings_storage_rebuild_room),
+                                description = context.getString(R.string.settings_storage_rebuild_room_desc),
+                                onClick = {
+                                    if (!isRebuildingRoom) {
+                                        scope.launch {
+                                            isRebuildingRoom = true
+                                            try {
+                                                musicViewModel.getMusicRepository().clearSongCacheData()
+                                                musicViewModel.refreshLibrary()
+                                                roomSongCount = musicViewModel.getMusicRepository().getRoomSongCount()
+                                                Toast.makeText(context, context.getString(R.string.settings_storage_rebuild_success), Toast.LENGTH_SHORT).show()
+                                            } catch (e: Exception) {
+                                                Log.e("CacheManagement", "Error rebuilding Room DB", e)
+                                                Toast.makeText(context, context.getString(R.string.settings_storage_rebuild_failed), Toast.LENGTH_SHORT).show()
+                                            } finally {
+                                                isRebuildingRoom = false
+                                            }
                                         }
                                     }
                                 }
-                            }
+                            )
                         )
-                    }
-                }
+                    ),
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
 
                 if (isRebuildingRoom) {
                     Spacer(modifier = Modifier.height(8.dp))
@@ -7044,12 +8610,35 @@ fun BackupRestoreSettingsScreen(onBackClick: () -> Unit) {
 
     // Local states
     var isCreatingBackup by remember { mutableStateOf(false) }
+    var isPreparingRestore by remember { mutableStateOf(false) }
     var isRestoringFromFile by remember { mutableStateOf(false) }
     var isRestoringFromClipboard by remember { mutableStateOf(false) }
-    var showBackupSuccess by remember { mutableStateOf(false) }
-    var showRestoreSuccess by remember { mutableStateOf(false) }
-    var showError by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf("") }
+    var showBackupSelectionSheet by remember { mutableStateOf(false) }
+    var showRestoreSelectionSheet by remember { mutableStateOf(false) }
+    var pendingRestorePayload by remember { mutableStateOf<String?>(null) }
+    var pendingBackupSections by remember { mutableStateOf(AppSettings.BackupRestoreSections()) }
+    var backupSections by remember { mutableStateOf(AppSettings.BackupRestoreSections()) }
+    var restoreSections by remember { mutableStateOf(AppSettings.BackupRestoreSections()) }
+    var resultSheetState by remember { mutableStateOf<BackupRestoreResultState?>(null) }
+
+    val isBusy = isCreatingBackup || isPreparingRestore || isRestoringFromFile || isRestoringFromClipboard
+
+    fun selectedSectionsSummary(sections: AppSettings.BackupRestoreSections): String {
+        val lines = mutableListOf<String>()
+        if (sections.includeGeneralSettings) lines += "• General app settings"
+        if (sections.includeLibraryData) lines += "• Playlists, favorites, and folder lists"
+        if (sections.includeStatsAndRhythmGuard) lines += "• Listening stats and Rhythm Guard data"
+        return lines.joinToString("\n")
+    }
+
+    fun showError(message: String) {
+        resultSheetState = BackupRestoreResultState(
+            title = context.getString(R.string.ui_error),
+            message = message,
+            isError = true,
+            requiresRestart = false
+        )
+    }
 
     // File picker launcher for backup export
     val backupLocationLauncher = rememberLauncherForActivityResult(
@@ -7063,29 +8652,37 @@ fun BackupRestoreSettingsScreen(onBackClick: () -> Unit) {
                         HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
 
                         musicViewModel.ensurePlaylistsSaved()
-                        val backupJson = appSettings.createBackup()
+                        val backupJson = appSettings.createBackup(pendingBackupSections)
 
-                        context.contentResolver.openOutputStream(uri)?.use { outputStream ->
-                            outputStream.write(backupJson.toByteArray())
-                            outputStream.flush()
+                        val outputStream = context.contentResolver.openOutputStream(uri)
+                            ?: throw IllegalStateException("Unable to open backup destination")
+                        outputStream.use { stream ->
+                            stream.write(backupJson.toByteArray())
+                            stream.flush()
                         }
 
                         appSettings.setLastBackupTimestamp(System.currentTimeMillis())
                         appSettings.setBackupLocation(uri.toString())
 
-                        showBackupSuccess = true
+                        resultSheetState = BackupRestoreResultState(
+                            title = context.getString(R.string.settings_backup_created),
+                            message = "Backup completed successfully.\n\nIncluded sections:\n${selectedSectionsSummary(pendingBackupSections)}",
+                            isError = false,
+                            requiresRestart = false
+                        )
 
                         // Also copy to clipboard
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         val clip = ClipData.newPlainText("Rhythm Backup", backupJson)
                         clipboard.setPrimaryClip(clip)
                     } catch (e: Exception) {
-                        errorMessage = "Failed to create backup: ${e.message}"
-                        showError = true
+                        showError("Failed to create backup: ${e.message}")
                     } finally {
                         isCreatingBackup = false
                     }
                 }
+            } ?: run {
+                isCreatingBackup = false
             }
         } else {
             isCreatingBackup = false
@@ -7107,24 +8704,20 @@ fun BackupRestoreSettingsScreen(onBackClick: () -> Unit) {
                         val backupJson = inputStream?.bufferedReader()?.use { it.readText() }
 
                         if (!backupJson.isNullOrEmpty()) {
-                            if (appSettings.restoreFromBackup(backupJson)) {
-                                musicViewModel.reloadPlaylistsFromSettings()
-                                showRestoreSuccess = true
-                            } else {
-                                errorMessage = "Invalid backup format or corrupted data"
-                                showError = true
-                            }
+                            pendingRestorePayload = backupJson
+                            restoreSections = AppSettings.BackupRestoreSections()
+                            showRestoreSelectionSheet = true
                         } else {
-                            errorMessage = "Unable to read the backup file"
-                            showError = true
+                            showError("Unable to read the backup file")
                         }
                     } catch (e: Exception) {
-                        errorMessage = "Failed to restore from file: ${e.message}"
-                        showError = true
+                        showError("Failed to restore from file: ${e.message}")
                     } finally {
                         isRestoringFromFile = false
                     }
                 }
+            } ?: run {
+                isRestoringFromFile = false
             }
         } else {
             isRestoringFromFile = false
@@ -7142,25 +8735,46 @@ fun BackupRestoreSettingsScreen(onBackClick: () -> Unit) {
                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                 val clip = clipboard.primaryClip
                 if (clip != null && clip.itemCount > 0) {
-                    val backupJson = clip.getItemAt(0).text.toString()
-
-                    if (appSettings.restoreFromBackup(backupJson)) {
-                        // Reload playlists from restored settings
-                        musicViewModel.reloadPlaylistsFromSettings()
-                        showRestoreSuccess = true
+                    val backupJson = clip.getItemAt(0).coerceToText(context)?.toString()
+                    if (!backupJson.isNullOrBlank()) {
+                        pendingRestorePayload = backupJson
+                        restoreSections = AppSettings.BackupRestoreSections()
+                        showRestoreSelectionSheet = true
                     } else {
-                        errorMessage = "Invalid backup format or corrupted data"
-                        showError = true
+                        showError("Clipboard does not contain readable backup text")
                     }
                 } else {
-                    errorMessage = "No backup data found in clipboard. Please copy a backup first."
-                    showError = true
+                    showError("No backup data found in clipboard. Please copy a backup first.")
                 }
             } catch (e: Exception) {
-                errorMessage = "Failed to restore backup: ${e.message}"
-                showError = true
+                showError("Failed to restore backup: ${e.message}")
             } finally {
                 isRestoringFromClipboard = false
+            }
+        }
+    }
+
+    fun applyRestoreWithSections(backupJson: String, sections: AppSettings.BackupRestoreSections) {
+        scope.launch {
+            try {
+                isPreparingRestore = true
+                HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
+
+                if (appSettings.restoreFromBackup(backupJson, sections)) {
+                    musicViewModel.reloadPlaylistsFromSettings()
+                    resultSheetState = BackupRestoreResultState(
+                        title = context.getString(R.string.settings_restore_completed),
+                        message = "Restore completed successfully.\n\nRestored sections:\n${selectedSectionsSummary(sections)}",
+                        isError = false,
+                        requiresRestart = true
+                    )
+                } else {
+                    showError("Invalid backup format, no sections selected, or corrupted data")
+                }
+            } catch (e: Exception) {
+                showError("Failed to restore backup: ${e.message}")
+            } finally {
+                isPreparingRestore = false
             }
         }
     }
@@ -7337,14 +8951,10 @@ fun BackupRestoreSettingsScreen(onBackClick: () -> Unit) {
                             context.getString(R.string.settings_create_backup),
                             context.getString(R.string.settings_create_backup_desc),
                             onClick = {
-                                if (!isCreatingBackup) {
+                                if (!isBusy) {
                                     HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
-                                    val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
-                                        addCategory(Intent.CATEGORY_OPENABLE)
-                                        type = "application/json"
-                                        putExtra(Intent.EXTRA_TITLE, "rhythm_backup_${SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.getDefault()).format(Date())}.json")
-                                    }
-                                    backupLocationLauncher.launch(intent)
+                                    backupSections = AppSettings.BackupRestoreSections()
+                                    showBackupSelectionSheet = true
                                 }
                             }
                         )
@@ -7358,7 +8968,7 @@ fun BackupRestoreSettingsScreen(onBackClick: () -> Unit) {
                             context.getString(R.string.settings_restore_clipboard),
                             context.getString(R.string.settings_restore_clipboard_desc),
                             onClick = {
-                                if (!isRestoringFromClipboard && !isRestoringFromFile && !isCreatingBackup) {
+                                if (!isBusy) {
                                     HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
                                     restoreFromClipboard()
                                 }
@@ -7369,8 +8979,9 @@ fun BackupRestoreSettingsScreen(onBackClick: () -> Unit) {
                             context.getString(R.string.settings_restore_file),
                             context.getString(R.string.settings_restore_file_desc),
                             onClick = {
-                                if (!isRestoringFromFile && !isRestoringFromClipboard && !isCreatingBackup) {
+                                if (!isBusy) {
                                     HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
+                                    isRestoringFromFile = true
                                     val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                                         addCategory(Intent.CATEGORY_OPENABLE)
                                         type = "application/json"
@@ -7385,30 +8996,16 @@ fun BackupRestoreSettingsScreen(onBackClick: () -> Unit) {
 
             items(settingGroups, key = { "setting_${it.title}_${settingGroups.indexOf(it)}" }) { group ->
                 Spacer(modifier = Modifier.height(24.dp))
-                Text(
-                    text = group.title,
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
-                )
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                ) {
-                    Column {
-                        group.items.forEachIndexed { index, item ->
-                            TunerSettingRow(item = item)
-                            if (index < group.items.lastIndex) {
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 20.dp),
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                                )
-                            }
-                        }
-                    }
+
+                val materialItems = group.items.map { item ->
+                    toMaterial3SettingsItem(context = context, item = item, hapticFeedback = haptics)
                 }
+
+                Material3SettingsGroup(
+                    title = group.title,
+                    items = materialItems,
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
             }
 
             // Tips/Information Card
@@ -7463,72 +9060,72 @@ fun BackupRestoreSettingsScreen(onBackClick: () -> Unit) {
         }
     }
 
-    // Success/Error Dialogs
-    if (showBackupSuccess) {
-        AlertDialog(
-            onDismissRequest = { showBackupSuccess = false },
-            icon = {
-                Icon(
-                    imageVector = Icons.Filled.CheckCircle,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            },
-            title = { Text(context.getString(R.string.settings_backup_created)) },
-            text = {
-                Text("Your complete Rhythm backup has been created including:\n\n" +
-                     "â€¢ All app settings and preferences\n" +
-                     "â€¢ Your playlists and favorite songs\n" +
-                     "â€¢ Blacklisted/whitelisted songs and folders\n" +
-                     "â€¢ Pinned folders and library customization\n" +
-                     "â€¢ Theme settings (colors, fonts, album art colors)\n" +
-                     "â€¢ Audio preferences and API settings\n" +
-                     "â€¢ Recently played history and statistics\n\n" +
-                     "The backup has been saved and copied to your clipboard for easy sharing.")
-            },
-            confirmButton = {
-                Button(onClick = {
-                    HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
-                    showBackupSuccess = false
-                }) {
-                    Icon(
-                        imageVector = Icons.Filled.CheckCircle,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(context.getString(R.string.ui_ok))
+    if (showBackupSelectionSheet) {
+        BackupRestoreSectionPickerBottomSheet(
+            title = "Choose Backup Sections",
+            subtitle = "Select what to include in this backup file.",
+            confirmLabel = context.getString(R.string.settings_backup_action_short),
+            confirmIcon = Icons.Default.Backup,
+            sections = backupSections,
+            isProcessing = isCreatingBackup,
+            onSectionsChange = { backupSections = it },
+            onDismiss = { showBackupSelectionSheet = false },
+            onConfirm = { selectedSections ->
+                if (!selectedSections.hasAtLeastOneSectionSelected) {
+                    showError("Choose at least one section to create a backup")
+                    return@BackupRestoreSectionPickerBottomSheet
                 }
-            },
-            shape = RoundedCornerShape(24.dp)
+
+                pendingBackupSections = selectedSections
+                showBackupSelectionSheet = false
+
+                val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "application/json"
+                    putExtra(
+                        Intent.EXTRA_TITLE,
+                        "rhythm_backup_${SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.getDefault()).format(Date())}.json"
+                    )
+                }
+                backupLocationLauncher.launch(intent)
+            }
         )
     }
 
-    if (showRestoreSuccess) {
-        AlertDialog(
-            onDismissRequest = { showRestoreSuccess = false },
-            icon = {
-                Icon(
-                    imageVector = Icons.Filled.CheckCircle,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
-                )
+    if (showRestoreSelectionSheet && pendingRestorePayload != null) {
+        BackupRestoreSectionPickerBottomSheet(
+            title = "Choose Restore Sections",
+            subtitle = "Select which sections from the backup should be restored.",
+            confirmLabel = context.getString(R.string.settings_restore_action_short),
+            confirmIcon = Icons.Default.SystemUpdateAlt,
+            sections = restoreSections,
+            isProcessing = isPreparingRestore,
+            onSectionsChange = { restoreSections = it },
+            onDismiss = {
+                showRestoreSelectionSheet = false
+                pendingRestorePayload = null
             },
-            title = { Text(context.getString(R.string.settings_restore_completed)) },
-            text = {
-                Text("Your Rhythm data has been restored successfully including:\n\n" +
-                     "â€¢ All app settings and preferences\n" +
-                     "â€¢ Your playlists and favorite songs\n" +
-                     "â€¢ Blacklisted songs and folders\n" +
-                     "â€¢ Theme and audio preferences\n\n" +
-                     "Please restart the app for all changes to take full effect.")
-            },
-            confirmButton = {
-                Button(onClick = {
-                    HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
-                    showRestoreSuccess = false
+            onConfirm = { selectedSections ->
+                if (!selectedSections.hasAtLeastOneSectionSelected) {
+                    showError("Choose at least one section to restore")
+                    return@BackupRestoreSectionPickerBottomSheet
+                }
 
-                    // Restart the app
+                val backupJson = pendingRestorePayload ?: return@BackupRestoreSectionPickerBottomSheet
+                showRestoreSelectionSheet = false
+                pendingRestorePayload = null
+                applyRestoreWithSections(backupJson, selectedSections)
+            }
+        )
+    }
+
+    resultSheetState?.let { state ->
+        BackupRestoreResultBottomSheet(
+            state = state,
+            onDismiss = { resultSheetState = null },
+            onPrimaryAction = {
+                resultSheetState = null
+                if (state.requiresRestart) {
                     val packageManager = context.packageManager
                     val intent = packageManager.getLaunchIntentForPackage(context.packageName)
                     val componentName = intent?.component
@@ -7536,48 +9133,505 @@ fun BackupRestoreSettingsScreen(onBackClick: () -> Unit) {
                     context.startActivity(mainIntent)
                     (context as? Activity)?.finish()
                     Runtime.getRuntime().exit(0)
-                }) {
-                    Icon(
-                        imageVector = Icons.Rounded.RestartAlt,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(context.getString(R.string.settings_restart_now))
                 }
-            },
-            shape = RoundedCornerShape(24.dp)
+            }
         )
     }
+}
 
-    if (showError) {
-        AlertDialog(
-            onDismissRequest = { showError = false },
-            icon = {
-                Icon(
-                    imageVector = Icons.Filled.Error,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error
+private data class BackupRestoreResultState(
+    val title: String,
+    val message: String,
+    val isError: Boolean,
+    val requiresRestart: Boolean
+)
+
+@Composable
+private fun BackupRestoreSectionPickerBottomSheet(
+    title: String,
+    subtitle: String,
+    confirmLabel: String,
+    confirmIcon: ImageVector,
+    sections: AppSettings.BackupRestoreSections,
+    isProcessing: Boolean,
+    onSectionsChange: (AppSettings.BackupRestoreSections) -> Unit,
+    onDismiss: () -> Unit,
+    onConfirm: (AppSettings.BackupRestoreSections) -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val context = LocalContext.current
+    var showContent by remember { mutableStateOf(false) }
+    val contentAlpha by animateFloatAsState(
+        targetValue = if (showContent) 1f else 0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "backup_restore_picker_alpha"
+    )
+
+    LaunchedEffect(Unit) {
+        delay(80)
+        showContent = true
+    }
+
+    val selectedSectionCount = listOf(
+        sections.includeGeneralSettings,
+        sections.includeLibraryData,
+        sections.includeStatsAndRhythmGuard
+    ).count { it }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        dragHandle = { BottomSheetDefaults.DragHandle(color = MaterialTheme.colorScheme.primary) },
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(bottom = 20.dp)
+                .graphicsLayer(alpha = contentAlpha)
+        ) {
+            StandardBottomSheetHeader(
+                title = title,
+                subtitle = subtitle,
+                visible = showContent,
+                modifier = Modifier.padding(horizontal = 0.dp, vertical = 0.dp)
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
                 )
-            },
-            title = { Text(context.getString(R.string.ui_error)) },
-            text = { Text(errorMessage) },
-            confirmButton = {
-                Button(onClick = {
-                    HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
-                    showError = false
-                }) {
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Tune,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                        Column {
+                            Text(
+                                text = "Choose sections",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = "$selectedSectionCount of 3 enabled",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilledTonalButton(
+                            onClick = {
+                                onSectionsChange(
+                                    sections.copy(
+                                        includeGeneralSettings = true,
+                                        includeLibraryData = true,
+                                        includeStatsAndRhythmGuard = true
+                                    )
+                                )
+                            },
+                            enabled = !isProcessing,
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)
+                        ) {
+                            Text("All", style = MaterialTheme.typography.labelLarge)
+                        }
+                        FilledTonalButton(
+                            onClick = {
+                                onSectionsChange(
+                                    sections.copy(
+                                        includeGeneralSettings = false,
+                                        includeLibraryData = false,
+                                        includeStatsAndRhythmGuard = false
+                                    )
+                                )
+                            },
+                            enabled = !isProcessing,
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)
+                        ) {
+                            Text("None", style = MaterialTheme.typography.labelLarge)
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Column(
+                modifier = Modifier.padding(horizontal = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                BackupRestoreSectionRow(
+                    icon = Icons.Default.Settings,
+                    title = "General Settings",
+                    description = "Theme, player, UI, API, and app preferences.",
+                    checked = sections.includeGeneralSettings,
+                    badge = "Core",
+                    onCheckedChange = { onSectionsChange(sections.copy(includeGeneralSettings = it)) }
+                )
+
+                BackupRestoreSectionRow(
+                    icon = Icons.Default.LibraryMusic,
+                    title = "Library Data",
+                    description = "Playlists, favorites, blacklist/whitelist, pinned folders.",
+                    checked = sections.includeLibraryData,
+                    badge = "Collection",
+                    onCheckedChange = { onSectionsChange(sections.copy(includeLibraryData = it)) }
+                )
+
+                BackupRestoreSectionRow(
+                    icon = Icons.Default.AutoGraph,
+                    title = "Stats & Rhythm Guard",
+                    description = "Play counts, daily stats, genres, and Rhythm Guard configuration.",
+                    checked = sections.includeStatsAndRhythmGuard,
+                    badge = "Insight",
+                    onCheckedChange = { onSectionsChange(sections.copy(includeStatsAndRhythmGuard = it)) }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(18.dp))
+
+            ExpressiveButtonGroup(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp),
+                style = ButtonGroupStyle.Tonal
+            ) {
+                ExpressiveGroupButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f),
+                    enabled = !isProcessing,
+                    isStart = true
+                ) {
                     Icon(
-                        imageVector = Icons.Filled.Close,
+                        imageVector = Icons.Default.Close,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp)
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("OK")
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(context.getString(R.string.ui_cancel))
                 }
-            },
-            shape = RoundedCornerShape(24.dp)
+
+                ExpressiveGroupButton(
+                    onClick = { onConfirm(sections) },
+                    modifier = Modifier.weight(1f),
+                    enabled = sections.hasAtLeastOneSectionSelected && !isProcessing,
+                    isEnd = true
+                ) {
+                    if (isProcessing) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+                    } else {
+                        Icon(
+                            imageVector = confirmIcon,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(confirmLabel)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BackupRestoreSectionRow(
+    icon: ImageVector,
+    title: String,
+    description: String,
+    checked: Boolean,
+    badge: String,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onCheckedChange(!checked) },
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
         )
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(38.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+                Surface(
+                    shape = RoundedCornerShape(999.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant
+                ) {
+                    Text(
+                        text = badge,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Column(horizontalAlignment = Alignment.End) {
+                TunerAnimatedSwitch(
+                    checked = checked,
+                    onCheckedChange = onCheckedChange
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = if (checked) "Included" else "Excluded",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun BackupRestoreResultBottomSheet(
+    state: BackupRestoreResultState,
+    onDismiss: () -> Unit,
+    onPrimaryAction: () -> Unit
+) {
+    val context = LocalContext.current
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var showContent by remember { mutableStateOf(false) }
+    val contentAlpha by animateFloatAsState(
+        targetValue = if (showContent) 1f else 0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "backup_restore_result_alpha"
+    )
+
+    LaunchedEffect(Unit) {
+        delay(80)
+        showContent = true
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        dragHandle = { BottomSheetDefaults.DragHandle(color = MaterialTheme.colorScheme.primary) },
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(bottom = 20.dp)
+                .graphicsLayer(alpha = contentAlpha)
+        ) {
+            StandardBottomSheetHeader(
+                title = state.title,
+                subtitle = if (state.requiresRestart) {
+                    "Restart is required to finish applying changes"
+                } else if (state.isError) {
+                    "Action could not be completed"
+                } else {
+                    "Backup and restore status"
+                },
+                visible = showContent,
+                modifier = Modifier.padding(horizontal = 0.dp, vertical = 0.dp)
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (state.isError) {
+                        MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.55f)
+                    } else {
+                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                    }
+                ),
+                border = BorderStroke(
+                    1.dp,
+                    if (state.isError) {
+                        MaterialTheme.colorScheme.error.copy(alpha = 0.35f)
+                    } else {
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)
+                    }
+                )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = if (state.isError) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.primary
+                        },
+                        modifier = Modifier.size(38.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = if (state.isError) Icons.Default.Close else Icons.Default.Check,
+                                contentDescription = null,
+                                tint = if (state.isError) {
+                                    MaterialTheme.colorScheme.onError
+                                } else {
+                                    MaterialTheme.colorScheme.onPrimary
+                                },
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+
+                    Text(
+                        text = state.message,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (state.isError) {
+                            MaterialTheme.colorScheme.onErrorContainer
+                        } else {
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        }
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            if (!state.requiresRestart) {
+                ExpressiveButtonGroup(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp),
+                    style = ButtonGroupStyle.Tonal
+                ) {
+                    ExpressiveGroupButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f),
+                        isStart = true
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(context.getString(R.string.ui_close))
+                    }
+
+                    ExpressiveGroupButton(
+                        onClick = onPrimaryAction,
+                        modifier = Modifier.weight(1f),
+                        isEnd = true
+                    ) {
+                        Icon(
+                            imageVector = if (state.isError) {
+                                Icons.Default.Refresh
+                            } else {
+                                Icons.Default.Check
+                            },
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(context.getString(R.string.ui_ok))
+                    }
+                }
+            } else {
+                ExpressiveButtonGroup(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp),
+                    style = ButtonGroupStyle.Tonal
+                ) {
+                    ExpressiveGroupButton(
+                        onClick = onPrimaryAction,
+                        modifier = Modifier.weight(1f),
+                        isStart = true,
+                        isEnd = true
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.RestartAlt,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(context.getString(R.string.settings_restart_now))
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -7828,109 +9882,79 @@ fun GesturesSettingsScreen(onBackClick: () -> Unit) {
                 .padding(horizontal = 24.dp)
         ) {
             // Mini Player Gestures
-            item() {
+            item(key = "miniplayer_gestures_group") {
                 Spacer(modifier = Modifier.height(24.dp))
-                Text(
-                    text = context.getString(R.string.settings_miniplayer),
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
-                )
-            }
 
-            item() {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                ) {
-                    Column {
-                        TunerSettingRow(
-                            item = SettingItem(
-                                Icons.Rounded.Swipe,
-                                "Swipe Gestures",
-                                "Swipe up/down to open/dismiss, left/right to skip tracks",
-                                toggleState = miniPlayerSwipeGestures,
-                                onToggleChange = { 
-                                    HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
-                                    appSettings.setMiniPlayerSwipeGestures(it) 
-                                }
-                            )
-                        )
-                    }
-                }
+                val miniPlayerItems = listOf(
+                    SettingItem(
+                        Icons.Rounded.Swipe,
+                        "Swipe Gestures",
+                        "Swipe up/down to open/dismiss, left/right to skip tracks",
+                        toggleState = miniPlayerSwipeGestures,
+                        onToggleChange = {
+                            HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
+                            appSettings.setMiniPlayerSwipeGestures(it)
+                        }
+                    )
+                )
+
+                Material3SettingsGroup(
+                    title = context.getString(R.string.settings_miniplayer),
+                    items = miniPlayerItems.map { item ->
+                        toMaterial3SettingsItem(context = context, item = item, hapticFeedback = haptic)
+                    },
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
             }
 
             // Full Player Gestures
-            item() {
+            item(key = "player_gestures_group") {
                 Spacer(modifier = Modifier.height(24.dp))
-                Text(
-                    text = context.getString(R.string.settings_full_player),
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
+
+                val playerGestureItems = listOf(
+                    SettingItem(
+                        Icons.Rounded.SwipeDown,
+                        "Swipe Down to Dismiss",
+                        "Close player by swiping down on the screen",
+                        toggleState = gesturePlayerSwipeDismiss,
+                        onToggleChange = {
+                            HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
+                            appSettings.setGesturePlayerSwipeDismiss(it)
+                        }
+                    ),
+                    SettingItem(
+                        Icons.Rounded.SwipeLeft,
+                        "Swipe Artwork for Tracks",
+                        "Swipe left/right on album artwork to skip tracks",
+                        toggleState = gesturePlayerSwipeTracks,
+                        onToggleChange = {
+                            HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
+                            appSettings.setGesturePlayerSwipeTracks(it)
+                        }
+                    ),
+                    SettingItem(
+                        Icons.Rounded.TouchApp,
+                        "Double Tap Artwork",
+                        "Double tap on album art to play/pause",
+                        toggleState = gestureArtworkDoubleTap,
+                        onToggleChange = {
+                            HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
+                            appSettings.setGestureArtworkDoubleTap(it)
+                        }
+                    )
+                )
+
+                Material3SettingsGroup(
+                    title = context.getString(R.string.settings_full_player),
+                    items = playerGestureItems.map { item ->
+                        toMaterial3SettingsItem(context = context, item = item, hapticFeedback = haptic)
+                    },
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
                 )
             }
 
-            item() {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                ) {
-                    Column {
-                        TunerSettingRow(
-                            item = SettingItem(
-                                Icons.Rounded.SwipeDown,
-                                "Swipe Down to Dismiss",
-                                "Close player by swiping down on the screen",
-                                toggleState = gesturePlayerSwipeDismiss,
-                                onToggleChange = { 
-                                    HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
-                                    appSettings.setGesturePlayerSwipeDismiss(it) 
-                                }
-                            )
-                        )
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 20.dp),
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                        )
-                        TunerSettingRow(
-                            item = SettingItem(
-                                Icons.Rounded.SwipeLeft,
-                                "Swipe Artwork for Tracks",
-                                "Swipe left/right on album artwork to skip tracks",
-                                toggleState = gesturePlayerSwipeTracks,
-                                onToggleChange = { 
-                                    HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
-                                    appSettings.setGesturePlayerSwipeTracks(it) 
-                                }
-                            )
-                        )
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 20.dp),
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                        )
-                        TunerSettingRow(
-                            item = SettingItem(
-                                Icons.Rounded.TouchApp,
-                                "Double Tap Artwork",
-                                "Double tap on album art to play/pause",
-                                toggleState = gestureArtworkDoubleTap,
-                                onToggleChange = { 
-                                    HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
-                                    appSettings.setGestureArtworkDoubleTap(it) 
-                                }
-                            )
-                        )
-                    }
-                }
-            }
-
             // Tips
-            item() {
+            item(key = "gesture_tips") {
                 Spacer(modifier = Modifier.height(24.dp))
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -8016,7 +10040,6 @@ fun MiniPlayerCustomizationSettingsScreen(onBackClick: () -> Unit) {
     val context = LocalContext.current
     val appSettings = AppSettings.getInstance(context)
     val haptics = LocalHapticFeedback.current
-    val scope = rememberCoroutineScope()
 
     // MiniPlayer settings
     val miniPlayerProgressStyle by appSettings.miniPlayerProgressStyle.collectAsState()
@@ -8027,6 +10050,7 @@ fun MiniPlayerCustomizationSettingsScreen(onBackClick: () -> Unit) {
     val miniPlayerShowTime by appSettings.miniPlayerShowTime.collectAsState()
     val miniPlayerUseCircularProgress by appSettings.miniPlayerUseCircularProgress.collectAsState()
     val miniPlayerAlwaysShowTablet by appSettings.miniPlayerAlwaysShowTablet.collectAsState()
+    val expressiveShapesEnabled by appSettings.expressiveShapesEnabled.collectAsState()
 
     var showMiniPlayerProgressStyleSheet by remember { mutableStateOf(false) }
     var showMiniPlayerArtworkSizeSheet by remember { mutableStateOf(false) }
@@ -8052,154 +10076,119 @@ fun MiniPlayerCustomizationSettingsScreen(onBackClick: () -> Unit) {
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
                 )
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                ) {
-                    Column {
-                        // Progress preview
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 20.dp, vertical = 12.dp)
-                        ) {
-                            val previewStyle = try {
-                                ProgressStyle.valueOf(miniPlayerProgressStyle)
-                            } catch (e: IllegalArgumentException) {
-                                ProgressStyle.NORMAL
-                            }
-                            if (miniPlayerShowProgress && !miniPlayerUseCircularProgress) {
-                                StyledProgressBar(
-                                    progress = 0.45f,
-                                    style = previewStyle,
-                                    modifier = Modifier.fillMaxWidth(),
-                                    progressColor = MaterialTheme.colorScheme.primary,
-                                    trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f),
-                                    height = 4.dp,
-                                    isPlaying = true
-                                )
-                            } else if (miniPlayerShowProgress && miniPlayerUseCircularProgress) {
-                                Box(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    CircularWavyProgressIndicator(
-                                        progress = { 0.45f },
-                                        modifier = Modifier.size(40.dp)
-                                    )
-                                }
-                            } else {
-                                Text(
-                                    text = context.getString(R.string.settings_progress_hidden),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.fillMaxWidth(),
-                                    textAlign = TextAlign.Center
-                                )
-                            }
-                        }
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 20.dp),
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
+                val previewStyle = try {
+                    ProgressStyle.valueOf(miniPlayerProgressStyle)
+                } catch (e: IllegalArgumentException) {
+                    ProgressStyle.NORMAL
+                }
+                if (miniPlayerShowProgress && !miniPlayerUseCircularProgress) {
+                    StyledProgressBar(
+                        progress = 0.45f,
+                        style = previewStyle,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 12.dp),
+                        progressColor = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f),
+                        height = 4.dp,
+                        isPlaying = true
+                    )
+                } else if (miniPlayerShowProgress && miniPlayerUseCircularProgress) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 12.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularWavyProgressIndicator(
+                            progress = { 0.45f },
+                            modifier = Modifier.size(40.dp)
                         )
-                        SettingRow(
-                            icon = Icons.Default.Visibility,
-                            title = context.getString(R.string.settings_show_progress),
-                            description = context.getString(R.string.settings_show_progress_desc),
-                            toggleState = miniPlayerShowProgress,
-                            onToggleChange = { appSettings.setMiniPlayerShowProgress(it) }
+                    }
+                } else {
+                    Text(
+                        text = context.getString(R.string.settings_progress_hidden),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 12.dp),
+                        textAlign = TextAlign.Center
+                    )
+                }
+
+                val progressSettingsItems = buildList {
+                    add(
+                        toMaterial3SettingsItem(
+                            context = context,
+                            hapticFeedback = haptics,
+                            item = SettingItem(
+                                icon = Icons.Default.Visibility,
+                                title = context.getString(R.string.settings_show_progress),
+                                description = context.getString(R.string.settings_show_progress_desc),
+                                toggleState = miniPlayerShowProgress,
+                                onToggleChange = { appSettings.setMiniPlayerShowProgress(it) }
+                            )
                         )
-                        
-                        // Progress Mode and Style - conditionally shown when Show Progress is on
-                        AnimatedVisibility(
-                            visible = miniPlayerShowProgress,
-                            enter = fadeIn(animationSpec = tween(300)) + expandVertically(animationSpec = tween(300)),
-                            exit = fadeOut(animationSpec = tween(200)) + shrinkVertically(animationSpec = tween(200))
-                        ) {
-                            Column {
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 20.dp),
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                                )
-                                
-                                // Progress Mode Button Group
-                                Column(modifier = Modifier.padding(20.dp)) {
-                                    Row(
-                                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                                        verticalAlignment = Alignment.CenterVertically
+                    )
+
+                    if (miniPlayerShowProgress) {
+                        add(
+                            toMaterial3SettingsItem(
+                                context = context,
+                                hapticFeedback = haptics,
+                                item = SettingItem(
+                                    icon = Icons.Default.ChangeCircle,
+                                    title = context.getString(R.string.settings_progress_mode),
+                                    description = context.getString(R.string.settings_choose_progress_style)
+                                ),
+                                description = {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = 8.dp),
+                                        verticalArrangement = Arrangement.spacedBy(12.dp)
                                     ) {
-                                        // Icon container with expressive design
-                                        Surface(
-                                            modifier = Modifier.size(40.dp),
-                                            shape = RoundedCornerShape(34.dp),
-                                            color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                            tonalElevation = 0.dp
-                                        ) {
-                                            Box(
-                                                contentAlignment = Alignment.Center,
-                                                modifier = Modifier.fillMaxSize()
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Default.ChangeCircle,
-                                                    contentDescription = null,
-                                                    modifier = Modifier.size(24.dp),
-                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            }
-                                        }
-                                        Column {
-                                            Text(
-                                                text = context.getString(R.string.settings_progress_mode),
-                                                style = MaterialTheme.typography.titleMedium,
-                                                fontWeight = FontWeight.Medium,
-                                                color = MaterialTheme.colorScheme.onSurface
-                                            )
-                                            Text(
-                                                text = context.getString(R.string.settings_choose_progress_style),
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
+                                        Text(
+                                            text = context.getString(R.string.settings_choose_progress_style),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        ExpressiveButtonGroup(
+                                            items = listOf("Linear", "Circular"),
+                                            selectedIndex = if (miniPlayerUseCircularProgress) 1 else 0,
+                                            onItemClick = { index ->
+                                                HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
+                                                appSettings.setMiniPlayerUseCircularProgress(index == 1)
+                                            },
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
                                     }
+                                }
+                            )
+                        )
 
-                                    Spacer(modifier = Modifier.height(16.dp))
-
-                                    ExpressiveButtonGroup(
-                                        items = listOf("Linear", "Circular"),
-                                        selectedIndex = if (miniPlayerUseCircularProgress) 1 else 0,
-                                        onItemClick = { index ->
-                                            HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
-                                            appSettings.setMiniPlayerUseCircularProgress(index == 1)
-                                        },
-                                        modifier = Modifier.fillMaxWidth()
+                        if (!miniPlayerUseCircularProgress) {
+                            add(
+                                toMaterial3SettingsItem(
+                                    context = context,
+                                    hapticFeedback = haptics,
+                                    item = SettingItem(
+                                        icon = Icons.Default.LinearScale,
+                                        title = "Progress Style",
+                                        description = miniPlayerProgressStyle.lowercase().replaceFirstChar { it.uppercase() },
+                                        onClick = { showMiniPlayerProgressStyleSheet = true }
                                     )
-                                }
-                                
-                                // Show progress style only for linear mode (circular always uses Material 3 wavy style)
-                                AnimatedVisibility(
-                                    visible = !miniPlayerUseCircularProgress,
-                                    enter = fadeIn(animationSpec = tween(300)) + expandVertically(animationSpec = tween(300)),
-                                    exit = fadeOut(animationSpec = tween(200)) + shrinkVertically(animationSpec = tween(200))
-                                ) {
-                                    Column {
-                                        HorizontalDivider(
-                                            modifier = Modifier.padding(horizontal = 20.dp),
-                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                                        )
-                                        SettingRow(
-                                            icon = Icons.Default.LinearScale,
-                                            title = "Progress Style",
-                                            description = miniPlayerProgressStyle.lowercase().replaceFirstChar { it.uppercase() },
-                                            onClick = { showMiniPlayerProgressStyleSheet = true }
-                                        )
-                                    }
-                                }
-                            }
+                                )
+                            )
                         }
                     }
                 }
+
+                Material3SettingsGroup(
+                    items = progressSettingsItems,
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
             }
 
             // Artwork Section
@@ -8211,42 +10200,50 @@ fun MiniPlayerCustomizationSettingsScreen(onBackClick: () -> Unit) {
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
                 )
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                ) {
-                    Column {
-                        SettingRow(
-                            icon = Icons.Default.Album,
-                            title = context.getString(R.string.settings_show_artwork),
-                            description = context.getString(R.string.settings_show_artwork_desc),
-                            toggleState = miniPlayerShowArtwork,
-                            onToggleChange = { appSettings.setMiniPlayerShowArtwork(it) }
+                Material3SettingsGroup(
+                    items = listOf(
+                        toMaterial3SettingsItem(
+                            context = context,
+                            hapticFeedback = haptics,
+                            item = SettingItem(
+                                icon = Icons.Default.Album,
+                                title = context.getString(R.string.settings_show_artwork),
+                                description = context.getString(R.string.settings_show_artwork_desc),
+                                toggleState = miniPlayerShowArtwork,
+                                onToggleChange = { appSettings.setMiniPlayerShowArtwork(it) }
+                            )
+                        ),
+                        toMaterial3SettingsItem(
+                            context = context,
+                            hapticFeedback = haptics,
+                            item = SettingItem(
+                                icon = Icons.Default.PhotoSizeSelectLarge,
+                                title = "Artwork Size",
+                                description = "${miniPlayerArtworkSize}dp",
+                                onClick = { showMiniPlayerArtworkSizeSheet = true }
+                            )
+                        ),
+                        toMaterial3SettingsItem(
+                            context = context,
+                            hapticFeedback = haptics,
+                            item = if (expressiveShapesEnabled) {
+                                SettingItem(
+                                    icon = Icons.Default.RoundedCorner,
+                                    title = "Corner Radius",
+                                    description = "Managed by Expressive Shapes"
+                                )
+                            } else {
+                                SettingItem(
+                                    icon = Icons.Default.RoundedCorner,
+                                    title = "Corner Radius",
+                                    description = "${miniPlayerCornerRadius}dp",
+                                    onClick = { showMiniPlayerCornerRadiusSheet = true }
+                                )
+                            }
                         )
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 20.dp),
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                        )
-                        SettingRow(
-                            icon = Icons.Default.PhotoSizeSelectLarge,
-                            title = "Artwork Size",
-                            description = "${miniPlayerArtworkSize}dp",
-                            onClick = { showMiniPlayerArtworkSizeSheet = true }
-                        )
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 20.dp),
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                        )
-                        SettingRow(
-                            icon = Icons.Default.RoundedCorner,
-                            title = "Corner Radius",
-                            description = "${miniPlayerCornerRadius}dp",
-                            onClick = { showMiniPlayerCornerRadiusSheet = true }
-                        )
-                    }
-                }
+                    ),
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
             }
 
             // Display Options Section
@@ -8258,33 +10255,33 @@ fun MiniPlayerCustomizationSettingsScreen(onBackClick: () -> Unit) {
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
                 )
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                ) {
-                    Column {
-                        SettingRow(
-                            icon = Icons.Default.Timer,
-                            title = context.getString(R.string.settings_show_time),
-                            description = context.getString(R.string.settings_show_time_desc),
-                            toggleState = miniPlayerShowTime,
-                            onToggleChange = { appSettings.setMiniPlayerShowTime(it) }
+                Material3SettingsGroup(
+                    items = listOf(
+                        toMaterial3SettingsItem(
+                            context = context,
+                            hapticFeedback = haptics,
+                            item = SettingItem(
+                                icon = Icons.Default.Timer,
+                                title = context.getString(R.string.settings_show_time),
+                                description = context.getString(R.string.settings_show_time_desc),
+                                toggleState = miniPlayerShowTime,
+                                onToggleChange = { appSettings.setMiniPlayerShowTime(it) }
+                            )
+                        ),
+                        toMaterial3SettingsItem(
+                            context = context,
+                            hapticFeedback = haptics,
+                            item = SettingItem(
+                                icon = Icons.Default.Tablet,
+                                title = context.getString(R.string.settings_tablet_layout),
+                                description = context.getString(R.string.settings_tablet_layout_desc),
+                                toggleState = miniPlayerAlwaysShowTablet,
+                                onToggleChange = { appSettings.setMiniPlayerAlwaysShowTablet(it) }
+                            )
                         )
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 20.dp),
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                        )
-                        SettingRow(
-                            icon = Icons.Default.Tablet,
-                            title = context.getString(R.string.settings_tablet_layout),
-                            description = context.getString(R.string.settings_tablet_layout_desc),
-                            toggleState = miniPlayerAlwaysShowTablet,
-                            onToggleChange = { appSettings.setMiniPlayerAlwaysShowTablet(it) }
-                        )
-                    }
-                }
+                    ),
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
             }
 
             item { Spacer(modifier = Modifier.height(16.dp)) }
@@ -8497,21 +10494,23 @@ fun PlayerCustomizationSettingsScreen(onBackClick: () -> Unit) {
     val context = LocalContext.current
     val appSettings = AppSettings.getInstance(context)
     val haptics = LocalHapticFeedback.current
-    val scope = rememberCoroutineScope()
 
     // State variables
     val showLyrics by appSettings.showLyrics.collectAsState()
-    val lyricsSourcePreference by appSettings.lyricsSourcePreference.collectAsState()
     val playerShowGradientOverlay by appSettings.playerShowGradientOverlay.collectAsState()
     val playerLyricsTransition by appSettings.playerLyricsTransition.collectAsState()
     val playerLyricsTextSize by appSettings.playerLyricsTextSize.collectAsState()
     val playerLyricsAlignment by appSettings.playerLyricsAlignment.collectAsState()
     val playerShowArtBelowLyrics by appSettings.playerShowArtBelowLyrics.collectAsState()
+    val showLyricsTranslation by appSettings.showLyricsTranslation.collectAsState()
+    val showLyricsRomanization by appSettings.showLyricsRomanization.collectAsState()
+    val keepScreenOnLyrics by appSettings.keepScreenOnLyrics.collectAsState()
     val playerShowSeekButtons by appSettings.playerShowSeekButtons.collectAsState()
     val playerTextAlignment by appSettings.playerTextAlignment.collectAsState()
     val playerShowSongInfoOnArtwork by appSettings.playerShowSongInfoOnArtwork.collectAsState()
     val playerArtworkCornerRadius by appSettings.playerArtworkCornerRadius.collectAsState()
     val playerShowAudioQualityBadges by appSettings.playerShowAudioQualityBadges.collectAsState()
+    val expressiveShapesEnabled by appSettings.expressiveShapesEnabled.collectAsState()
 
     // Progress bar settings
     val playerProgressStyle by appSettings.playerProgressStyle.collectAsState()
@@ -8548,21 +10547,21 @@ fun PlayerCustomizationSettingsScreen(onBackClick: () -> Unit) {
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
                 )
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                ) {
-                    Column {
-                        SettingRow(
-                            icon = Icons.Default.Reorder,
-                            title = context.getString(R.string.settings_chip_order),
-                            description = context.getString(R.string.settings_chip_order_desc),
-                            onClick = { showChipOrderBottomSheet = true }
+                Material3SettingsGroup(
+                    items = listOf(
+                        toMaterial3SettingsItem(
+                            context = context,
+                            hapticFeedback = haptics,
+                            item = SettingItem(
+                                icon = Icons.Default.Reorder,
+                                title = context.getString(R.string.settings_chip_order),
+                                description = context.getString(R.string.settings_chip_order_desc),
+                                onClick = { showChipOrderBottomSheet = true }
+                            )
                         )
-                    }
-                }
+                    ),
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
             }
 
             // Display Options Section
@@ -8574,45 +10573,44 @@ fun PlayerCustomizationSettingsScreen(onBackClick: () -> Unit) {
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
                 )
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                ) {
-                    Column {
-                        // Art View Overlay toggle
-                        SettingRow(
-                            icon = Icons.Default.Gradient,
-                            title = context.getString(R.string.settings_artwork_overlay),
-                            description = context.getString(R.string.settings_artwork_overlay_desc),
-                            toggleState = playerShowGradientOverlay,
-                            onToggleChange = { appSettings.setPlayerShowGradientOverlay(it) }
+                Material3SettingsGroup(
+                    items = listOf(
+                        toMaterial3SettingsItem(
+                            context = context,
+                            hapticFeedback = haptics,
+                            item = SettingItem(
+                                icon = Icons.Default.Gradient,
+                                title = context.getString(R.string.settings_artwork_overlay),
+                                description = context.getString(R.string.settings_artwork_overlay_desc),
+                                toggleState = playerShowGradientOverlay,
+                                onToggleChange = { appSettings.setPlayerShowGradientOverlay(it) }
+                            )
+                        ),
+                        toMaterial3SettingsItem(
+                            context = context,
+                            hapticFeedback = haptics,
+                            item = SettingItem(
+                                icon = Icons.Default.Info,
+                                title = context.getString(R.string.settings_song_info_artwork),
+                                description = context.getString(R.string.settings_song_info_artwork_desc),
+                                toggleState = playerShowSongInfoOnArtwork,
+                                onToggleChange = { appSettings.setPlayerShowSongInfoOnArtwork(it) }
+                            )
+                        ),
+                        toMaterial3SettingsItem(
+                            context = context,
+                            hapticFeedback = haptics,
+                            item = SettingItem(
+                                icon = Icons.Default.HighQuality,
+                                title = context.getString(R.string.settings_audio_quality_badges),
+                                description = context.getString(R.string.settings_audio_quality_badges_desc),
+                                toggleState = playerShowAudioQualityBadges,
+                                onToggleChange = { appSettings.setPlayerShowAudioQualityBadges(it) }
+                            )
                         )
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 20.dp),
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                        )
-                        SettingRow(
-                            icon = Icons.Default.Info,
-                            title = context.getString(R.string.settings_song_info_artwork),
-                            description = context.getString(R.string.settings_song_info_artwork_desc),
-                            toggleState = playerShowSongInfoOnArtwork,
-                            onToggleChange = { appSettings.setPlayerShowSongInfoOnArtwork(it) }
-                        )
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 20.dp),
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                        )
-                        SettingRow(
-                            icon = Icons.Default.HighQuality,
-                            title = context.getString(R.string.settings_audio_quality_badges),
-                            description = context.getString(R.string.settings_audio_quality_badges_desc),
-                            toggleState = playerShowAudioQualityBadges,
-                            onToggleChange = { appSettings.setPlayerShowAudioQualityBadges(it) }
-                        )
-                    }
-                }
+                    ),
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
             }
 
             // Lyrics Customization Section (always visible)
@@ -8624,253 +10622,208 @@ fun PlayerCustomizationSettingsScreen(onBackClick: () -> Unit) {
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
                 )
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                ) {
-                    Column {
-                        // Show Lyrics toggle
-                        SettingRow(
-                            icon = Icons.Rounded.Lyrics,
-                            title = context.getString(R.string.settings_show_lyrics),
-                            description = context.getString(R.string.settings_show_lyrics_desc),
-                            toggleState = showLyrics,
-                            onToggleChange = { appSettings.setShowLyrics(it) }
+
+                val lyricsSettingsItems = buildList {
+                    add(
+                        toMaterial3SettingsItem(
+                            context = context,
+                            hapticFeedback = haptics,
+                            item = SettingItem(
+                                icon = Icons.Rounded.Lyrics,
+                                title = context.getString(R.string.settings_show_lyrics),
+                                description = context.getString(R.string.settings_show_lyrics_desc),
+                                toggleState = showLyrics,
+                                onToggleChange = { appSettings.setShowLyrics(it) }
+                            )
                         )
-                        // All lyrics settings visible when lyrics are enabled
-                        AnimatedVisibility(
-                            visible = showLyrics,
-                            enter = fadeIn(animationSpec = tween(300)) + expandVertically(animationSpec = tween(300)),
-                            exit = fadeOut(animationSpec = tween(200)) + shrinkVertically(animationSpec = tween(200))
-                        ) {
-                            Column {
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 20.dp),
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                                )
-                                // Lyrics Source Priority
-                                SettingRow(
+                    )
+
+                    if (showLyrics) {
+                        add(
+                            toMaterial3SettingsItem(
+                                context = context,
+                                hapticFeedback = haptics,
+                                item = SettingItem(
                                     icon = Icons.Default.Lyrics,
                                     title = context.getString(R.string.lyrics_source_priority),
                                     description = context.getString(R.string.playback_lyrics_priority_desc),
-                                    onClick = {
-                                        HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
-                                        showLyricsSourceDialog = true
-                                    }
+                                    onClick = { showLyricsSourceDialog = true }
                                 )
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 20.dp),
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                                )
-                                SettingRow(
+                            )
+                        )
+                        add(
+                            toMaterial3SettingsItem(
+                                context = context,
+                                hapticFeedback = haptics,
+                                item = SettingItem(
                                     icon = Icons.Rounded.Translate,
                                     title = context.getString(R.string.lyrics_show_translation),
                                     description = context.getString(R.string.lyrics_show_translation_desc),
-                                    toggleState = appSettings.showLyricsTranslation.collectAsState().value,
+                                    toggleState = showLyricsTranslation,
                                     onToggleChange = { appSettings.setShowLyricsTranslation(it) }
                                 )
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 20.dp),
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                                )
-                                SettingRow(
+                            )
+                        )
+                        add(
+                            toMaterial3SettingsItem(
+                                context = context,
+                                hapticFeedback = haptics,
+                                item = SettingItem(
                                     icon = Icons.Rounded.Language,
                                     title = context.getString(R.string.lyrics_show_romanization),
                                     description = context.getString(R.string.lyrics_show_romanization_desc),
-                                    toggleState = appSettings.showLyricsRomanization.collectAsState().value,
+                                    toggleState = showLyricsRomanization,
                                     onToggleChange = { appSettings.setShowLyricsRomanization(it) }
                                 )
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 20.dp),
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                                )
-                                SettingRow(
+                            )
+                        )
+                        add(
+                            toMaterial3SettingsItem(
+                                context = context,
+                                hapticFeedback = haptics,
+                                item = SettingItem(
                                     icon = Icons.Rounded.LightMode,
                                     title = context.getString(R.string.settings_keep_screen_on_lyrics),
                                     description = context.getString(R.string.settings_keep_screen_on_lyrics_desc),
-                                    toggleState = appSettings.keepScreenOnLyrics.collectAsState().value,
+                                    toggleState = keepScreenOnLyrics,
                                     onToggleChange = { appSettings.setKeepScreenOnLyrics(it) }
                                 )
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 20.dp),
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
+                            )
+                        )
+                        add(
+                            toMaterial3SettingsItem(
+                                context = context,
+                                hapticFeedback = haptics,
+                                item = SettingItem(
+                                    icon = Icons.Default.Animation,
+                                    title = context.getString(R.string.settings_lyrics_transition),
+                                    description = "Art ↔ Lyrics switch animation"
+                                ),
+                                description = {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = 8.dp),
+                                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        Text(
+                                            text = "Art ↔ Lyrics switch animation",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        ExpressiveButtonGroup(
+                                            items = listOf("Slide", "Fade", "Scale", "Up"),
+                                            selectedIndex = playerLyricsTransition,
+                                            onItemClick = { index ->
+                                                HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
+                                                appSettings.setPlayerLyricsTransition(index)
+                                            },
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                    }
+                                }
+                            )
+                        )
+                        add(
+                            toMaterial3SettingsItem(
+                                context = context,
+                                hapticFeedback = haptics,
+                                item = SettingItem(
+                                    icon = Icons.Default.FormatSize,
+                                    title = context.getString(R.string.settings_lyrics_text_size),
+                                    description = "Size: ${(playerLyricsTextSize * 100).toInt()}%"
+                                ),
+                                description = {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = 8.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Text(
+                                            text = "Size: ${(playerLyricsTextSize * 100).toInt()}%",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                        Slider(
+                                            value = playerLyricsTextSize,
+                                            onValueChange = { appSettings.setPlayerLyricsTextSize(it) },
+                                            valueRange = 0.5f..2.0f,
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text("50%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            Text("200%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                    }
+                                }
+                            )
+                        )
+                        add(
+                            toMaterial3SettingsItem(
+                                context = context,
+                                hapticFeedback = haptics,
+                                item = SettingItem(
+                                    icon = Icons.Default.FormatAlignCenter,
+                                    title = "Lyrics Alignment",
+                                    description = context.getString(R.string.settings_lyrics_alignment_desc)
+                                ),
+                                description = {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = 8.dp),
+                                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        Text(
+                                            text = context.getString(R.string.settings_lyrics_alignment_desc),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        ExpressiveButtonGroup(
+                                            items = listOf("Left", "Center", "Right"),
+                                            selectedIndex = when (playerLyricsAlignment) {
+                                                "START" -> 0
+                                                "END" -> 2
+                                                else -> 1
+                                            },
+                                            onItemClick = { index ->
+                                                HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
+                                                appSettings.setPlayerLyricsAlignment(when (index) {
+                                                    0 -> "START"
+                                                    2 -> "END"
+                                                    else -> "CENTER"
+                                                })
+                                            },
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                    }
+                                }
+                            )
+                        )
+                        add(
+                            toMaterial3SettingsItem(
+                                context = context,
+                                hapticFeedback = haptics,
+                                item = SettingItem(
+                                    icon = Icons.Default.Image,
+                                    title = context.getString(R.string.settings_show_art_below_lyrics),
+                                    description = context.getString(R.string.settings_show_art_below_lyrics_desc),
+                                    toggleState = playerShowArtBelowLyrics,
+                                    onToggleChange = { appSettings.setPlayerShowArtBelowLyrics(it) }
                                 )
-                        // Lyrics Transition
-                        Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Surface(
-                                    modifier = Modifier.size(40.dp),
-                                    shape = RoundedCornerShape(34.dp),
-                                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                    tonalElevation = 0.dp
-                                ) {
-                                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                                        Icon(
-                                            imageVector = Icons.Default.Animation,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(24.dp),
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
-                                Column {
-                                    Text(
-                                        text = context.getString(R.string.settings_lyrics_transition),
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Medium,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Text(
-                                        text = "Art â†” Lyrics switch animation",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(16.dp))
-                            ExpressiveButtonGroup(
-                                items = listOf("Slide", "Fade", "Scale", "Up"),
-                                selectedIndex = playerLyricsTransition,
-                                onItemClick = { index ->
-                                    HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
-                                    appSettings.setPlayerLyricsTransition(index)
-                                },
-                                modifier = Modifier.fillMaxWidth()
                             )
-                        }
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 20.dp),
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
                         )
-                        // Lyrics Text Size
-                        Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Surface(
-                                    modifier = Modifier.size(40.dp),
-                                    shape = RoundedCornerShape(34.dp),
-                                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                    tonalElevation = 0.dp
-                                ) {
-                                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                                        Icon(
-                                            imageVector = Icons.Default.FormatSize,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(24.dp),
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
-                                Column {
-                                    Text(
-                                        text = context.getString(R.string.settings_lyrics_text_size),
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Medium,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Text(
-                                        text = "Size: ${(playerLyricsTextSize * 100).toInt()}%",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Slider(
-                                value = playerLyricsTextSize,
-                                onValueChange = { appSettings.setPlayerLyricsTextSize(it) },
-                                valueRange = 0.5f..2.0f,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text("50%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text("200%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 20.dp),
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                        )
-                        // Lyrics Alignment
-                        Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Surface(
-                                    modifier = Modifier.size(40.dp),
-                                    shape = RoundedCornerShape(34.dp),
-                                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                    tonalElevation = 0.dp
-                                ) {
-                                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                                        Icon(
-                                            imageVector = Icons.Default.FormatAlignCenter,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(24.dp),
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
-                                Column {
-                                    Text(
-                                        text = "Lyrics Alignment",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Medium,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Text(
-                                        text = context.getString(R.string.settings_lyrics_alignment_desc),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(16.dp))
-                            ExpressiveButtonGroup(
-                                items = listOf("Left", "Center", "Right"),
-                                selectedIndex = when (playerLyricsAlignment) {
-                                    "START" -> 0
-                                    "END" -> 2
-                                    else -> 1
-                                },
-                                onItemClick = { index ->
-                                    HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
-                                    appSettings.setPlayerLyricsAlignment(when (index) {
-                                        0 -> "START"
-                                        2 -> "END"
-                                        else -> "CENTER"
-                                    })
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 20.dp),
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                        )
-                        // Show art below lyrics
-                        SettingRow(
-                            icon = Icons.Default.Image,
-                            title = context.getString(R.string.settings_show_art_below_lyrics),
-                            description = context.getString(R.string.settings_show_art_below_lyrics_desc),
-                            toggleState = playerShowArtBelowLyrics,
-                            onToggleChange = { appSettings.setPlayerShowArtBelowLyrics(it) }
-                        )
-                            } // end AnimatedVisibility Column
-                        } // end AnimatedVisibility
                     }
                 }
+
+                Material3SettingsGroup(
+                    items = lyricsSettingsItems,
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer
+                    )
             }
             item {
                 Spacer(modifier = Modifier.height(24.dp))
@@ -8880,36 +10833,36 @@ fun PlayerCustomizationSettingsScreen(onBackClick: () -> Unit) {
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
                 )
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                ) {
-                    Column {
-                        SettingRow(
-                            icon = Icons.Default.Forward10,
-                            title = context.getString(R.string.settings_seek_buttons),
-                            description = context.getString(R.string.settings_seek_buttons_desc),
-                            toggleState = playerShowSeekButtons,
-                            onToggleChange = { appSettings.setPlayerShowSeekButtons(it) }
+                Material3SettingsGroup(
+                    items = listOf(
+                        toMaterial3SettingsItem(
+                            context = context,
+                            hapticFeedback = haptics,
+                            item = SettingItem(
+                                icon = Icons.Default.Forward10,
+                                title = context.getString(R.string.settings_seek_buttons),
+                                description = context.getString(R.string.settings_seek_buttons_desc),
+                                toggleState = playerShowSeekButtons,
+                                onToggleChange = { appSettings.setPlayerShowSeekButtons(it) }
+                            )
+                        ),
+                        toMaterial3SettingsItem(
+                            context = context,
+                            hapticFeedback = haptics,
+                            item = SettingItem(
+                                icon = Icons.Default.FormatAlignCenter,
+                                title = context.getString(R.string.settings_text_alignment),
+                                description = when(playerTextAlignment) {
+                                    "START" -> context.getString(R.string.settings_left_aligned)
+                                    "END" -> context.getString(R.string.settings_right_aligned)
+                                    else -> context.getString(R.string.settings_center_aligned)
+                                },
+                                onClick = { showTextAlignmentSheet = true }
+                            )
                         )
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 20.dp),
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                        )
-                        SettingRow(
-                            icon = Icons.Default.FormatAlignCenter,
-                            title = context.getString(R.string.settings_text_alignment),
-                            description = when(playerTextAlignment) {
-                                "START" -> context.getString(R.string.settings_left_aligned)
-                                "END" -> context.getString(R.string.settings_right_aligned)
-                                else -> context.getString(R.string.settings_center_aligned)
-                            },
-                            onClick = { showTextAlignmentSheet = true }
-                        )
-                    }
-                }
+                    ),
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
             }
 
             // Progress Bar Style Section
@@ -8921,64 +10874,56 @@ fun PlayerCustomizationSettingsScreen(onBackClick: () -> Unit) {
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
                 )
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                ) {
-                    Column {
-                        // Progress style preview with thumb
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 20.dp, vertical = 16.dp)
-                        ) {
-                            val previewStyle = try {
-                                ProgressStyle.valueOf(playerProgressStyle)
-                            } catch (e: IllegalArgumentException) {
-                                ProgressStyle.WAVY
-                            }
-                            val previewThumbStyle = try {
-                                ThumbStyle.valueOf(playerProgressThumbStyle)
-                            } catch (e: IllegalArgumentException) {
-                                ThumbStyle.CIRCLE
-                            }
-                            StyledProgressBar(
-                                progress = 0.65f,
-                                style = previewStyle,
-                                modifier = Modifier.fillMaxWidth(),
-                                progressColor = MaterialTheme.colorScheme.primary,
-                                trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f),
-                                height = 8.dp,
-                                isPlaying = true,
-                                showThumb = previewThumbStyle != ThumbStyle.NONE,
-                                thumbStyle = previewThumbStyle,
-                                thumbSize = 14.dp
-                            )
-                        }
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 20.dp),
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                        )
-                        SettingRow(
-                            icon = Icons.Default.LinearScale,
-                            title = "Progress Style",
-                            description = playerProgressStyle.lowercase().replaceFirstChar { it.uppercase() },
-                            onClick = { showPlayerProgressStyleSheet = true }
-                        )
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 20.dp),
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                        )
-                        SettingRow(
-                            icon = Icons.Default.TouchApp,
-                            title = context.getString(R.string.settings_thumb_style),
-                            description = playerProgressThumbStyle.lowercase().replaceFirstChar { it.uppercase() },
-                            onClick = { showPlayerThumbStyleSheet = true }
-                        )
-                    }
+                val previewStyle = try {
+                    ProgressStyle.valueOf(playerProgressStyle)
+                } catch (e: IllegalArgumentException) {
+                    ProgressStyle.WAVY
                 }
+                val previewThumbStyle = try {
+                    ThumbStyle.valueOf(playerProgressThumbStyle)
+                } catch (e: IllegalArgumentException) {
+                    ThumbStyle.CIRCLE
+                }
+                StyledProgressBar(
+                    progress = 0.65f,
+                    style = previewStyle,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 16.dp),
+                    progressColor = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f),
+                    height = 8.dp,
+                    isPlaying = true,
+                    showThumb = previewThumbStyle != ThumbStyle.NONE,
+                    thumbStyle = previewThumbStyle,
+                    thumbSize = 14.dp
+                )
+
+                Material3SettingsGroup(
+                    items = listOf(
+                        toMaterial3SettingsItem(
+                            context = context,
+                            hapticFeedback = haptics,
+                            item = SettingItem(
+                                icon = Icons.Default.LinearScale,
+                                title = "Progress Style",
+                                description = playerProgressStyle.lowercase().replaceFirstChar { it.uppercase() },
+                                onClick = { showPlayerProgressStyleSheet = true }
+                            )
+                        ),
+                        toMaterial3SettingsItem(
+                            context = context,
+                            hapticFeedback = haptics,
+                            item = SettingItem(
+                                icon = Icons.Default.TouchApp,
+                                title = context.getString(R.string.settings_thumb_style),
+                                description = playerProgressThumbStyle.lowercase().replaceFirstChar { it.uppercase() },
+                                onClick = { showPlayerThumbStyleSheet = true }
+                            )
+                        )
+                    ),
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
             }
 
             // Artwork Customization Section
@@ -8990,19 +10935,29 @@ fun PlayerCustomizationSettingsScreen(onBackClick: () -> Unit) {
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
                 )
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                ) {
-                    SettingRow(
-                        icon = Icons.Default.RoundedCorner,
-                        title = "Corner Radius",
-                        description = "${playerArtworkCornerRadius}dp",
-                        onClick = { showCornerRadiusSheet = true }
-                    )
-                }
+                Material3SettingsGroup(
+                    items = listOf(
+                        toMaterial3SettingsItem(
+                            context = context,
+                            hapticFeedback = haptics,
+                            item = if (expressiveShapesEnabled) {
+                                SettingItem(
+                                    icon = Icons.Default.RoundedCorner,
+                                    title = "Corner Radius",
+                                    description = "Managed by Expressive Shapes"
+                                )
+                            } else {
+                                SettingItem(
+                                    icon = Icons.Default.RoundedCorner,
+                                    title = "Corner Radius",
+                                    description = "${playerArtworkCornerRadius}dp",
+                                    onClick = { showCornerRadiusSheet = true }
+                                )
+                            }
+                        )
+                    ),
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
             }
 
             item { Spacer(modifier = Modifier.height(16.dp)) }
@@ -9036,67 +10991,26 @@ fun PlayerCustomizationSettingsScreen(onBackClick: () -> Unit) {
                             )
                         }
                         Spacer(modifier = Modifier.height(12.dp))
-                        Text(
-                            text = context.getString(R.string.settings_personalize_player),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        PlayerTipItem(
+                            icon = Icons.Default.SwipeDown,
+                            text = context.getString(R.string.settings_swipe_down_dismiss_tip)
+                        )
+                        PlayerTipItem(
+                            icon = Icons.Default.TouchApp,
+                            text = context.getString(R.string.settings_double_tap_artwork_tip)
+                        )
+                        PlayerTipItem(
+                            icon = Icons.Default.Speed,
+                            text = context.getString(R.string.settings_disable_unused_gestures)
                         )
                     }
                 }
             }
 
-            // Tips Card
-            // item {
-            //     Spacer(modifier = Modifier.height(24.dp))
-            //     Card(
-            //         modifier = Modifier.fillMaxWidth(),
-            //         shape = RoundedCornerShape(18.dp),
-            //         colors = CardDefaults.cardColors(
-            //             containerColor = MaterialTheme.colorScheme.primaryContainer
-            //         )
-            //     ) {
-            //         Column(
-            //             modifier = Modifier.padding(20.dp)
-            //         ) {
-            //             Row(
-            //                 verticalAlignment = Alignment.CenterVertically
-            //             ) {
-            //                 Icon(
-            //                     imageVector = Icons.Filled.Lightbulb,
-            //                     contentDescription = null,
-            //                     modifier = Modifier.size(24.dp)
-            //                 )
-            //                 Spacer(modifier = Modifier.width(12.dp))
-            //                 Text(
-            //                     text = "Player Tips",
-            //                     style = MaterialTheme.typography.titleMedium,
-            //                     fontWeight = FontWeight.Bold,
-            //                     color = MaterialTheme.colorScheme.onPrimaryContainer
-            //                 )
-            //             }
-            //             Spacer(modifier = Modifier.height(12.dp))
-
-            //             PlayerTipItem(
-            //                 icon = Icons.Default.Reorder,
-            //                 text = "Tap 'Chip Order & Visibility' to customize action chips"
-            //             )
-            //             PlayerTipItem(
-            //                 icon = Icons.Rounded.Lyrics,
-            //                 text = "Enable lyrics to see synchronized lyrics while playing"
-            //             )
-            //             PlayerTipItem(
-            //                 icon = Icons.Default.VideoLibrary,
-            //                 text = "Canvas backgrounds add animated visuals to supported songs"
-            //             )
-            //         }
-            //     }
-            // }
-
             item { Spacer(modifier = Modifier.height(24.dp)) }
         }
     }
 
-    // Show chip order bottom sheet
     if (showChipOrderBottomSheet) {
         PlayerChipOrderBottomSheet(
             onDismiss = { showChipOrderBottomSheet = false },
@@ -9105,7 +11019,6 @@ fun PlayerCustomizationSettingsScreen(onBackClick: () -> Unit) {
         )
     }
 
-    // Text Alignment Bottom Sheet
     if (showTextAlignmentSheet) {
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -9125,7 +11038,6 @@ fun PlayerCustomizationSettingsScreen(onBackClick: () -> Unit) {
                     .padding(horizontal = 24.dp)
                     .padding(bottom = 24.dp)
             ) {
-                // Header
                 Text(
                     text = "Text Alignment",
                     style = MaterialTheme.typography.displayMedium,
@@ -9136,7 +11048,6 @@ fun PlayerCustomizationSettingsScreen(onBackClick: () -> Unit) {
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Alignment options
                 listOf(
                     Triple("START", "Left", Icons.AutoMirrored.Filled.AlignHorizontalLeft),
                     Triple("CENTER", "Center", Icons.Default.FormatAlignCenter),
@@ -9190,7 +11101,6 @@ fun PlayerCustomizationSettingsScreen(onBackClick: () -> Unit) {
                                 Icon(
                                     imageVector = Icons.Default.Check,
                                     contentDescription = "Selected",
-                                    
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
@@ -10225,13 +12135,13 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
             ) { modifier ->
         val settingGroups = listOf(
             SettingGroup(
-                title = context.getString(R.string.theme_display_mode),
+                title = context.getString(R.string.settings_display_mode),
                 items = listOf(
                     // Display Mode Button Group
                     SettingItem(
                         Icons.Default.Settings,
-                        "Theme Mode",
-                        "Choose your preferred theme",
+                        context.getString(R.string.settings_theme_mode),
+                        context.getString(R.string.settings_theme_mode_desc),
                         onClick = {
                             // This will be replaced with button group below
                         }
@@ -10239,23 +12149,23 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
                     // AMOLED Theme - always in list, rendered conditionally via AnimatedVisibility
                     SettingItem(
                         Icons.Default.Brightness2,
-                        "AMOLED Theme",
-                        "Pure black theme for OLED displays",
+                        context.getString(R.string.settings_amoled_theme),
+                        context.getString(R.string.settings_amoled_theme_desc),
                         toggleState = amoledTheme,
                         onToggleChange = { appSettings.setAmoledTheme(it) }
                     )
                 )
             ),
             SettingGroup(
-                title = context.getString(R.string.theme_color_customization),
+                title = context.getString(R.string.settings_color_customization),
                 items = listOf(
                     SettingItem(
                         Icons.Default.Palette,
-                        "Color Source",
+                        context.getString(R.string.settings_color_source),
                         when (selectedColorSource) {
-                            ColorSource.ALBUM_ART -> "Album Art - Extracts from artwork"
-                            ColorSource.MONET -> "System Colors - Material You"
-                            ColorSource.CUSTOM -> "Custom Scheme - ${customColorScheme}"
+                            ColorSource.ALBUM_ART -> context.getString(R.string.settings_color_source_album)
+                            ColorSource.MONET -> context.getString(R.string.settings_color_source_monet)
+                            ColorSource.CUSTOM -> context.getString(R.string.settings_color_source_custom, customColorScheme)
                         },
                         onClick = {
                             HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
@@ -10264,11 +12174,11 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
                     ),
                     SettingItem(
                         Icons.Default.ColorLens,
-                        "Color Schemes",
+                        context.getString(R.string.settings_color_schemes),
                         if (selectedColorSource == ColorSource.CUSTOM)
-                            "Browse and select predefined color palettes"
+                            context.getString(R.string.settings_color_schemes_desc)
                         else
-                            "Available only with Custom color source",
+                            context.getString(R.string.settings_custom_only),
                         onClick = {
                             HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
                             showColorSchemesDialog = true
@@ -10276,11 +12186,11 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
                     ),
                     SettingItem(
                         Icons.Default.Brush,
-                        "Custom Colors",
+                        context.getString(R.string.settings_custom_colors),
                         if (selectedColorSource == ColorSource.CUSTOM)
-                            "Create your own unique color palette"
+                            context.getString(R.string.settings_custom_colors_desc)
                         else
-                            "Available only with Custom color source",
+                            context.getString(R.string.settings_custom_only),
                         onClick = {
                             HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
                             showCustomColorsDialog = true
@@ -10289,14 +12199,17 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
                 )
             ),
             SettingGroup(
-                title = context.getString(R.string.theme_font_customization),
+                title = context.getString(R.string.settings_font_customization),
                 items = listOf(
                     SettingItem(
                         Icons.Default.TextFields,
-                        "Font Source",
+                        context.getString(R.string.settings_font_source),
                         when (selectedFontSource) {
-                            FontSource.SYSTEM -> "System Font - ${currentFont}"
-                            FontSource.CUSTOM -> "Custom Font - ${customFontFamily ?: "Not imported"}"
+                            FontSource.SYSTEM -> context.getString(R.string.settings_font_source_system, currentFont)
+                            FontSource.CUSTOM -> context.getString(
+                                R.string.settings_font_source_custom,
+                                customFontFamily
+                            )
                         },
                         onClick = {
                             HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
@@ -10305,11 +12218,11 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
                     ),
                     SettingItem(
                         Icons.Default.TextFields,
-                        "Font Selection",
+                        context.getString(R.string.settings_font_selection),
                         if (selectedFontSource == FontSource.SYSTEM)
-                            "Choose from built-in font options"
+                            context.getString(R.string.settings_font_selection_desc)
                         else
-                            "Available only with System font source",
+                            context.getString(R.string.settings_system_font_only),
                         onClick = {
                             HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
                             showFontSelectionDialog = true
@@ -10317,11 +12230,11 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
                     ),
                     SettingItem(
                         Icons.Default.FileUpload,
-                        "Import Custom Font",
+                        context.getString(R.string.settings_import_custom_font),
                         if (customFontPath != null)
-                            "Imported: ${customFontFamily}"
+                            context.getString(R.string.settings_font_imported_name, customFontFamily)
                         else
-                            "Import your own font file (.ttf, .otf)",
+                            context.getString(R.string.settings_import_font_desc),
                         onClick = {
                             HapticUtils.performHapticFeedback(
                                 context,
@@ -10334,13 +12247,13 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
                 )
             ),
             SettingGroup(
-                title = context.getString(R.string.theme_festive_themes),
+                title = context.getString(R.string.settings_festive_themes),
                 items = buildList {
                     add(
                         SettingItem(
                             Icons.Default.Celebration,
-                            "Enable Festive Theme",
-                            "Show festive decorations across the app",
+                            context.getString(R.string.settings_enable_festive),
+                            context.getString(R.string.settings_enable_festive_desc),
                             toggleState = festiveThemeEnabled,
                             onToggleChange = { appSettings.setFestiveThemeEnabled(it) }
                         )
@@ -10349,8 +12262,8 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
                         add(
                             SettingItem(
                                 Icons.Default.EventAvailable,
-                                context.getString(R.string.theme_auto_detect),
-                                context.getString(R.string.theme_auto_detect_desc),
+                                context.getString(R.string.settings_auto_detect_holidays),
+                                context.getString(R.string.settings_auto_detect_holidays_desc),
                                 toggleState = festiveThemeAutoDetect,
                                 onToggleChange = { appSettings.setFestiveThemeAutoDetect(it) }
                             )
@@ -10359,7 +12272,7 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
                             add(
                                 SettingItem(
                                     Icons.Default.AutoAwesome,
-                                    "Select Festival",
+                                    context.getString(R.string.settings_select_festival),
                                     getFestivalDisplayName(festiveThemeType),
                                     onClick = {
                                         HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
@@ -10381,122 +12294,74 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
         ) {
             items(settingGroups, key = { "setting_${it.title}_${settingGroups.indexOf(it)}" }) { group ->
                 Spacer(modifier = Modifier.height(24.dp))
-                Text(
-                    text = group.title,
-                    style = MaterialTheme.typography.titleSmall.copy(
-                        fontWeight = FontWeight.SemiBold
-                    ),
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
-                )
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                ) {
-                    Column {
-                        when (group.title) {
-                            "Display Mode" -> {
-                                // Display Mode Button Group
-                                Column(modifier = Modifier.padding(20.dp)) {
-                                    Row(
-                                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        // Icon container with expressive design
-                                        Surface(
-                                            modifier = Modifier.size(40.dp),
-                                            shape = RoundedCornerShape(34.dp),
-                                            color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                            tonalElevation = 0.dp
-                                        ) {
-                                            Box(
-                                                contentAlignment = Alignment.Center,
-                                                modifier = Modifier.fillMaxSize()
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Default.Settings,
-                                                    contentDescription = null,
-                                                    modifier = Modifier.size(24.dp),
-                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            }
-                                        }
-                                        Column {
-                                            Text(
-                                                text = "Theme Mode",
-                                                style = MaterialTheme.typography.titleMedium,
-                                                fontWeight = FontWeight.Medium,
-                                                color = MaterialTheme.colorScheme.onSurface
-                                            )
-                                            Text(
-                                                text = "Choose your preferred theme",
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                    }
 
-                                    Spacer(modifier = Modifier.height(16.dp))
-
-                                    ExpressiveButtonGroup(
-                                        items = listOf("System", "Light", "Dark"),
-                                        selectedIndex = when {
-                                            useSystemTheme -> 0
-                                            !darkMode -> 1
-                                            else -> 2
-                                        },
-                                        onItemClick = { index ->
-                                            HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
-                                            when (index) {
-                                                0 -> { // System
-                                                    appSettings.setUseSystemTheme(true)
-                                                }
-                                                1 -> { // Light
-                                                    appSettings.setUseSystemTheme(false)
-                                                    appSettings.setDarkMode(false)
-                                                }
-                                                2 -> { // Dark
-                                                    appSettings.setUseSystemTheme(false)
-                                                    appSettings.setDarkMode(true)
-                                                }
-                                            }
-                                        },
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                }
-
-                                // AMOLED Theme - conditionally shown when Dark mode is selected
-                                AnimatedVisibility(
-                                    visible = !useSystemTheme && darkMode,
-                                    enter = fadeIn(animationSpec = tween(300)) + expandVertically(animationSpec = tween(300)),
-                                    exit = fadeOut(animationSpec = tween(200)) + shrinkVertically(animationSpec = tween(200))
-                                ) {
+                val materialItems = if (group.title == context.getString(R.string.settings_display_mode)) {
+                    buildList {
+                        add(
+                            Material3SettingsItem(
+                                icon = Icons.Default.Settings,
+                                title = { Text(context.getString(R.string.settings_theme_mode)) },
+                                description = {
                                     Column {
-                                        HorizontalDivider(
-                                            modifier = Modifier.padding(horizontal = 20.dp),
-                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
+                                        Text(context.getString(R.string.settings_theme_mode_desc))
+                                        Spacer(modifier = Modifier.height(12.dp))
+                                        ExpressiveButtonGroup(
+                                            items = listOf(
+                                                context.getString(R.string.settings_theme_system),
+                                                context.getString(R.string.settings_theme_light),
+                                                context.getString(R.string.settings_theme_dark)
+                                            ),
+                                            selectedIndex = when {
+                                                useSystemTheme -> 0
+                                                !darkMode -> 1
+                                                else -> 2
+                                            },
+                                            onItemClick = { index ->
+                                                HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
+                                                when (index) {
+                                                    0 -> {
+                                                        appSettings.setUseSystemTheme(true)
+                                                    }
+
+                                                    1 -> {
+                                                        appSettings.setUseSystemTheme(false)
+                                                        appSettings.setDarkMode(false)
+                                                    }
+
+                                                    2 -> {
+                                                        appSettings.setUseSystemTheme(false)
+                                                        appSettings.setDarkMode(true)
+                                                    }
+                                                }
+                                            },
+                                            modifier = Modifier.fillMaxWidth()
                                         )
-                                        TunerSettingRow(item = group.items[1]) // AMOLED Theme
                                     }
                                 }
-                            }
-                            else -> {
-                                // Default rendering for other groups
-                                group.items.forEachIndexed { index, item ->
-                                    TunerSettingRow(item = item)
-                                    if (index < group.items.lastIndex) {
-                                        HorizontalDivider(
-                                            modifier = Modifier.padding(horizontal = 20.dp),
-                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                                        )
-                                    }
-                                }
-                            }
+                            )
+                        )
+
+                        if (!useSystemTheme && darkMode && group.items.size > 1) {
+                            add(
+                                toMaterial3SettingsItem(
+                                    context = context,
+                                    item = group.items[1],
+                                    hapticFeedback = haptic
+                                )
+                            )
                         }
                     }
+                } else {
+                    group.items.map { item ->
+                        toMaterial3SettingsItem(context = context, item = item, hapticFeedback = haptic)
+                    }
                 }
+
+                Material3SettingsGroup(
+                    title = group.title,
+                    items = materialItems,
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
             }
 
             // Tips Card
@@ -10654,231 +12519,230 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
             shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
             containerColor = MaterialTheme.colorScheme.surfaceContainer
         ) {
+            val festiveContentPadding = 24.dp
+
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 24.dp)
                     .padding(bottom = 24.dp)
             ) {
                 item {
-                    Text(
-                        text = context.getString(R.string.theme_festive_settings),
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.padding(bottom = 16.dp)
+                    StandardBottomSheetHeader(
+                        title = context.getString(R.string.theme_festive_settings),
+                        subtitle = context.getString(R.string.settings_choose_festive_theme),
+                        visible = true,
+                        modifier = Modifier.padding(horizontal = 0.dp, vertical = 0.dp)
                     )
                 }
-                
-                // Festival Selection
+
                 item {
-                    Text(
-                        text = "Select Festival",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-                }
-                
-                item {
-                    val festivals = listOf(
-                        "CHRISTMAS" to "Christmas",
-                        "NEW_YEAR" to "New Year",
-                        "HALLOWEEN" to "Halloween",
-                        "VALENTINES" to "Valentine's Day",
-                        "DIWALI" to "Diwali"
-                    )
-                    
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        festivals.forEach { (id, name) ->
-                            val isSelected = id == festiveThemeType
-                            Card(
-                                onClick = {
-                                    HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
-                                    appSettings.setFestiveThemeType(id)
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = if (isSelected)
-                                        MaterialTheme.colorScheme.primaryContainer
-                                    else
-                                        MaterialTheme.colorScheme.surfaceContainerHigh
-                                ),
-                                border = if (isSelected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(16.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = name,
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                        color = if (isSelected)
-                                            MaterialTheme.colorScheme.onPrimaryContainer
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = festiveContentPadding)
+                    ) {
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = context.getString(R.string.settings_select_festival),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+
+                        val festivals = listOf(
+                            "CHRISTMAS" to context.getString(R.string.settings_festival_christmas),
+                            "NEW_YEAR" to context.getString(R.string.settings_festival_new_year)
+                        )
+
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            festivals.forEach { (id, name) ->
+                                val isSelected = id == festiveThemeType
+                                Card(
+                                    onClick = {
+                                        HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
+                                        appSettings.setFestiveThemeType(id)
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = if (isSelected)
+                                            MaterialTheme.colorScheme.primaryContainer
                                         else
-                                            MaterialTheme.colorScheme.onSurface,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    if (isSelected) {
-                                        Icon(
-                                            imageVector = Icons.Filled.CheckCircle,
-                                            contentDescription = "Selected",
-                                            
-                                            modifier = Modifier.size(24.dp)
+                                            MaterialTheme.colorScheme.surfaceContainerHigh
+                                    ),
+                                    border = if (isSelected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(16.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = name,
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                            color = if (isSelected)
+                                                MaterialTheme.colorScheme.onPrimaryContainer
+                                            else
+                                                MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.weight(1f)
                                         )
+                                        if (isSelected) {
+                                            Icon(
+                                                imageVector = Icons.Filled.CheckCircle,
+                                                contentDescription = context.getString(R.string.ui_selected),
+                                                modifier = Modifier.size(24.dp)
+                                            )
+                                        }
                                     }
                                 }
                             }
                         }
-                    }
-                }
-                
-                // Decoration Intensity
-                item {
-                    Spacer(modifier = Modifier.height(24.dp))
-                    Text(
-                        text = "Decoration Intensity",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(bottom = 12.dp)
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+
+                        Spacer(modifier = Modifier.height(24.dp))
+
                         Text(
-                            text = "Intensity",
+                            text = context.getString(R.string.settings_decoration_intensity),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(bottom = 12.dp)
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = context.getString(R.string.settings_intensity),
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = "${(festiveThemeIntensity * 100).toInt()}%",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Slider(
+                            value = festiveThemeIntensity,
+                            onValueChange = { appSettings.setFestiveThemeIntensity(it) },
+                            valueRange = 0.1f..1f,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = context.getString(R.string.settings_snowflake_size),
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = "${(festiveSnowflakeSize * 100).toInt()}%",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Slider(
+                            value = festiveSnowflakeSize,
+                            onValueChange = { appSettings.setFestiveSnowflakeSize(it) },
+                            valueRange = 0.5f..2.0f,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Text(
+                            text = context.getString(R.string.settings_snowflake_display_area),
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.Medium
                         )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            FilterChip(
+                                selected = festiveSnowflakeArea == "FULL_SCREEN",
+                                onClick = { appSettings.setFestiveSnowflakeArea("FULL_SCREEN") },
+                                label = { Text(context.getString(R.string.settings_area_full)) },
+                                modifier = Modifier.weight(1f)
+                            )
+                            FilterChip(
+                                selected = festiveSnowflakeArea == "LEFT_RIGHT_ONLY",
+                                onClick = { appSettings.setFestiveSnowflakeArea("LEFT_RIGHT_ONLY") },
+                                label = { Text(context.getString(R.string.settings_area_sides)) },
+                                modifier = Modifier.weight(1f)
+                            )
+                            FilterChip(
+                                selected = festiveSnowflakeArea == "TOP_ONE_THIRD",
+                                onClick = { appSettings.setFestiveSnowflakeArea("TOP_ONE_THIRD") },
+                                label = { Text(context.getString(R.string.settings_area_top_third)) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(24.dp))
+
                         Text(
-                            text = "${(festiveThemeIntensity * 100).toInt()}%",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.primary
+                            text = context.getString(R.string.settings_decoration_elements),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(bottom = 8.dp)
                         )
+
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            DecorationToggleCard(
+                                title = context.getString(R.string.settings_snowfall),
+                                description = context.getString(R.string.settings_snowfall_desc),
+                                icon = Icons.Rounded.AcUnit,
+                                isEnabled = festiveShowSnowfall,
+                                onToggle = { appSettings.setFestiveShowSnowfall(it) }
+                            )
+                            DecorationToggleCard(
+                                title = context.getString(R.string.settings_top_lights),
+                                description = context.getString(R.string.settings_top_lights_desc),
+                                icon = Icons.Rounded.Lightbulb,
+                                isEnabled = festiveShowTopLights,
+                                onToggle = { appSettings.setFestiveShowTopLights(it) }
+                            )
+                            DecorationToggleCard(
+                                title = context.getString(R.string.settings_side_garland),
+                                description = context.getString(R.string.settings_side_garland_desc),
+                                icon = Icons.Rounded.Park,
+                                isEnabled = festiveShowSideGarland,
+                                onToggle = { appSettings.setFestiveShowSideGarland(it) }
+                            )
+                            DecorationToggleCard(
+                                title = context.getString(R.string.settings_snow_pile),
+                                description = context.getString(R.string.settings_snow_pile_desc),
+                                icon = Icons.Rounded.Terrain,
+                                isEnabled = festiveShowBottomSnow,
+                                onToggle = { appSettings.setFestiveShowBottomSnow(it) }
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
                     }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Slider(
-                        value = festiveThemeIntensity,
-                        onValueChange = { appSettings.setFestiveThemeIntensity(it) },
-                        valueRange = 0.1f..1f,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-                
-                // Snowflake Size
-                item {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Snowflake Size",
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Text(
-                            text = "${(festiveSnowflakeSize * 100).toInt()}%",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Slider(
-                        value = festiveSnowflakeSize,
-                        onValueChange = { appSettings.setFestiveSnowflakeSize(it) },
-                        valueRange = 0.5f..2.0f,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-                
-                // Snowflake Area
-                item {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = "Snowflake Display Area",
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        FilterChip(
-                            selected = festiveSnowflakeArea == "FULL_SCREEN",
-                            onClick = { appSettings.setFestiveSnowflakeArea("FULL_SCREEN") },
-                            label = { Text("Full") },
-                            modifier = Modifier.weight(1f)
-                        )
-                        FilterChip(
-                            selected = festiveSnowflakeArea == "LEFT_RIGHT_ONLY",
-                            onClick = { appSettings.setFestiveSnowflakeArea("LEFT_RIGHT_ONLY") },
-                            label = { Text("Sides") },
-                            modifier = Modifier.weight(1f)
-                        )
-                        FilterChip(
-                            selected = festiveSnowflakeArea == "TOP_ONE_THIRD",
-                            onClick = { appSettings.setFestiveSnowflakeArea("TOP_ONE_THIRD") },
-                            label = { Text("Top â…“") },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-                
-                // Decoration Elements
-                item {
-                    Spacer(modifier = Modifier.height(24.dp))
-                    Text(
-                        text = "Decoration Elements",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-                }
-                
-                item {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        DecorationToggleCard(
-                            title = "Snowfall",
-                            description = "Animated falling snowflakes",
-                            icon = Icons.Rounded.AcUnit,
-                            isEnabled = festiveShowSnowfall,
-                            onToggle = { appSettings.setFestiveShowSnowfall(it) }
-                        )
-                        DecorationToggleCard(
-                            title = "Top Lights",
-                            description = "Christmas lights at the top",
-                            icon = Icons.Rounded.Lightbulb,
-                            isEnabled = festiveShowTopLights,
-                            onToggle = { appSettings.setFestiveShowTopLights(it) }
-                        )
-                        DecorationToggleCard(
-                            title = "Side Garland",
-                            description = "Ornaments on sides",
-                            icon = Icons.Rounded.Park,
-                            isEnabled = festiveShowSideGarland,
-                            onToggle = { appSettings.setFestiveShowSideGarland(it) }
-                        )
-                        DecorationToggleCard(
-                            title = "Snow Pile",
-                            description = "Snow at the bottom",
-                            icon = Icons.Rounded.Terrain,
-                            isEnabled = festiveShowBottomSnow,
-                            onToggle = { appSettings.setFestiveShowBottomSnow(it) }
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(16.dp))
                 }
             }
         }
@@ -12081,7 +13945,7 @@ private fun ExpressiveColorPickerControls(
                             modifier = Modifier.alpha(0.8f)
                         ) {
                             Text(
-                                text = "H:${hue.toInt()}Â°",
+                                text = "H:${hue.toInt()}°",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = if (color.luminance() > 0.5f) Color.Black.copy(alpha = 0.7f) else Color.White.copy(alpha = 0.9f)
                             )
@@ -12122,7 +13986,7 @@ private fun ExpressiveColorPickerControls(
                     modifier = Modifier.shadow(2.dp, RoundedCornerShape(12.dp))
                 ) {
                     Text(
-                        text = "${hue.toInt()}Â°",
+                        text = "${hue.toInt()}°",
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurface,
@@ -12609,7 +14473,7 @@ private fun ColorPickerControls(
                 color = MaterialTheme.colorScheme.surfaceContainerHighest
             ) {
                 Text(
-                    text = "${hue.toInt()}Â°",
+                    text = "${hue.toInt()}°",
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -13145,15 +15009,11 @@ fun ApiManagementSettingsScreen(onBackClick: () -> Unit) {
     val context = LocalContext.current
     val hapticFeedback = LocalHapticFeedback.current
     val appSettings = AppSettings.getInstance(context)
-    val scope = rememberCoroutineScope()
 
     // API states
     val deezerApiEnabled by appSettings.deezerApiEnabled.collectAsState()
     val lrclibApiEnabled by appSettings.lrclibApiEnabled.collectAsState()
     val ytMusicApiEnabled by appSettings.ytMusicApiEnabled.collectAsState()
-    val spotifyApiEnabled by appSettings.spotifyApiEnabled.collectAsState()
-    val spotifyClientId by appSettings.spotifyClientId.collectAsState()
-    val spotifyClientSecret by appSettings.spotifyClientSecret.collectAsState()
 
     CollapsibleHeaderScreen(
         title = context.getString(R.string.settings_api_management),
@@ -13183,93 +15043,68 @@ fun ApiManagementSettingsScreen(onBackClick: () -> Unit) {
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
                 )
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                ) {
-                    Column {
-                        // Deezer API - Only show if enabled in BuildConfig
-                        if (chromahub.rhythm.app.BuildConfig.ENABLE_DEEZER) {
-                            ApiServiceRow(
-                                title = "Deezer",
-                                description = "Free artist images and album artwork - no setup needed",
-                                status = "Ready",
-                                isConfigured = true,
-                                isEnabled = deezerApiEnabled,
-                                icon = Icons.Default.Public,
-                                showToggle = true,
-                                onToggle = { enabled -> appSettings.setDeezerApiEnabled(enabled) },
-                                onClick = { /* No configuration needed */ }
-                            )
-                            
-                            // Show divider only if there are more items below
-                            if (chromahub.rhythm.app.BuildConfig.ENABLE_LRCLIB || 
-                                chromahub.rhythm.app.BuildConfig.ENABLE_YOUTUBE_MUSIC) {
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 20.dp),
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
+                val apiServiceItems = buildList {
+                    if (chromahub.rhythm.app.BuildConfig.ENABLE_DEEZER) {
+                        add(
+                            toMaterial3SettingsItem(
+                                context = context,
+                                hapticFeedback = hapticFeedback,
+                                item = SettingItem(
+                                    icon = Icons.Default.Public,
+                                    title = "Deezer",
+                                    description = "Free artist images and album artwork - no setup needed",
+                                    toggleState = deezerApiEnabled,
+                                    onToggleChange = { enabled -> appSettings.setDeezerApiEnabled(enabled) }
                                 )
-                            }
-                        }
-
-                        // LRCLib API - Only show if enabled in BuildConfig
-                        if (chromahub.rhythm.app.BuildConfig.ENABLE_LRCLIB) {
-                            ApiServiceRow(
-                                title = "LRCLib",
-                                description = "Free line-by-line synced lyrics (Fallback)",
-                                status = "Ready",
-                                isConfigured = true,
-                                isEnabled = lrclibApiEnabled,
-                                icon = RhythmIcons.Queue,
-                                showToggle = true,
-                                onToggle = { enabled -> appSettings.setLrcLibApiEnabled(enabled) },
-                                onClick = { /* No configuration needed */ }
                             )
-                            
-                            if (chromahub.rhythm.app.BuildConfig.ENABLE_YOUTUBE_MUSIC) {
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 20.dp),
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                                )
-                            }
-                        }
-
-                        // YouTube Music API - Only show if enabled in BuildConfig
-                        if (chromahub.rhythm.app.BuildConfig.ENABLE_YOUTUBE_MUSIC) {
-                            ApiServiceRow(
-                                title = "YouTube Music",
-                                description = "Fallback for artist images and album artwork",
-                                status = "Ready",
-                                isConfigured = true,
-                                isEnabled = ytMusicApiEnabled,
-                                icon = RhythmIcons.Album,
-                                showToggle = true,
-                                onToggle = { enabled -> appSettings.setYTMusicApiEnabled(enabled) },
-                                onClick = { /* No configuration needed */ }
-                            )
-                        }
-
-                        // Always show divider before GitHub (which is always present)
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 20.dp),
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                        )
-
-                        // GitHub API
-                        ApiServiceRow(
-                            title = "GitHub",
-                            description = "App updates and release information",
-                            status = "Ready",
-                            isConfigured = true,
-                            isEnabled = true, // Always enabled for updates
-                            icon = RhythmIcons.Download,
-                            showToggle = false, // Can't disable update checks
-                            onClick = { /* No configuration needed */ }
                         )
                     }
+
+                    if (chromahub.rhythm.app.BuildConfig.ENABLE_LRCLIB) {
+                        add(
+                            toMaterial3SettingsItem(
+                                context = context,
+                                hapticFeedback = hapticFeedback,
+                                item = SettingItem(
+                                    icon = RhythmIcons.Queue,
+                                    title = "LRCLib",
+                                    description = "Free line-by-line synced lyrics (Fallback)",
+                                    toggleState = lrclibApiEnabled,
+                                    onToggleChange = { enabled -> appSettings.setLrcLibApiEnabled(enabled) }
+                                )
+                            )
+                        )
+                    }
+
+                    if (chromahub.rhythm.app.BuildConfig.ENABLE_YOUTUBE_MUSIC) {
+                        add(
+                            toMaterial3SettingsItem(
+                                context = context,
+                                hapticFeedback = hapticFeedback,
+                                item = SettingItem(
+                                    icon = RhythmIcons.Album,
+                                    title = "YouTube Music",
+                                    description = "Fallback for artist images and album artwork",
+                                    toggleState = ytMusicApiEnabled,
+                                    onToggleChange = { enabled -> appSettings.setYTMusicApiEnabled(enabled) }
+                                )
+                            )
+                        )
+                    }
+
+                    add(
+                        Material3SettingsItem(
+                            icon = RhythmIcons.Download,
+                            title = { Text("GitHub") },
+                            description = { Text("App updates and release information") }
+                        )
+                    )
                 }
+
+                Material3SettingsGroup(
+                    items = apiServiceItems,
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
             }
 
             item { Spacer(modifier = Modifier.height(24.dp)) }
@@ -13324,6 +15159,7 @@ fun CrashLogHistorySettingsScreen(onBackClick: () -> Unit, appSettings: AppSetti
     val context = LocalContext.current
     val hapticFeedback = LocalHapticFeedback.current
     val crashLogHistory by appSettings.crashLogHistory.collectAsState()
+    val dateFormat = remember { SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()) }
 
     var showLogDetailDialog by remember { mutableStateOf(false) }
     var selectedLog: String? by remember { mutableStateOf(null) }
@@ -13365,7 +15201,7 @@ fun CrashLogHistorySettingsScreen(onBackClick: () -> Unit, appSettings: AppSetti
                             )
                             Spacer(modifier = Modifier.height(16.dp))
                             Text(
-                                text = "No crash logs found. Good job!",
+                                text = context.getString(R.string.settings_no_crash_logs),
                                 style = MaterialTheme.typography.titleMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -13375,78 +15211,50 @@ fun CrashLogHistorySettingsScreen(onBackClick: () -> Unit, appSettings: AppSetti
             } else {
                 // Crash logs section
                 item {
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                        shape = RoundedCornerShape(16.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(20.dp)
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Filled.BugReport,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.error
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
+                    val crashLogItems = crashLogHistory.map { entry ->
+                        Material3SettingsItem(
+                            icon = Icons.Filled.Error,
+                            title = { Text("Crashed on: ${dateFormat.format(Date(entry.timestamp))}") },
+                            description = {
                                 Text(
-                                    text = context.getString(R.string.crash_reports),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.SemiBold
+                                    text = entry.log.lines().firstOrNull() ?: "No details available.",
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
                                 )
+                            },
+                            onClick = {
+                                selectedLog = entry.log
+                                showLogDetailDialog = true
                             }
-
-                            Spacer(modifier = Modifier.height(16.dp))
-
-                            crashLogHistory.forEachIndexed { index, entry ->
-                                CrashLogEntryCard(entry = entry) {
-                                    selectedLog = entry.log
-                                    showLogDetailDialog = true
-                                }
-                                if (index < crashLogHistory.size - 1) {
-                                    HorizontalDivider(
-                                        modifier = Modifier.padding(vertical = 12.dp),
-                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                                    )
-                                }
-                            }
-                        }
+                        )
                     }
+
+                    Material3SettingsGroup(
+                        title = context.getString(R.string.crash_reports),
+                        items = crashLogItems,
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer
+                    )
                 }
             }
 
             // Action buttons
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    OutlinedButton(
-                        onClick = {
-                            appSettings.clearCrashLogHistory()
-                        },
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.error
-                        ),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f)),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = crashLogHistory.isNotEmpty()
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.DeleteSweep,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
+                Material3SettingsGroup(
+                    items = listOf(
+                        toMaterial3SettingsItem(
+                            context = context,
+                            hapticFeedback = hapticFeedback,
+                            item = SettingItem(
+                                icon = Icons.Filled.DeleteSweep,
+                                title = context.getString(R.string.settings_clear_all_logs),
+                                description = "Remove all stored crash reports",
+                                enabled = crashLogHistory.isNotEmpty(),
+                                onClick = { appSettings.clearCrashLogHistory() }
+                            )
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(context.getString(R.string.settings_clear_all_logs))
-                    }
-                }
+                    ),
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
             }
         }
     }
@@ -13504,53 +15312,6 @@ fun CrashLogHistorySettingsScreen(onBackClick: () -> Unit, appSettings: AppSetti
                 }
             },
             shape = RoundedCornerShape(24.dp)
-        )
-    }
-}
-
-@Composable
-private fun CrashLogEntryCard(entry: chromahub.rhythm.app.shared.data.model.CrashLogEntry, onClick: () -> Unit) {
-    val dateFormat = remember { SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()) }
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = 8.dp),
-        verticalAlignment = Alignment.Top
-    ) {
-        Icon(
-            imageVector = Icons.Filled.Error,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.error,
-            modifier = Modifier
-                .size(20.dp)
-                .padding(top = 2.dp)
-        )
-        Spacer(modifier = Modifier.width(12.dp))
-        Column(
-            modifier = Modifier.weight(1f)
-        ) {
-            Text(
-                text = "Crashed on: ${dateFormat.format(Date(entry.timestamp))}",
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = entry.log.lines().firstOrNull() ?: "No details available.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-        Icon(
-            imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
-            contentDescription = "View details",
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(16.dp)
         )
     }
 }
@@ -13788,10 +15549,10 @@ fun LyricsSourceSettingsScreen(onBackClick: () -> Unit) {
                         }
 
                         Text(
-                            text = "â€¢ Embedded lyrics are stored in your audio files\n" +
-                                    "â€¢ Online APIs provide high-quality synced lyrics\n" +
-                                    "â€¢ Apple Music offers word-by-word sync\n" +
-                                    "â€¢ LRCLib provides free line-by-line sync",
+                            text = "• Embedded lyrics are stored in your audio files\n" +
+                                    "• Online APIs provide high-quality synced lyrics\n" +
+                                    "• Apple Music offers word-by-word sync\n" +
+                                    "• LRCLib provides free line-by-line sync",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onTertiaryContainer,
                             lineHeight = 20.sp
@@ -13859,6 +15620,7 @@ fun HomeScreenCustomizationSettingsScreen(onBackClick: () -> Unit) {
         }
     ) { modifier ->
         val lazyListState = rememberSaveable(
+            key = "home_screen_settings_scroll_state",
             saver = LazyListStateSaver
         ) {
             androidx.compose.foundation.lazy.LazyListState()
@@ -13872,7 +15634,7 @@ fun HomeScreenCustomizationSettingsScreen(onBackClick: () -> Unit) {
                 .padding(horizontal = 24.dp)
         ) {
             // ==================== HEADER CUSTOMIZATION ====================
-            item(contentType = "section_header") {
+            item(key = "header_customization_header", contentType = "section_header") {
                 Spacer(modifier = Modifier.height(24.dp))
                 Text(
                     text = context.getString(R.string.settings_header_customization),
@@ -13883,7 +15645,7 @@ fun HomeScreenCustomizationSettingsScreen(onBackClick: () -> Unit) {
             }
             
             // Consolidated Header Settings Card
-            item(contentType = "settings_card") {
+            item(key = "header_settings_card", contentType = "settings_card") {
                 val collapseBehavior by appSettings.headerCollapseBehavior.collectAsState()
                 val displayMode by appSettings.homeHeaderDisplayMode.collectAsState()
                 val visibilityMode by appSettings.homeAppIconVisibility.collectAsState()
@@ -13894,204 +15656,103 @@ fun HomeScreenCustomizationSettingsScreen(onBackClick: () -> Unit) {
                     2 -> "icon & name"
                     else -> "content"
                 }
-                
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                ) {
-                    Column {
-                        // Always Start Collapsed Toggle
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(20.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                // Icon container with expressive design
-                                Surface(
-                                    modifier = Modifier.size(40.dp),
-                                    shape = RoundedCornerShape(34.dp),
-                                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                    tonalElevation = 0.dp
-                                ) {
-                                    Box(
-                                        contentAlignment = Alignment.Center,
-                                        modifier = Modifier.fillMaxSize()
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.UnfoldLess,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(24.dp),
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
-                                Column {
-                                    Text(
-                                        text = context.getString(R.string.settings_always_start_collapsed),
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Medium,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Text(
-                                        text = context.getString(R.string.settings_start_collapsed),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                            TunerAnimatedSwitch(
-                                checked = collapseBehavior == 1,
-                                onCheckedChange = { 
-                                    HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
-                                    appSettings.setHeaderCollapseBehavior(if (it) 1 else 0) 
-                                }
+
+                val headerItems = buildList {
+                    add(
+                        toMaterial3SettingsItem(
+                            context = context,
+                            hapticFeedback = haptic,
+                            item = SettingItem(
+                                icon = Icons.Rounded.UnfoldLess,
+                                title = context.getString(R.string.settings_always_start_collapsed),
+                                description = context.getString(R.string.settings_start_collapsed),
+                                toggleState = collapseBehavior == 1,
+                                onToggleChange = { appSettings.setHeaderCollapseBehavior(if (it) 1 else 0) }
                             )
-                        }
-                        
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 20.dp),
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
                         )
-                        
-                        // Header Display Mode
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(20.dp)
-                        ) {
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                // Icon container with expressive design
-                                Surface(
-                                    modifier = Modifier.size(40.dp),
-                                    shape = RoundedCornerShape(34.dp),
-                                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                    tonalElevation = 0.dp
+                    )
+
+                    add(
+                        toMaterial3SettingsItem(
+                            context = context,
+                            hapticFeedback = haptic,
+                            item = SettingItem(
+                                icon = Icons.Rounded.Stars,
+                                title = context.getString(R.string.settings_header_display),
+                                description = context.getString(R.string.settings_choose_header_content)
+                            ),
+                            description = {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(12.dp)
                                 ) {
-                                    Box(
-                                        contentAlignment = Alignment.Center,
-                                        modifier = Modifier.fillMaxSize()
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.Stars,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(24.dp),
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
-                                Column {
-                                    Text(
-                                        text = context.getString(R.string.settings_header_display),
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Medium,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
                                     Text(
                                         text = context.getString(R.string.settings_choose_header_content),
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(16.dp))
-
-                            ExpressiveButtonGroup(
-                                items = listOf("Icon", "Name", "Both"),
-                                selectedIndex = displayMode,
-                                onItemClick = { index ->
-                                    HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
-                                    appSettings.setHomeHeaderDisplayMode(index)
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                        
-                        // Hide visibility settings when "Both" is selected since it always shows both
-                        AnimatedVisibility(visible = displayMode != 2) {
-                            Column {
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 20.dp),
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                                )
-                                
-                                // Visibility Mode
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(20.dp)
-                                ) {
-
-                                    Row(
-                                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        // Icon container with expressive design
-                                        Surface(
-                                            modifier = Modifier.size(40.dp),
-                                            shape = RoundedCornerShape(34.dp),
-                                            color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                            tonalElevation = 0.dp
-                                        ) {
-                                            Box(
-                                                contentAlignment = Alignment.Center,
-                                                modifier = Modifier.fillMaxSize()
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Rounded.Visibility,
-                                                    contentDescription = null,
-                                                    modifier = Modifier.size(24.dp),
-                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            }
-                                        }
-                                        Column {
-                                            Text(
-                                                text = context.getString(R.string.settings_visibility),
-                                                style = MaterialTheme.typography.titleMedium,
-                                                fontWeight = FontWeight.Medium,
-                                                color = MaterialTheme.colorScheme.onSurface
-                                            )
-                                            Text(
-                                                text = "When to show $displayLabel in header",
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                    }
-
-                                    Spacer(modifier = Modifier.height(16.dp))
-
                                     ExpressiveButtonGroup(
-                                        items = listOf("Always", "Expanded", "Collapsed"),
-                                        selectedIndex = visibilityMode,
+                                        items = listOf("Icon", "Name", "Both"),
+                                        selectedIndex = displayMode,
                                         onItemClick = { index ->
                                             HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
-                                            appSettings.setHomeAppIconVisibility(index)
+                                            appSettings.setHomeHeaderDisplayMode(index)
                                         },
                                         modifier = Modifier.fillMaxWidth()
                                     )
                                 }
                             }
-                        }
+                        )
+                    )
+
+                    if (displayMode != 2) {
+                        add(
+                            toMaterial3SettingsItem(
+                                context = context,
+                                hapticFeedback = haptic,
+                                item = SettingItem(
+                                    icon = Icons.Rounded.Visibility,
+                                    title = context.getString(R.string.settings_visibility),
+                                    description = "When to show $displayLabel in header"
+                                ),
+                                description = {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = 8.dp),
+                                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        Text(
+                                            text = "When to show $displayLabel in header",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        ExpressiveButtonGroup(
+                                            items = listOf("Always", "Expanded", "Collapsed"),
+                                            selectedIndex = visibilityMode,
+                                            onItemClick = { index ->
+                                                HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
+                                                appSettings.setHomeAppIconVisibility(index)
+                                            },
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                    }
+                                }
+                            )
+                        )
                     }
                 }
+
+                Material3SettingsGroup(
+                    items = headerItems,
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
             }
 
             // ==================== GREETING SETTINGS ====================
-            item(contentType = "section_header") {
+            item(key = "greeting_settings_header", contentType = "section_header") {
                 Spacer(modifier = Modifier.height(24.dp))
                 Text(
                     text = "Greeting",
@@ -14101,74 +15762,27 @@ fun HomeScreenCustomizationSettingsScreen(onBackClick: () -> Unit) {
                 )
             }
 
-            item(contentType = "settings_card") {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
-                                appSettings.setHomeShowGreeting(!showGreeting)
-                            }
-                            .padding(20.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Surface(
-                                modifier = Modifier.size(40.dp),
-                                shape = RoundedCornerShape(34.dp),
-                                color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                tonalElevation = 0.dp
-                            ) {
-                                Box(
-                                    contentAlignment = Alignment.Center,
-                                    modifier = Modifier.fillMaxSize()
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Face,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(24.dp),
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                            Column {
-                                Text(
-                                    text = context.getString(R.string.settings_show_greeting),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Medium,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = context.getString(R.string.settings_show_greeting_desc),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                        TunerAnimatedSwitch(
-                            checked = showGreeting,
-                            onCheckedChange = {
-                                HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
-                                appSettings.setHomeShowGreeting(it)
-                            }
+            item(key = "greeting_toggle_card", contentType = "settings_card") {
+                Material3SettingsGroup(
+                    items = listOf(
+                        toMaterial3SettingsItem(
+                            context = context,
+                            hapticFeedback = haptic,
+                            item = SettingItem(
+                                icon = Icons.Rounded.Face,
+                                title = context.getString(R.string.settings_show_greeting),
+                                description = context.getString(R.string.settings_show_greeting_desc),
+                                toggleState = showGreeting,
+                                onToggleChange = { appSettings.setHomeShowGreeting(it) }
+                            )
                         )
-                    }
-                }
+                    ),
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
             }
 
             // ==================== SECTION ORDER & VISIBILITY ====================
-            item(contentType = "section_header") {
+            item(key = "section_order_header", contentType = "section_header") {
                 Spacer(modifier = Modifier.height(24.dp))
                 Text(
                     text = context.getString(R.string.settings_section_order_visibility),
@@ -14178,209 +15792,243 @@ fun HomeScreenCustomizationSettingsScreen(onBackClick: () -> Unit) {
                 )
             }
 
-            item(contentType = "action_button") {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
-                            showHomeSectionOrderSheet = true
-                        },
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(20.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            // Icon container with expressive design
-                            Surface(
-                                modifier = Modifier.size(40.dp),
-                                shape = RoundedCornerShape(34.dp),
-                                color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                tonalElevation = 0.dp
-                            ) {
-                                Box(
-                                    contentAlignment = Alignment.Center,
-                                    modifier = Modifier.fillMaxSize()
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Reorder,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(24.dp),
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+            item(key = "section_order_button", contentType = "action_button") {
+                Material3SettingsGroup(
+                    items = listOf(
+                        toMaterial3SettingsItem(
+                            context = context,
+                            hapticFeedback = haptic,
+                            item = SettingItem(
+                                icon = Icons.Filled.Reorder,
+                                title = context.getString(R.string.settings_reorder_toggle_sections),
+                                description = context.getString(R.string.settings_customize_home_layout),
+                                onClick = {
+                                    HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
+                                    showHomeSectionOrderSheet = true
                                 }
-                            }
-                            Column {
-                                Text(
-                                    text = context.getString(R.string.settings_reorder_toggle_sections),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Medium,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = context.getString(R.string.settings_customize_home_layout),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                        Icon(
-                            imageVector = Icons.Rounded.ChevronRight,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(24.dp)
+                            )
+                        )
+                    ),
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
+            }
+
+            // ==================== WIDGET ITEM COUNTS ====================
+            item(key = "widget_counts_settings", contentType = "slider_group") {
+                val widgetCountItems = buildList {
+                    if (showRecentlyPlayed) {
+                        add(
+                            toMaterial3SettingsItem(
+                                context = context,
+                                hapticFeedback = haptic,
+                                item = SettingItem(
+                                    icon = Icons.Rounded.History,
+                                    title = "Recently Played",
+                                    description = "$recentlyPlayedCount songs"
+                                ),
+                                description = {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = 8.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Text(
+                                            text = "$recentlyPlayedCount songs",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                        Slider(
+                                            value = recentlyPlayedCount.toFloat(),
+                                            onValueChange = {
+                                                HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
+                                                appSettings.setHomeRecentlyPlayedCount(it.toInt())
+                                            },
+                                            valueRange = 3f..12f,
+                                            steps = 8,
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                    }
+                                }
+                            )
+                        )
+                    }
+
+                    if (showArtists) {
+                        add(
+                            toMaterial3SettingsItem(
+                                context = context,
+                                hapticFeedback = haptic,
+                                item = SettingItem(
+                                    icon = Icons.Rounded.People,
+                                    title = "Top Artists",
+                                    description = "$artistsCount artists"
+                                ),
+                                description = {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = 8.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Text(
+                                            text = "$artistsCount artists",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                        Slider(
+                                            value = artistsCount.toFloat(),
+                                            onValueChange = {
+                                                HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
+                                                appSettings.setHomeArtistsCount(it.toInt())
+                                            },
+                                            valueRange = 4f..20f,
+                                            steps = 15,
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                    }
+                                }
+                            )
+                        )
+                    }
+
+                    if (showNewReleases) {
+                        add(
+                            toMaterial3SettingsItem(
+                                context = context,
+                                hapticFeedback = haptic,
+                                item = SettingItem(
+                                    icon = Icons.Rounded.NewReleases,
+                                    title = "New Releases",
+                                    description = "$newReleasesCount albums"
+                                ),
+                                description = {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = 8.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Text(
+                                            text = "$newReleasesCount albums",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                        Slider(
+                                            value = newReleasesCount.toFloat(),
+                                            onValueChange = {
+                                                HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
+                                                appSettings.setHomeNewReleasesCount(it.toInt())
+                                            },
+                                            valueRange = 4f..20f,
+                                            steps = 15,
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                    }
+                                }
+                            )
+                        )
+                    }
+
+                    if (showRecentlyAdded) {
+                        add(
+                            toMaterial3SettingsItem(
+                                context = context,
+                                hapticFeedback = haptic,
+                                item = SettingItem(
+                                    icon = Icons.Rounded.LibraryAdd,
+                                    title = "Recently Added",
+                                    description = "$recentlyAddedCount albums"
+                                ),
+                                description = {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = 8.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Text(
+                                            text = "$recentlyAddedCount albums",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                        Slider(
+                                            value = recentlyAddedCount.toFloat(),
+                                            onValueChange = {
+                                                HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
+                                                appSettings.setHomeRecentlyAddedCount(it.toInt())
+                                            },
+                                            valueRange = 4f..20f,
+                                            steps = 15,
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                    }
+                                }
+                            )
+                        )
+                    }
+
+                    if (showRecommended) {
+                        add(
+                            toMaterial3SettingsItem(
+                                context = context,
+                                hapticFeedback = haptic,
+                                item = SettingItem(
+                                    icon = Icons.Rounded.Recommend,
+                                    title = "Recommended",
+                                    description = "$recommendedCount songs"
+                                ),
+                                description = {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = 8.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Text(
+                                            text = "$recommendedCount songs",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                        Slider(
+                                            value = recommendedCount.toFloat(),
+                                            onValueChange = {
+                                                HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
+                                                appSettings.setHomeRecommendedCount(it.toInt())
+                                            },
+                                            valueRange = 2f..8f,
+                                            steps = 5,
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                    }
+                                }
+                            )
+                        )
+                    }
+                }
+
+                if (widgetCountItems.isNotEmpty()) {
+                    Column {
+                        Spacer(modifier = Modifier.height(24.dp))
+                        Text(
+                            text = context.getString(R.string.settings_widget_item_counts),
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Material3SettingsGroup(
+                            items = widgetCountItems,
+                            containerColor = MaterialTheme.colorScheme.surfaceContainer
                         )
                     }
                 }
             }
 
-            // ==================== WIDGET ITEM COUNTS ====================
-            item(contentType = "slider_group") {
-                Column {
-                    Spacer(modifier = Modifier.height(24.dp))
-                    Text(
-                        text = context.getString(R.string.settings_widget_item_counts),
-                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
-                    )
-                    
-                    Spacer(modifier = Modifier.height(8.dp))
-                    
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(18.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                    ) {
-                        Column {
-                            var firstItem = true
-                            
-                            AnimatedVisibility(visible = showRecentlyPlayed) {
-                                Column {
-                                    if (!firstItem) {
-                                        HorizontalDivider(
-                                            modifier = Modifier.padding(horizontal = 20.dp),
-                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                                        )
-                                    }
-                                    HomeSettingsSliderRow(
-                                        icon = Icons.Rounded.History,
-                                        title = "Recently Played",
-                                        description = "$recentlyPlayedCount songs",
-                                        value = recentlyPlayedCount.toFloat(),
-                                        valueRange = 3f..12f,
-                                        steps = 8,
-                                        onValueChange = { appSettings.setHomeRecentlyPlayedCount(it.toInt()) }
-                                    )
-                                }
-                            }
-                            
-                            if (showRecentlyPlayed) { firstItem = false }
-
-                            AnimatedVisibility(visible = showArtists) {
-                                Column {
-                                    if (!firstItem) {
-                                        HorizontalDivider(
-                                            modifier = Modifier.padding(horizontal = 20.dp),
-                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                                        )
-                                    }
-                                    HomeSettingsSliderRow(
-                                        icon = Icons.Rounded.People,
-                                        title = "Top Artists",
-                                        description = "$artistsCount artists",
-                                        value = artistsCount.toFloat(),
-                                        valueRange = 4f..20f,
-                                        steps = 15,
-                                        onValueChange = { appSettings.setHomeArtistsCount(it.toInt()) }
-                                    )
-                                }
-                            }
-                            
-                            if (showArtists) { firstItem = false }
-
-                            AnimatedVisibility(visible = showNewReleases) {
-                                Column {
-                                    if (!firstItem) {
-                                        HorizontalDivider(
-                                            modifier = Modifier.padding(horizontal = 20.dp),
-                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                                        )
-                                    }
-                                    HomeSettingsSliderRow(
-                                        icon = Icons.Rounded.NewReleases,
-                                        title = "New Releases",
-                                        description = "$newReleasesCount albums",
-                                        value = newReleasesCount.toFloat(),
-                                        valueRange = 4f..20f,
-                                        steps = 15,
-                                        onValueChange = { appSettings.setHomeNewReleasesCount(it.toInt()) }
-                                    )
-                                }
-                            }
-                            
-                            if (showNewReleases) { firstItem = false }
-
-                            AnimatedVisibility(visible = showRecentlyAdded) {
-                                Column {
-                                    if (!firstItem) {
-                                        HorizontalDivider(
-                                            modifier = Modifier.padding(horizontal = 20.dp),
-                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                                        )
-                                    }
-                                    HomeSettingsSliderRow(
-                                        icon = Icons.Rounded.LibraryAdd,
-                                        title = "Recently Added",
-                                        description = "$recentlyAddedCount albums",
-                                        value = recentlyAddedCount.toFloat(),
-                                        valueRange = 4f..20f,
-                                        steps = 15,
-                                        onValueChange = { appSettings.setHomeRecentlyAddedCount(it.toInt()) }
-                                    )
-                                }
-                            }
-                            
-                            if (showRecentlyAdded) { firstItem = false }
-
-                            AnimatedVisibility(visible = showRecommended) {
-                                Column {
-                                    if (!firstItem) {
-                                        HorizontalDivider(
-                                            modifier = Modifier.padding(horizontal = 20.dp),
-                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                                        )
-                                    }
-                                    HomeSettingsSliderRow(
-                                        icon = Icons.Rounded.Recommend,
-                                        title = "Recommended",
-                                        description = "$recommendedCount songs",
-                                        value = recommendedCount.toFloat(),
-                                        valueRange = 2f..8f,
-                                        steps = 5,
-                                        onValueChange = { appSettings.setHomeRecommendedCount(it.toInt()) }
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
             // ==================== DISCOVER CAROUSEL SETTINGS ====================
-            item(contentType = "settings_card") {
+            item(key = "discover_carousel_settings", contentType = "settings_card") {
                 AnimatedVisibility(visible = showDiscoverCarousel) {
                     Column {
                         Spacer(modifier = Modifier.height(24.dp))
@@ -14390,189 +16038,217 @@ fun HomeScreenCustomizationSettingsScreen(onBackClick: () -> Unit) {
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
                         )
-                        
-                        Spacer(modifier = Modifier.height(8.dp))
-                        
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(18.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                        ) {
-                            Column {
-                                // Carousel Style Selector
-                                Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.padding(bottom = 12.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.ViewCarousel,
-                                            contentDescription = null,
+
+                        val discoverToggleItems = listOf(
+                            SettingItem(
+                                Icons.Rounded.PlayCircle,
+                                "Auto-Scroll",
+                                "Automatically cycle through albums",
+                                toggleState = discoverAutoScroll,
+                                onToggleChange = { appSettings.setHomeDiscoverAutoScroll(it) }
+                            ),
+                            SettingItem(
+                                Icons.Rounded.Album,
+                                "Album Name",
+                                "Show album title on card",
+                                toggleState = discoverShowAlbumName,
+                                onToggleChange = { appSettings.setHomeDiscoverShowAlbumName(it) }
+                            ),
+                            SettingItem(
+                                Icons.Rounded.Person,
+                                "Artist Name",
+                                "Show artist name on card",
+                                toggleState = discoverShowArtistName,
+                                onToggleChange = { appSettings.setHomeDiscoverShowArtistName(it) }
+                            ),
+                            SettingItem(
+                                Icons.Rounded.CalendarToday,
+                                "Release Year",
+                                "Show album release year",
+                                toggleState = discoverShowYear,
+                                onToggleChange = { appSettings.setHomeDiscoverShowYear(it) }
+                            ),
+                            SettingItem(
+                                Icons.Rounded.PlayArrow,
+                                "Play Button",
+                                "Show quick play button",
+                                toggleState = discoverShowPlayButton,
+                                onToggleChange = { appSettings.setHomeDiscoverShowPlayButton(it) }
+                            ),
+                            SettingItem(
+                                Icons.Rounded.Gradient,
+                                "Gradient Overlay",
+                                "Show gradient behind text",
+                                toggleState = discoverShowGradient,
+                                onToggleChange = { appSettings.setHomeDiscoverShowGradient(it) }
+                            )
+                        )
+
+                        val discoverItems = buildList {
+                            add(
+                                toMaterial3SettingsItem(
+                                    context = context,
+                                    hapticFeedback = haptic,
+                                    item = SettingItem(
+                                        icon = Icons.Rounded.ViewCarousel,
+                                        title = "Carousel Style",
+                                        description = context.getString(R.string.settings_choose_album_display)
+                                    ),
+                                    description = {
+                                        Column(
                                             modifier = Modifier
-                                                .size(40.dp)
-                                                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(50))
-                                                .padding(8.dp),
-                                            tint = MaterialTheme.colorScheme.onSurface
-                                        )
-                                        Spacer(modifier = Modifier.width(16.dp))
-                                        Column {
-                                            Text(
-                                                text = "Carousel Style",
-                                                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
-                                                color = MaterialTheme.colorScheme.onSurface
-                                            )
+                                                .fillMaxWidth()
+                                                .padding(top = 8.dp),
+                                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                                        ) {
                                             Text(
                                                 text = context.getString(R.string.settings_choose_album_display),
-                                                style = MaterialTheme.typography.bodySmall,
+                                                style = MaterialTheme.typography.bodyMedium,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            ExpressiveButtonGroup(
+                                                items = listOf("Default", "Hero"),
+                                                selectedIndex = discoverCarouselStyle,
+                                                onItemClick = { index ->
+                                                    HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
+                                                    appSettings.setHomeDiscoverCarouselStyle(index)
+                                                },
+                                                modifier = Modifier.fillMaxWidth()
                                             )
                                         }
                                     }
+                                )
+                            )
 
-                                    ExpressiveButtonGroup(
-                                        items = listOf("Default", "Hero"),
-                                        selectedIndex = discoverCarouselStyle,
-                                        onItemClick = { index ->
-                                            HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
-                                            appSettings.setHomeDiscoverCarouselStyle(index)
-                                        },
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
+                            addAll(
+                                discoverToggleItems.map { item ->
+                                    toMaterial3SettingsItem(context = context, item = item, hapticFeedback = haptic)
                                 }
-                                
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 20.dp),
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                                )
-                                TunerSettingRow(
-                                    item = SettingItem(
-                                        Icons.Rounded.PlayCircle,
-                                        "Auto-Scroll",
-                                        "Automatically cycle through albums",
-                                        toggleState = discoverAutoScroll,
-                                        onToggleChange = { appSettings.setHomeDiscoverAutoScroll(it) }
-                                    )
-                                )
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 20.dp),
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                                )
-                                TunerSettingRow(
-                                    item = SettingItem(
-                                        Icons.Rounded.Album,
-                                        "Album Name",
-                                        "Show album title on card",
-                                        toggleState = discoverShowAlbumName,
-                                        onToggleChange = { appSettings.setHomeDiscoverShowAlbumName(it) }
-                                    )
-                                )
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 20.dp),
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                                )
-                                TunerSettingRow(
-                                    item = SettingItem(
-                                        Icons.Rounded.Person,
-                                        "Artist Name",
-                                        "Show artist name on card",
-                                        toggleState = discoverShowArtistName,
-                                        onToggleChange = { appSettings.setHomeDiscoverShowArtistName(it) }
-                                    )
-                                )
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 20.dp),
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                                )
-                                TunerSettingRow(
-                                    item = SettingItem(
-                                        Icons.Rounded.CalendarToday,
-                                        "Release Year",
-                                        "Show album release year",
-                                        toggleState = discoverShowYear,
-                                        onToggleChange = { appSettings.setHomeDiscoverShowYear(it) }
-                                    )
-                                )
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 20.dp),
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                                )
-                                TunerSettingRow(
-                                    item = SettingItem(
-                                        Icons.Rounded.PlayArrow,
-                                        "Play Button",
-                                        "Show quick play button",
-                                        toggleState = discoverShowPlayButton,
-                                        onToggleChange = { appSettings.setHomeDiscoverShowPlayButton(it) }
-                                    )
-                                )
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 20.dp),
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                                )
-                                TunerSettingRow(
-                                    item = SettingItem(
-                                        Icons.Rounded.Gradient,
-                                        "Gradient Overlay",
-                                        "Show gradient behind text",
-                                        toggleState = discoverShowGradient,
-                                        onToggleChange = { appSettings.setHomeDiscoverShowGradient(it) }
-                                    )
-                                )
-                                
-                                AnimatedVisibility(visible = discoverAutoScroll) {
-                                    Column {
-                                        HorizontalDivider(
-                                            modifier = Modifier.padding(horizontal = 20.dp),
-                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                                        )
-                                        HomeSettingsSliderRow(
+                            )
+
+                            if (discoverAutoScroll) {
+                                add(
+                                    toMaterial3SettingsItem(
+                                        context = context,
+                                        hapticFeedback = haptic,
+                                        item = SettingItem(
                                             icon = Icons.Rounded.Timer,
                                             title = "Auto-Scroll Interval",
-                                            description = "$discoverAutoScrollInterval seconds",
-                                            value = discoverAutoScrollInterval.toFloat(),
-                                            valueRange = 2f..15f,
-                                            steps = 12,
-                                            onValueChange = { appSettings.setHomeDiscoverAutoScrollInterval(it.toInt()) }
-                                        )
-                                    }
-                                }
-                                
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 20.dp),
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                                )
-                                HomeSettingsSliderRow(
-                                    icon = Icons.Rounded.ViewCarousel,
-                                    title = "Album Count",
-                                    description = "$discoverItemCount albums",
-                                    value = discoverItemCount.toFloat(),
-                                    valueRange = 3f..12f,
-                                    steps = 8,
-                                    onValueChange = { appSettings.setHomeDiscoverItemCount(it.toInt()) }
-                                )
-                                
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 20.dp),
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                                )
-                                HomeSettingsSliderRow(
-                                    icon = Icons.Rounded.Height,
-                                    title = "Carousel Height",
-                                    description = "${carouselHeight}dp",
-                                    value = carouselHeight.toFloat(),
-                                    valueRange = 180f..320f,
-                                    steps = 13,
-                                    onValueChange = { appSettings.setHomeCarouselHeight(it.toInt()) }
+                                            description = "$discoverAutoScrollInterval seconds"
+                                        ),
+                                        description = {
+                                            Column(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(top = 8.dp),
+                                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                Text(
+                                                    text = "$discoverAutoScrollInterval seconds",
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    color = MaterialTheme.colorScheme.primary
+                                                )
+                                                Slider(
+                                                    value = discoverAutoScrollInterval.toFloat(),
+                                                    onValueChange = {
+                                                        HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
+                                                        appSettings.setHomeDiscoverAutoScrollInterval(it.toInt())
+                                                    },
+                                                    valueRange = 2f..15f,
+                                                    steps = 12,
+                                                    modifier = Modifier.fillMaxWidth()
+                                                )
+                                            }
+                                        }
+                                    )
                                 )
                             }
+
+                            add(
+                                toMaterial3SettingsItem(
+                                    context = context,
+                                    hapticFeedback = haptic,
+                                    item = SettingItem(
+                                        icon = Icons.Rounded.ViewCarousel,
+                                        title = "Album Count",
+                                        description = "$discoverItemCount albums"
+                                    ),
+                                    description = {
+                                        Column(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(top = 8.dp),
+                                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Text(
+                                                text = "$discoverItemCount albums",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                            Slider(
+                                                value = discoverItemCount.toFloat(),
+                                                onValueChange = {
+                                                    HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
+                                                    appSettings.setHomeDiscoverItemCount(it.toInt())
+                                                },
+                                                valueRange = 3f..12f,
+                                                steps = 8,
+                                                modifier = Modifier.fillMaxWidth()
+                                            )
+                                        }
+                                    }
+                                )
+                            )
+
+                            add(
+                                toMaterial3SettingsItem(
+                                    context = context,
+                                    hapticFeedback = haptic,
+                                    item = SettingItem(
+                                        icon = Icons.Rounded.Height,
+                                        title = "Carousel Height",
+                                        description = "${carouselHeight}dp"
+                                    ),
+                                    description = {
+                                        Column(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(top = 8.dp),
+                                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Text(
+                                                text = "${carouselHeight}dp",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                            Slider(
+                                                value = carouselHeight.toFloat(),
+                                                onValueChange = {
+                                                    HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
+                                                    appSettings.setHomeCarouselHeight(it.toInt())
+                                                },
+                                                valueRange = 180f..320f,
+                                                steps = 13,
+                                                modifier = Modifier.fillMaxWidth()
+                                            )
+                                        }
+                                    }
+                                )
+                            )
                         }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Material3SettingsGroup(
+                            items = discoverItems,
+                            containerColor = MaterialTheme.colorScheme.surfaceContainer
+                        )
                     }
                 }
             }
 
             // Quick Tips Card
-            item(contentType = "tips") {
+            item(key = "tips_card", contentType = "tips") {
                 Spacer(modifier = Modifier.height(24.dp))
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -14624,7 +16300,7 @@ fun HomeScreenCustomizationSettingsScreen(onBackClick: () -> Unit) {
                 }
             }
 
-            item() { Spacer(modifier = Modifier.height(24.dp)) }
+            item(key = "bottom_spacer") { Spacer(modifier = Modifier.height(24.dp)) }
         }
     }
 }
@@ -14963,7 +16639,6 @@ fun ExpressiveShapesSettingsScreen(onBackClick: () -> Unit) {
     val context = LocalContext.current
     val appSettings = AppSettings.getInstance(context)
     val haptic = LocalHapticFeedback.current
-    val scope = rememberCoroutineScope()
     
     // Collect settings states
     val expressiveShapesEnabled by appSettings.expressiveShapesEnabled.collectAsState()
@@ -15012,7 +16687,6 @@ fun ExpressiveShapesSettingsScreen(onBackClick: () -> Unit) {
             ShapeOption("CLOVER_8_LEAF", "8-Leaf Clover", "Eight-leaf clover", "Organic"),
             ShapeOption("HEART", "Heart", "Heart shape", "Organic"),
             ShapeOption("BUN", "Bun", "Bun/bread shape", "Organic"),
-            ShapeOption("BUTTERFLY", "Butterfly", "Butterfly shape", "Organic"),
             // Playful Shapes
             ShapeOption("BOOM", "Boom", "Explosion shape", "Playful"),
             ShapeOption("SOFT_BOOM", "Soft Boom", "Softer explosion", "Playful"),
@@ -15020,7 +16694,6 @@ fun ExpressiveShapesSettingsScreen(onBackClick: () -> Unit) {
             ShapeOption("SOFT_BURST", "Soft Burst", "Softer starburst", "Playful"),
             ShapeOption("SUNNY", "Sunny", "Sun with rays", "Playful"),
             ShapeOption("VERY_SUNNY", "Very Sunny", "Sun with more rays", "Playful"),
-            ShapeOption("STAR", "Star", "Star shape", "Playful"),
             // Cookie Shapes
             ShapeOption("COOKIE_4", "Cookie 4", "4-sided cookie", "Cookie"),
             ShapeOption("COOKIE_6", "Cookie 6", "6-sided cookie", "Cookie"),
@@ -15044,6 +16717,52 @@ fun ExpressiveShapesSettingsScreen(onBackClick: () -> Unit) {
             ShapeOption("PIXEL_CIRCLE", "Pixel Circle", "Pixelated circle", "Pixel"),
             ShapeOption("PIXEL_TRIANGLE", "Pixel Triangle", "Pixelated triangle", "Pixel")
         )
+    }
+
+    // Migrate legacy unsupported shape IDs to currently available equivalents.
+    val availableShapeIds = remember(allShapes) { allShapes.map { it.id }.toSet() }
+    val legacyShapeReplacements = remember {
+        mapOf(
+            "STAR" to "BURST",
+            "BUTTERFLY" to "FLOWER"
+        )
+    }
+
+    LaunchedEffect(
+        shapeAlbumArt,
+        shapePlayerArt,
+        shapeSongArt,
+        shapePlaylistArt,
+        shapeArtistArt,
+        shapePlayerControls,
+        shapeMiniPlayer,
+        availableShapeIds
+    ) {
+        fun sanitizeShapeId(value: String, fallback: String): String {
+            val mapped = legacyShapeReplacements[value] ?: value
+            return if (mapped in availableShapeIds) mapped else fallback
+        }
+
+        val sanitizedAlbumArt = sanitizeShapeId(shapeAlbumArt, "GHOSTISH")
+        if (sanitizedAlbumArt != shapeAlbumArt) appSettings.setExpressiveShapeAlbumArt(sanitizedAlbumArt)
+
+        val sanitizedPlayerArt = sanitizeShapeId(shapePlayerArt, "BUN")
+        if (sanitizedPlayerArt != shapePlayerArt) appSettings.setExpressiveShapePlayerArt(sanitizedPlayerArt)
+
+        val sanitizedSongArt = sanitizeShapeId(shapeSongArt, "CLOVER_8_LEAF")
+        if (sanitizedSongArt != shapeSongArt) appSettings.setExpressiveShapeSongArt(sanitizedSongArt)
+
+        val sanitizedPlaylistArt = sanitizeShapeId(shapePlaylistArt, "CLOVER_4_LEAF")
+        if (sanitizedPlaylistArt != shapePlaylistArt) appSettings.setExpressiveShapePlaylistArt(sanitizedPlaylistArt)
+
+        val sanitizedArtistArt = sanitizeShapeId(shapeArtistArt, "PIXEL_CIRCLE")
+        if (sanitizedArtistArt != shapeArtistArt) appSettings.setExpressiveShapeArtistArt(sanitizedArtistArt)
+
+        val sanitizedPlayerControls = sanitizeShapeId(shapePlayerControls, "COOKIE_12")
+        if (sanitizedPlayerControls != shapePlayerControls) appSettings.setExpressiveShapePlayerControls(sanitizedPlayerControls)
+
+        val sanitizedMiniPlayer = sanitizeShapeId(shapeMiniPlayer, "COOKIE_4")
+        if (sanitizedMiniPlayer != shapeMiniPlayer) appSettings.setExpressiveShapeMiniPlayer(sanitizedMiniPlayer)
     }
     
     // Define shape targets with current values
@@ -15071,8 +16790,8 @@ fun ExpressiveShapesSettingsScreen(onBackClick: () -> Unit) {
                 .padding(horizontal = 24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Enable/Disable Card 
-            item() {
+            // Enable/Disable Card
+            item(key = "expressive_shapes_toggle") {
                 Spacer(modifier = Modifier.height(8.dp))
                 Card(
                     colors = CardDefaults.cardColors(
@@ -15093,17 +16812,17 @@ fun ExpressiveShapesSettingsScreen(onBackClick: () -> Unit) {
                         Icon(
                             imageVector = Icons.Default.Interests,
                             contentDescription = null,
-                            tint = if (expressiveShapesEnabled) MaterialTheme.colorScheme.primary
-                                   else MaterialTheme.colorScheme.onSurfaceVariant,
+                            tint = if (expressiveShapesEnabled) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
                             modifier = Modifier.size(32.dp)
                         )
                         Spacer(modifier = Modifier.width(16.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = when {
-                                    expressiveShapesEnabled -> "Active"
-                                    else -> "Disabled"
-                                },
+                                text = if (expressiveShapesEnabled) "Active" else "Disabled",
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold
                             )
@@ -15118,46 +16837,46 @@ fun ExpressiveShapesSettingsScreen(onBackClick: () -> Unit) {
                     }
                 }
             }
-            
+
             // Preset Selection with animation
-            item() {
+            item(key = "preset_section") {
                 AnimatedVisibility(
                     visible = expressiveShapesEnabled,
                     enter = fadeIn() + expandVertically(),
                     exit = fadeOut() + shrinkVertically()
                 ) {
                     Column {
-                    Spacer(modifier = Modifier.height(24.dp))
+                        Spacer(modifier = Modifier.height(24.dp))
                         Text(
                             text = "Quick Presets",
                             style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
                         )
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(18.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                        ) {
-                            TunerSettingRow(
-                                item = SettingItem(
-                                    Icons.Default.Style,
-                                    "Shape Preset",
-                                    presets.find { it.id == currentPreset }?.displayName ?: "Default",
-                                    onClick = {
-                                        HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
-                                        showPresetDialog = true
-                                    }
+                        Material3SettingsGroup(
+                            items = listOf(
+                                toMaterial3SettingsItem(
+                                    context = context,
+                                    hapticFeedback = haptic,
+                                    item = SettingItem(
+                                        Icons.Default.Style,
+                                        "Shape Preset",
+                                        presets.find { it.id == currentPreset }?.displayName ?: "Default",
+                                        onClick = {
+                                            HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
+                                            showPresetDialog = true
+                                        }
+                                    )
                                 )
-                            )
-                        }
+                            ),
+                            containerColor = MaterialTheme.colorScheme.surfaceContainer
+                        )
                     }
                 }
             }
             
             // Preset Preview Row with animation
-            item() {
+            item(key = "preset_preview") {
                 AnimatedVisibility(
                     visible = expressiveShapesEnabled,
                     enter = fadeIn() + expandVertically(),
@@ -15222,8 +16941,52 @@ fun ExpressiveShapesSettingsScreen(onBackClick: () -> Unit) {
                 }
             }
             
+            // Randomize Button
+            item(key = "randomize_shapes") {
+                AnimatedVisibility(
+                    visible = expressiveShapesEnabled,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
+                    Card(
+                        onClick = {
+                            HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.LongPress)
+                            appSettings.randomizeExpressiveShapes()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                        ),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 20.dp, vertical = 18.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Shuffle,
+                                contentDescription = "Randomize shapes",
+                                modifier = Modifier.size(22.dp),
+                                tint = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = "Randomize All Shapes",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                        }
+                    }
+                }
+            }
+            
             // Individual Shape Customization with animation
-            item() {
+            item(key = "individual_shapes_header") {
                 AnimatedVisibility(
                     visible = expressiveShapesEnabled,
                     enter = fadeIn() + expandVertically(),
@@ -15237,96 +17000,38 @@ fun ExpressiveShapesSettingsScreen(onBackClick: () -> Unit) {
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
                     )
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(18.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                    ) {
-                        Column {
-                            shapeTargets.forEachIndexed { index, (targetId, namePair, currentShape) ->
-                                val (targetName, targetDesc) = namePair
-                                val currentShapeName = allShapes.find { it.id == currentShape }?.displayName ?: currentShape
-                                
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
-                                            showShapePickerDialog = targetId
-                                        }
-                                        .padding(horizontal = 18.dp, vertical = 16.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    // Shape preview with actual MaterialShape
-                                    Surface(
-                                        modifier = Modifier.size(44.dp),
-                                        shape = RoundedCornerShape(12.dp),
-                                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
-                                    ) {
-                                        Box(
-                                            contentAlignment = Alignment.Center,
-                                            modifier = Modifier.fillMaxSize()
-                                        ) {
-                                            // Simple shape preview icon
-                                            Icon(
-                                                imageVector = when (targetId) {
-                                                    "ALBUM_ART" -> Icons.Default.Album
-                                                    "PLAYER_ART" -> Icons.Default.MusicNote
-                                                    "SONG_ART" -> Icons.Default.AudioFile
-                                                    "PLAYLIST_ART" -> Icons.Default.QueueMusic
-                                                    "ARTIST_ART" -> Icons.Default.Person
-                                                    "PLAYER_CONTROLS" -> Icons.Default.PlayCircle
-                                                    "MINI_PLAYER" -> Icons.Default.MusicNote
-                                                    else -> Icons.Default.Category
-                                                },
-                                                contentDescription = targetName,
-                                                modifier = Modifier.size(24.dp),
-                                                tint = MaterialTheme.colorScheme.onPrimaryContainer
-                                            )
-                                        }
-                                    }
-                                    
-                                    Spacer(modifier = Modifier.width(16.dp))
-                                    
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = targetName,
-                                            style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = MaterialTheme.colorScheme.onSurface
-                                        )
-                                        Spacer(modifier = Modifier.height(2.dp))
-                                        Text(
-                                            text = currentShapeName,
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
-                                    
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
-                                        contentDescription = "Change shape",
-                                        modifier = Modifier.size(18.dp),
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                                    )
-                                }
-                                
-                                if (index < shapeTargets.lastIndex) {
-                                    HorizontalDivider(
-                                        modifier = Modifier.padding(horizontal = 20.dp),
-                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                                    )
-                                }
-                            }
-                        }
-                    }
+                    Material3SettingsGroup(
+                        items = shapeTargets.map { (targetId, namePair, currentShape) ->
+                            val (targetName, _) = namePair
+                            val currentShapeName = allShapes.find { it.id == currentShape }?.displayName ?: currentShape
+                            toMaterial3SettingsItem(
+                                context = context,
+                                hapticFeedback = haptic,
+                                item = SettingItem(
+                                    icon = when (targetId) {
+                                        "ALBUM_ART" -> Icons.Default.Album
+                                        "PLAYER_ART" -> Icons.Default.MusicNote
+                                        "SONG_ART" -> Icons.Default.AudioFile
+                                        "PLAYLIST_ART" -> Icons.Default.QueueMusic
+                                        "ARTIST_ART" -> Icons.Default.Person
+                                        "PLAYER_CONTROLS" -> Icons.Default.PlayCircle
+                                        "MINI_PLAYER" -> Icons.Default.MusicNote
+                                        else -> Icons.Default.Category
+                                    },
+                                    title = targetName,
+                                    description = currentShapeName,
+                                    onClick = { showShapePickerDialog = targetId }
+                                )
+                            )
+                        },
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer
+                    )
                     } // Column
                 } // AnimatedVisibility
             }
             
             // Info/Tip Card about M3 Expressive
-            item() {
+            item(key = "expressive_info_card") {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp),
@@ -15366,7 +17071,7 @@ fun ExpressiveShapesSettingsScreen(onBackClick: () -> Unit) {
             }
 
             // Bottom spacer
-            item() {
+            item(key = "bottom_spacer") {
                 Spacer(modifier = Modifier.height(100.dp))
             }
         }
@@ -15374,14 +17079,18 @@ fun ExpressiveShapesSettingsScreen(onBackClick: () -> Unit) {
     
     // Preset Selection Bottom Sheet
     if (showPresetDialog) {
-        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         var showPresetContent by remember { mutableStateOf(false) }
-        
+
         LaunchedEffect(Unit) {
             delay(100)
             showPresetContent = true
         }
-        
+
+        LaunchedEffect(sheetState) {
+            sheetState.expand()
+        }
+
         ModalBottomSheet(
             onDismissRequest = { showPresetDialog = false },
             sheetState = sheetState,
@@ -15389,7 +17098,8 @@ fun ExpressiveShapesSettingsScreen(onBackClick: () -> Unit) {
                 BottomSheetDefaults.DragHandle(color = MaterialTheme.colorScheme.primary)
             },
             shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-            containerColor = MaterialTheme.colorScheme.surfaceContainer
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+            modifier = Modifier.fillMaxHeight(0.95f)
         ) {
             Column(
                 modifier = Modifier
@@ -15403,9 +17113,9 @@ fun ExpressiveShapesSettingsScreen(onBackClick: () -> Unit) {
                     subtitle = "Select a theme for all components",
                     visible = showPresetContent
                 )
-                
+
                 Spacer(modifier = Modifier.height(16.dp))
-                
+
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -15413,7 +17123,7 @@ fun ExpressiveShapesSettingsScreen(onBackClick: () -> Unit) {
                 ) {
                     presets.forEach { preset ->
                         val isSelected = preset.id == currentPreset
-                        
+
                         // Master animation states
                         var isPressed by remember { mutableStateOf(false) }
                         val scale by animateFloatAsState(
@@ -15424,7 +17134,7 @@ fun ExpressiveShapesSettingsScreen(onBackClick: () -> Unit) {
                             ),
                             label = "preset_scale"
                         )
-                        
+
                         val containerColor by animateColorAsState(
                             targetValue = if (isSelected)
                                 MaterialTheme.colorScheme.primaryContainer
@@ -15436,7 +17146,7 @@ fun ExpressiveShapesSettingsScreen(onBackClick: () -> Unit) {
                             ),
                             label = "preset_container_color"
                         )
-                        
+
                         Card(
                             onClick = {
                                 HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
@@ -15521,7 +17231,7 @@ fun ExpressiveShapesSettingsScreen(onBackClick: () -> Unit) {
                                 )
                             }
                         }
-                        
+
                         // Reset press state
                         LaunchedEffect(isPressed) {
                             if (isPressed) {
@@ -15534,18 +17244,22 @@ fun ExpressiveShapesSettingsScreen(onBackClick: () -> Unit) {
             }
         }
     }
-    
+
     // Individual Shape Picker Bottom Sheet
     showShapePickerDialog?.let { targetId ->
-        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         val targetName = shapeTargets.find { it.first == targetId }?.second?.first ?: targetId
         var showShapeContent by remember { mutableStateOf(false) }
-        
+
         LaunchedEffect(Unit) {
             delay(100)
             showShapeContent = true
         }
-        
+
+        LaunchedEffect(sheetState) {
+            sheetState.expand()
+        }
+
         val currentShapeForTarget = when (targetId) {
             "ALBUM_ART" -> shapeAlbumArt
             "PLAYER_ART" -> shapePlayerArt
@@ -15556,10 +17270,10 @@ fun ExpressiveShapesSettingsScreen(onBackClick: () -> Unit) {
             "MINI_PLAYER" -> shapeMiniPlayer
             else -> "CIRCLE"
         }
-        
+
         // Group shapes by category
         val groupedShapes = allShapes.groupBy { it.category }
-        
+
         ModalBottomSheet(
             onDismissRequest = { showShapePickerDialog = null },
             sheetState = sheetState,
@@ -15567,7 +17281,8 @@ fun ExpressiveShapesSettingsScreen(onBackClick: () -> Unit) {
                 BottomSheetDefaults.DragHandle(color = MaterialTheme.colorScheme.primary)
             },
             shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-            containerColor = MaterialTheme.colorScheme.surfaceContainer
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+            modifier = Modifier.fillMaxHeight(0.95f)
         ) {
             Column(
                 modifier = Modifier
@@ -15580,9 +17295,9 @@ fun ExpressiveShapesSettingsScreen(onBackClick: () -> Unit) {
                     subtitle = "Choose an expressive shape",
                     visible = showShapeContent
                 )
-                
+
                 Spacer(modifier = Modifier.height(16.dp))
-                
+
                 // Shape options in a grid
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(2),
@@ -15591,7 +17306,7 @@ fun ExpressiveShapesSettingsScreen(onBackClick: () -> Unit) {
                     contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp)
                 ) {
                     groupedShapes.forEach { (category, shapes) ->
-                        item(span = { GridItemSpan(2) }) {
+                        item(key = "category_$category", span = { GridItemSpan(2) }) {
                             Text(
                                 text = category,
                                 style = MaterialTheme.typography.labelLarge,
@@ -15600,13 +17315,13 @@ fun ExpressiveShapesSettingsScreen(onBackClick: () -> Unit) {
                                 modifier = Modifier.padding(top = 12.dp, bottom = 8.dp)
                             )
                         }
-                        
+
                         items(
                             items = shapes,
                             key = { "shape_${it.id}" }
                         ) { shape ->
                             val isSelected = shape.id == currentShapeForTarget
-                            
+
                             // Master animation states
                             var isPressed by remember { mutableStateOf(false) }
                             val scale by animateFloatAsState(
@@ -15617,7 +17332,7 @@ fun ExpressiveShapesSettingsScreen(onBackClick: () -> Unit) {
                                 ),
                                 label = "shape_scale"
                             )
-                            
+
                             val containerColor by animateColorAsState(
                                 targetValue = if (isSelected)
                                     MaterialTheme.colorScheme.primaryContainer
@@ -15629,7 +17344,7 @@ fun ExpressiveShapesSettingsScreen(onBackClick: () -> Unit) {
                                 ),
                                 label = "shape_container_color"
                             )
-                            
+
                             Card(
                                 onClick = {
                                     HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
@@ -15677,9 +17392,9 @@ fun ExpressiveShapesSettingsScreen(onBackClick: () -> Unit) {
                                     ) {
                                         Box(modifier = Modifier.fillMaxSize())
                                     }
-                                    
+
                                     Spacer(modifier = Modifier.height(8.dp))
-                                    
+
                                     Text(
                                         text = shape.displayName,
                                         style = MaterialTheme.typography.labelMedium,
@@ -15692,7 +17407,7 @@ fun ExpressiveShapesSettingsScreen(onBackClick: () -> Unit) {
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
-                                    
+
                                     Text(
                                         text = shape.description,
                                         style = MaterialTheme.typography.labelSmall,
@@ -15707,7 +17422,7 @@ fun ExpressiveShapesSettingsScreen(onBackClick: () -> Unit) {
                                     )
                                 }
                             }
-                            
+
                             // Reset press state
                             LaunchedEffect(isPressed) {
                                 if (isPressed) {
@@ -15880,98 +17595,3 @@ fun PlaceholderSettingsScreen() {
 
 
 
-
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-@Composable
-fun ImmersiveModeSettingsScreen(onBackClick: () -> Unit) {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val appSettings = chromahub.rhythm.app.shared.data.model.AppSettings.getInstance(context)
-    
-    val immersiveScope by appSettings.immersiveScope.collectAsState()
-    val immersiveBehaviour by appSettings.immersiveBehaviour.collectAsState()
-
-    chromahub.rhythm.app.shared.presentation.components.common.CollapsibleHeaderScreen(
-        title = "Immersive Mode",
-        showBackButton = true,
-        onBackClick = onBackClick
-    ) {
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 16.dp, top = 16.dp)
-        ) {
-            item {
-                Spacer(modifier = Modifier.height(16.dp))
-                // Scope
-                SettingsSectionHeader(title = "Fullscreen mode")
-                
-                ScopeOption(
-                    title = "Off",
-                    selected = immersiveScope == chromahub.rhythm.app.shared.data.model.ImmersiveScope.OFF,
-                    onClick = { appSettings.setImmersiveScope(chromahub.rhythm.app.shared.data.model.ImmersiveScope.OFF) }
-                )
-                ScopeOption(
-                    title = "Player screen only",
-                    selected = immersiveScope == chromahub.rhythm.app.shared.data.model.ImmersiveScope.PLAYER_ONLY,
-                    onClick = { appSettings.setImmersiveScope(chromahub.rhythm.app.shared.data.model.ImmersiveScope.PLAYER_ONLY) }
-                )
-                ScopeOption(
-                    title = "Entire app",
-                    selected = immersiveScope == chromahub.rhythm.app.shared.data.model.ImmersiveScope.WHOLE_APP,
-                    onClick = { appSettings.setImmersiveScope(chromahub.rhythm.app.shared.data.model.ImmersiveScope.WHOLE_APP) }
-                )
-
-                if (immersiveScope != chromahub.rhythm.app.shared.data.model.ImmersiveScope.OFF) {
-                    Spacer(modifier = Modifier.height(24.dp))
-                    SettingsSectionHeader(title = "Bar behaviour")
-                    
-                    ScopeOption(
-                        title = "Auto-hide after swipe",
-                        selected = immersiveBehaviour == chromahub.rhythm.app.shared.data.model.ImmersiveBehaviour.STICKY,
-                        onClick = { appSettings.setImmersiveBehaviour(chromahub.rhythm.app.shared.data.model.ImmersiveBehaviour.STICKY) }
-                    )
-                    ScopeOption(
-                        title = "Stay visible after swipe",
-                        selected = immersiveBehaviour == chromahub.rhythm.app.shared.data.model.ImmersiveBehaviour.NON_STICKY,
-                        onClick = { appSettings.setImmersiveBehaviour(chromahub.rhythm.app.shared.data.model.ImmersiveBehaviour.NON_STICKY) }
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = "Swipe from the top or bottom edge to temporarily show system bars.",
-                        style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
-                        color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SettingsSectionHeader(title: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.titleSmall.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
-    )
-}
-
-@Composable
-private fun ScopeOption(title: String, selected: Boolean, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
-    ) {
-        androidx.compose.material3.RadioButton(
-            selected = selected,
-            onClick = null
-        )
-        Spacer(modifier = Modifier.width(16.dp))
-        Text(text = title, style = androidx.compose.material3.MaterialTheme.typography.bodyLarge)
-    }
-}

@@ -2615,7 +2615,7 @@ fun PlaylistSongItem(
     Surface(
         onClick = onClick,
         color = selectionContainerColor,
-        shape = RoundedCornerShape(16.dp),
+        shape = groupedPlaylistDetailItemShape(index, totalCount),
         tonalElevation = itemElevation,
         shadowElevation = 0.dp,
         modifier = Modifier
@@ -2826,5 +2826,24 @@ fun PlaylistSongItem(
                 }
             }
         }
+    }
+}
+
+private fun groupedPlaylistDetailItemShape(index: Int, totalCount: Int): RoundedCornerShape {
+    return when {
+        totalCount <= 1 -> RoundedCornerShape(24.dp)
+        index == 0 -> RoundedCornerShape(
+            topStart = 24.dp,
+            topEnd = 24.dp,
+            bottomStart = 6.dp,
+            bottomEnd = 6.dp
+        )
+        index == totalCount - 1 -> RoundedCornerShape(
+            topStart = 6.dp,
+            topEnd = 6.dp,
+            bottomStart = 24.dp,
+            bottomEnd = 24.dp
+        )
+        else -> RoundedCornerShape(6.dp)
     }
 }

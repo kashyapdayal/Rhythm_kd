@@ -38,7 +38,20 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.runtime.LaunchedEffect
+import chromahub.rhythm.app.shared.data.repository.PlaybackStatsRepository
+import chromahub.rhythm.app.shared.presentation.navigation.RhythmGuardRiskLevel
+import chromahub.rhythm.app.shared.presentation.navigation.rhythmGuardResolveRiskLevel
+import androidx.compose.ui.draw.clip
+import androidx.compose.material3.SuggestionChip
+import androidx.compose.material3.SuggestionChipDefaults
+
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -47,6 +60,7 @@ import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.Api
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CheckCircle
@@ -54,7 +68,6 @@ import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Lyrics
@@ -66,6 +79,7 @@ import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Reorder
 import androidx.compose.material.icons.filled.Science
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material.icons.filled.Update
@@ -121,7 +135,6 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayCircleFilled
 import androidx.compose.material.icons.filled.PlaylistAddCheckCircle
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Widgets
 import androidx.compose.ui.platform.LocalContext
@@ -130,13 +143,17 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalConfiguration
 import chromahub.rhythm.app.ui.theme.RhythmTheme
 import chromahub.rhythm.app.util.HapticUtils
+import androidx.lifecycle.viewmodel.compose.viewModel
+import chromahub.rhythm.app.features.local.presentation.components.player.SleepTimerBottomSheetNew
 import chromahub.rhythm.app.features.local.presentation.navigation.Screen
+import chromahub.rhythm.app.features.local.presentation.viewmodel.MusicViewModel
+import chromahub.rhythm.app.shared.presentation.components.Material3SettingsGroup
+import chromahub.rhythm.app.shared.presentation.components.Material3SettingsItem
 
 // Define routes for navigation
 object SettingsRoutes {
     const val NOTIFICATIONS = "notifications_settings"
     const val EXPERIMENTAL_FEATURES = "experimental_features_settings"
-    const val IMMERSIVE_MODE = "immersive_mode_settings"
     const val ABOUT = "about_screen"
     const val UPDATES = "updates_screen"
     const val MEDIA_SCAN = "media_scan_settings"
@@ -160,7 +177,9 @@ object SettingsRoutes {
     const val LISTENING_STATS = "listening_stats"
     const val EXPRESSIVE_SHAPES = "expressive_shapes_settings"
     const val LIBRARY_SETTINGS = "library_settings"
-    const val AUDIO_QUALITY = "audio_quality_settings"
+    const val RHYTHM_GUARD = "rhythm_guard_settings"
+    @Deprecated("Use RHYTHM_GUARD")
+    const val RHYTHM_AURA = RHYTHM_GUARD
 }
 
 data class SettingItem(
@@ -170,7 +189,8 @@ data class SettingItem(
     val onClick: (() -> Unit)? = null,
     val toggleState: Boolean? = null,
     val onToggleChange: ((Boolean) -> Unit)? = null,
-    val data: Any? = null
+    val data: Any? = null,
+    val enabled: Boolean = true
 )
 
 data class SettingGroup(
@@ -194,6 +214,7 @@ fun SettingsScreen(
     val updatesEnabled by appSettings.updatesEnabled.collectAsState()
     val hapticFeedbackEnabled by appSettings.hapticFeedbackEnabled.collectAsState()
     val useSystemVolume by appSettings.useSystemVolume.collectAsState()
+    val stopPlaybackOnZeroVolume by appSettings.stopPlaybackOnZeroVolume.collectAsState()
     val audioNormalization by appSettings.audioNormalization.collectAsState()
     val replayGain by appSettings.replayGain.collectAsState()
     val resumeOnDeviceReconnect by appSettings.resumeOnDeviceReconnect.collectAsState()
@@ -201,6 +222,9 @@ fun SettingsScreen(
     val showAlphabetBar by appSettings.showAlphabetBar.collectAsState()
     val showScrollToTop by appSettings.showScrollToTop.collectAsState()
     val appMode by appSettings.appMode.collectAsState()
+    val rhythmGuardMode by appSettings.rhythmGuardMode.collectAsState()
+    val showSettingsSuggestions by appSettings.showSettingsSuggestions.collectAsState()
+    val showKeyboardOnSearchOpen by appSettings.showKeyboardOnSearchOpen.collectAsState()
     
     var showDefaultScreenDialog by remember { mutableStateOf(false) }
     var showLanguageSwitcher by remember { mutableStateOf(false) }
@@ -214,7 +238,7 @@ fun SettingsScreen(
     val isSearchActive = searchQuery.isNotEmpty()
 
     CollapsibleHeaderScreen(
-        title = "Settings",
+        title = context.getString(R.string.settings_title),
         showBackButton = !isTablet,
         onBackClick = {
             if (isSearchActive) {
@@ -231,7 +255,6 @@ fun SettingsScreen(
                 title = context.getString(R.string.settings_section_appearance),
                 items = buildList {
                     add(SettingItem(Icons.Default.Palette, context.getString(R.string.settings_theme_customization), context.getString(R.string.settings_theme_customization_desc), onClick = { onNavigateTo(SettingsRoutes.THEME_CUSTOMIZATION) }))
-                    add(SettingItem(Icons.Default.Fullscreen, "Immersive Mode", "Change fullscreen behaviour", onClick = { onNavigateTo(SettingsRoutes.IMMERSIVE_MODE) }))
                     add(SettingItem(Icons.Default.Interests, context.getString(R.string.settings_shapes), context.getString(R.string.settings_shapes_desc), onClick = { onNavigateTo(SettingsRoutes.EXPRESSIVE_SHAPES) }))
                     add(SettingItem(Icons.Default.MusicNote, context.getString(R.string.settings_player_customization), context.getString(R.string.settings_player_customization_desc), onClick = { onNavigateTo(SettingsRoutes.PLAYER_CUSTOMIZATION) }))
                     add(SettingItem(Icons.Default.PlayCircleFilled, context.getString(R.string.settings_miniplayer_customization), context.getString(R.string.settings_miniplayer_customization_desc), onClick = { onNavigateTo(SettingsRoutes.MINIPLAYER_CUSTOMIZATION) }))
@@ -277,6 +300,20 @@ fun SettingsScreen(
                         context.getString(R.string.settings_gestures_desc),
                         onClick = { onNavigateTo(SettingsRoutes.GESTURES) }
                     ))
+                    add(SettingItem(
+                        RhythmIcons.Search,
+                        context.getString(R.string.settings_show_keyboard_on_search_open),
+                        context.getString(R.string.settings_show_keyboard_on_search_open_desc),
+                        toggleState = showKeyboardOnSearchOpen,
+                        onToggleChange = { appSettings.setShowKeyboardOnSearchOpen(it) }
+                    ))
+                    add(SettingItem(
+                        Icons.Default.Lightbulb,
+                        "Settings Suggestions",
+                        "Show contextual suggestions at the top",
+                        toggleState = showSettingsSuggestions,
+                        onToggleChange = { appSettings.setShowSettingsSuggestions(it) }
+                    ))
                 }
             ),
             // 4. Queue & Playback
@@ -301,6 +338,13 @@ fun SettingsScreen(
                         onToggleChange = { appSettings.setUseSystemVolume(it) }
                     ))
                     add(SettingItem(
+                        RhythmIcons.Player.Stop,
+                        context.getString(R.string.settings_stop_playback_on_zero_volume),
+                        context.getString(R.string.settings_stop_playback_on_zero_volume_desc),
+                        toggleState = stopPlaybackOnZeroVolume,
+                        onToggleChange = { appSettings.setStopPlaybackOnZeroVolume(it) }
+                    ))
+                    add(SettingItem(
                         RhythmIcons.Devices.Bluetooth,
                         context.getString(R.string.settings_resume_on_device_reconnect),
                         context.getString(R.string.settings_resume_on_device_reconnect_desc),
@@ -310,12 +354,6 @@ fun SettingsScreen(
                     //add(SettingItem(Icons.Default.GraphicEq, context.getString(R.string.audio_normalization), context.getString(R.string.audio_normalization_desc), toggleState = audioNormalization, onToggleChange = { appSettings.setAudioNormalization(it) }))
                     //add(SettingItem(Icons.Default.GraphicEq, context.getString(R.string.replay_gain), context.getString(R.string.replay_gain_desc), toggleState = replayGain, onToggleChange = { appSettings.setReplayGain(it) }))
                     if (appMode == "LOCAL") {
-                        add(SettingItem(
-                            Icons.Filled.HighQuality,
-                            context.getString(R.string.settings_audio_quality_title),
-                            context.getString(R.string.settings_audio_quality_desc),
-                            onClick = { onNavigateTo(SettingsRoutes.AUDIO_QUALITY) }
-                        ))
                         add(SettingItem(Icons.Default.Equalizer, context.getString(R.string.settings_equalizer_title), context.getString(R.string.settings_equalizer_desc), onClick = { onNavigateTo(SettingsRoutes.EQUALIZER) }))
                     }
                 }
@@ -346,7 +384,8 @@ fun SettingsScreen(
                 items = listOf(
                     SettingItem(Icons.Default.Storage, context.getString(R.string.settings_cache_management_title), context.getString(R.string.settings_cache_management_desc), onClick = { onNavigateTo(SettingsRoutes.CACHE_MANAGEMENT) }),
                     SettingItem(Icons.Default.Backup, context.getString(R.string.settings_backup_restore_title), context.getString(R.string.settings_backup_restore_desc), onClick = { onNavigateTo(SettingsRoutes.BACKUP_RESTORE) }),
-                    SettingItem(Icons.Default.AutoGraph, context.getString(R.string.settings_rhythm_stats), context.getString(R.string.settings_rhythm_stats_desc), onClick = { onNavigateTo(SettingsRoutes.LISTENING_STATS) })
+                    SettingItem(Icons.Default.AutoGraph, context.getString(R.string.settings_rhythm_stats), context.getString(R.string.settings_rhythm_stats_desc), onClick = { onNavigateTo(SettingsRoutes.LISTENING_STATS) }),
+                    SettingItem(Icons.Default.Security, context.getString(R.string.settings_rhythm_guard), context.getString(R.string.settings_rhythm_guard_list_desc), onClick = { onNavigateTo(SettingsRoutes.RHYTHM_GUARD) })
                 )
             ) else null,
             // 8. Updates & Info
@@ -375,6 +414,7 @@ fun SettingsScreen(
         ).filterNotNull() // Filter out null groups (for streaming mode)
 
         val lazyListState = scrollState ?: rememberSaveable(
+            key = "settings_scroll_state",
             saver = LazyListStateSaver
         ) {
             LazyListState()
@@ -414,90 +454,126 @@ fun SettingsScreen(
                         .fillMaxSize()
                         .padding(horizontal = if (isTablet) 32.dp else 24.dp)
                 ) {
-                    items(settingGroups, key = { "setting_${it.title}" }) { group ->
-                        Spacer(modifier = Modifier.height(28.dp))
-                        Text(
-                            text = group.title,
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(start = 4.dp, bottom = 12.dp),
-                            letterSpacing = 0.5.sp
-                        )
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(24.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                            elevation = CardDefaults.cardElevation(
-                                defaultElevation = 0.dp
-                            )
-                        ) {
-                            Column {
-                                group.items.forEachIndexed { index, item ->
-                                    SettingRow(item = item)
-                                    
-                                    if (index < group.items.lastIndex) {
-                                        HorizontalDivider(
-                                            modifier = Modifier.padding(horizontal = 20.dp),
-                                            thickness = 1.dp,
-                                            color = MaterialTheme.colorScheme.surfaceContainerHighest
-                                )
-                            }
-                        }
-                    }
-                }
-                            }
-
-            // Quick Tips Card
-            item {
-                Spacer(modifier = Modifier.height(24.dp))
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer
-                    )
-                ) {
-                    Column(
-                        modifier = Modifier.padding(20.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.Lightbulb,
-                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                contentDescription = null,
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text(
-                                text = context.getString(R.string.settings_quick_tips),
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                    item {
+                        if (showSettingsSuggestions) {
+                            SettingsTipsRow(
+                                onNavigateTo = onNavigateTo,
+                                rhythmGuardMode = rhythmGuardMode,
+                                appMode = appMode,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 8.dp, bottom = 2.dp)
                             )
                         }
-                        Spacer(modifier = Modifier.height(12.dp))
+                    }
 
-                        TipItem(
-                            icon = Icons.Default.Palette,
-                            text = context.getString(R.string.settings_tip_theme)
+                    itemsIndexed(settingGroups, key = { _, group -> "setting_${group.title}" }) { index, group ->
+                        Spacer(
+                            modifier = Modifier.height(
+                                if (index == 0 && showSettingsSuggestions) 10.dp else 28.dp
+                            )
                         )
-                        TipItem(
-                            icon = Icons.Default.TouchApp,
-                            text = context.getString(R.string.settings_tip_haptic)
-                        )
-                        TipItem(
-                            icon = Icons.Default.Folder,
-                            text = "Use media scan to hide unwanted files from your library"
+
+                        val materialItems = group.items.map { item ->
+                            Material3SettingsItem(
+                                icon = item.icon,
+                                title = { Text(item.title) },
+                                description = item.description?.let { descriptionText ->
+                                    { Text(descriptionText) }
+                                },
+                                trailingContent = when {
+                                    item.toggleState != null && item.onClick != null -> {
+                                        {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(
+                                                    imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                                                    contentDescription = null,
+                                                    modifier = Modifier
+                                                        .size(18.dp)
+                                                        .padding(end = 8.dp),
+                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                                )
+                                                AnimatedSwitch(
+                                                    checked = item.toggleState,
+                                                    onCheckedChange = {
+                                                        HapticUtils.performHapticFeedback(
+                                                            context,
+                                                            hapticFeedback,
+                                                            HapticFeedbackType.TextHandleMove
+                                                        )
+                                                        item.onToggleChange?.invoke(it)
+                                                    }
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    item.toggleState != null -> {
+                                        {
+                                            AnimatedSwitch(
+                                                checked = item.toggleState,
+                                                onCheckedChange = {
+                                                    HapticUtils.performHapticFeedback(
+                                                        context,
+                                                        hapticFeedback,
+                                                        HapticFeedbackType.TextHandleMove
+                                                    )
+                                                    item.onToggleChange?.invoke(it)
+                                                }
+                                            )
+                                        }
+                                    }
+
+                                    item.onClick != null -> {
+                                        {
+                                            Icon(
+                                                imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(18.dp),
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                            )
+                                        }
+                                    }
+
+                                    else -> null
+                                },
+                                isHighlighted = item.toggleState == true,
+                                enabled = item.enabled,
+                                onClick = when {
+                                    item.onClick != null -> {
+                                        {
+                                            HapticUtils.performHapticFeedback(
+                                                context,
+                                                hapticFeedback,
+                                                HapticFeedbackType.LongPress
+                                            )
+                                            item.onClick.invoke()
+                                        }
+                                    }
+
+                                    item.toggleState != null && item.onToggleChange != null -> {
+                                        {
+                                            HapticUtils.performHapticFeedback(
+                                                context,
+                                                hapticFeedback,
+                                                HapticFeedbackType.TextHandleMove
+                                            )
+                                            item.onToggleChange.invoke(!item.toggleState)
+                                        }
+                                    }
+
+                                    else -> null
+                                }
+                            )
+                        }
+
+                        Material3SettingsGroup(
+                            title = group.title,
+                            items = materialItems,
+                            containerColor = MaterialTheme.colorScheme.surfaceContainer
                         )
                     }
                 }
-                Spacer(modifier = Modifier.height(24.dp))
-//                Spacer(modifier = Modifier.height(24.dp)) // Space at the bottom
-            }
-        }
             } // End of else branch for search
         } // End of Column
         
@@ -878,15 +954,20 @@ fun SettingsScreenPreview() {
 fun SettingsScreenWrapper(
     onBack: () -> Unit,
     appSettings: chromahub.rhythm.app.shared.data.model.AppSettings,
-    navController: androidx.navigation.NavController
+    navController: androidx.navigation.NavController,
+    musicViewModel: MusicViewModel
 ) {
     val configuration = LocalConfiguration.current
     val isTablet = configuration.screenWidthDp >= 600
 
     var currentRoute by rememberSaveable { mutableStateOf<String?>(null) }
+    var showSleepTimerBottomSheet by rememberSaveable { mutableStateOf(false) }
+    val currentSong by musicViewModel.currentSong.collectAsState()
+    val isPlaying by musicViewModel.isPlaying.collectAsState()
 
     // Hoist the main settings scroll state to persist across navigation
     val mainSettingsScrollState = rememberSaveable(
+        key = "main_settings_scroll_state",
         saver = LazyListStateSaver
     ) {
         LazyListState()
@@ -912,7 +993,7 @@ fun SettingsScreenWrapper(
         } else if (route == SettingsRoutes.EQUALIZER) {
             navController.navigate(Screen.Equalizer.route)
         } else if (route == SettingsRoutes.SLEEP_TIMER) {
-            navController.navigate(Screen.TunerSleepTimer.route)
+            showSleepTimerBottomSheet = true
         } else {
             currentRoute = route
         }
@@ -1014,7 +1095,6 @@ fun SettingsScreenWrapper(
                         SettingsRoutes.CACHE_MANAGEMENT -> CacheManagementSettingsScreen(onBackClick = { currentRoute = null })
                         SettingsRoutes.BACKUP_RESTORE -> BackupRestoreSettingsScreen(onBackClick = { currentRoute = null })
                         SettingsRoutes.LIBRARY_TAB_ORDER -> LibraryTabOrderSettingsScreen(onBackClick = { currentRoute = null })
-                        SettingsRoutes.IMMERSIVE_MODE -> ImmersiveModeSettingsScreen(onBackClick = { currentRoute = null })
                         SettingsRoutes.THEME_CUSTOMIZATION -> ThemeCustomizationSettingsScreen(onBackClick = { currentRoute = null })
                         SettingsRoutes.PLAYER_CUSTOMIZATION -> PlayerCustomizationSettingsScreen(onBackClick = { currentRoute = null })
                         SettingsRoutes.MINIPLAYER_CUSTOMIZATION -> MiniPlayerCustomizationSettingsScreen(onBackClick = { currentRoute = null })
@@ -1026,7 +1106,7 @@ fun SettingsScreenWrapper(
                         SettingsRoutes.GESTURES -> GesturesSettingsScreen(onBackClick = { currentRoute = null })
                         SettingsRoutes.EXPRESSIVE_SHAPES -> ExpressiveShapesSettingsScreen(onBackClick = { currentRoute = null })
                         SettingsRoutes.LIBRARY_SETTINGS -> LibrarySettingsScreen(onBackClick = { currentRoute = null })
-                        SettingsRoutes.AUDIO_QUALITY -> chromahub.rhythm.app.features.local.presentation.screens.settings.AudioQualitySettingsScreen(onNavigateBack = { currentRoute = null })
+                        SettingsRoutes.RHYTHM_GUARD -> RhythmGuardSettingsScreen(onBackClick = { currentRoute = null })
                         else -> PlaceholderSettingsScreen()
                     }
                 }
@@ -1127,7 +1207,6 @@ fun SettingsScreenWrapper(
                 SettingsRoutes.CACHE_MANAGEMENT -> CacheManagementSettingsScreen(onBackClick = { currentRoute = null })
                 SettingsRoutes.BACKUP_RESTORE -> BackupRestoreSettingsScreen(onBackClick = { currentRoute = null })
                 SettingsRoutes.LIBRARY_TAB_ORDER -> LibraryTabOrderSettingsScreen(onBackClick = { currentRoute = null })
-                SettingsRoutes.IMMERSIVE_MODE -> ImmersiveModeSettingsScreen(onBackClick = { currentRoute = null })
                 SettingsRoutes.THEME_CUSTOMIZATION -> ThemeCustomizationSettingsScreen(onBackClick = { currentRoute = null })
                 SettingsRoutes.PLAYER_CUSTOMIZATION -> PlayerCustomizationSettingsScreen(onBackClick = { currentRoute = null })
                 SettingsRoutes.MINIPLAYER_CUSTOMIZATION -> MiniPlayerCustomizationSettingsScreen(onBackClick = { currentRoute = null })
@@ -1139,7 +1218,7 @@ fun SettingsScreenWrapper(
                 SettingsRoutes.GESTURES -> GesturesSettingsScreen(onBackClick = { currentRoute = null })
                 SettingsRoutes.EXPRESSIVE_SHAPES -> ExpressiveShapesSettingsScreen(onBackClick = { currentRoute = null })
                 SettingsRoutes.LIBRARY_SETTINGS -> LibrarySettingsScreen(onBackClick = { currentRoute = null })
-                SettingsRoutes.AUDIO_QUALITY -> chromahub.rhythm.app.features.local.presentation.screens.settings.AudioQualitySettingsScreen(onNavigateBack = { currentRoute = null })
+                SettingsRoutes.RHYTHM_GUARD -> RhythmGuardSettingsScreen(onBackClick = { currentRoute = null })
                 else -> SettingsScreen(
                     onBackClick = handleBack,
                     onNavigateTo = onNavigateToSubsetting,
@@ -1147,6 +1226,15 @@ fun SettingsScreenWrapper(
                 )
             }
         }
+    }
+
+    if (showSleepTimerBottomSheet) {
+        SleepTimerBottomSheetNew(
+            onDismiss = { showSleepTimerBottomSheet = false },
+            currentSong = currentSong,
+            isPlaying = isPlaying,
+            musicViewModel = musicViewModel
+        )
     }
 }
 
@@ -1156,78 +1244,459 @@ private fun AnimatedSwitch(
     onCheckedChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val thumbColor by animateColorAsState(
-        targetValue = if (checked) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessLow
-        ),
-        label = "thumbColor"
-    )
-    
-    val trackColor by animateColorAsState(
-        targetValue = if (checked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessLow
-        ),
-        label = "trackColor"
-    )
-    
-    Switch(
+    TunerAnimatedSwitch(
         checked = checked,
         onCheckedChange = onCheckedChange,
-        modifier = modifier,
-        colors = SwitchDefaults.colors(
-            checkedThumbColor = thumbColor,
-            checkedTrackColor = trackColor,
-            uncheckedThumbColor = thumbColor,
-            uncheckedTrackColor = trackColor
-        ),
-        thumbContent = {
-            androidx.compose.animation.AnimatedVisibility(
-                visible = checked,
-                enter = scaleIn(
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioMediumBouncy,
-                        stiffness = Spring.StiffnessMedium
+        modifier = modifier
+    )
+}
+
+data class SettingsTipData(
+    val id: String,
+    val icon: ImageVector,
+    val title: String,
+    val text: String,
+    val route: String? = null,
+    val isPrimary: Boolean = false,
+    val riskLevel: RhythmGuardRiskLevel? = null,
+    val fillProgress: Float? = null
+)
+
+@Composable
+fun SettingsTipsRow(
+    onNavigateTo: (String) -> Unit,
+    rhythmGuardMode: String,
+    appMode: String,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    var dismissedIds by rememberSaveable { mutableStateOf(setOf<String>()) }
+    
+    // Playback stats
+    var todayExposureMinutes by remember { mutableStateOf(0) }
+    var currentRiskLevel by remember { mutableStateOf(RhythmGuardRiskLevel.LOW) }
+    
+    val appSettings = remember { chromahub.rhythm.app.shared.data.model.AppSettings.getInstance(context) }
+    val limitMinutes by appSettings.rhythmGuardAlertThresholdMinutes.collectAsState()
+    val manualVolumeFloat by appSettings.rhythmGuardManualVolumeThreshold.collectAsState()
+    val autoBackupEnabled by appSettings.autoBackupEnabled.collectAsState()
+    val updatesEnabled by appSettings.updatesEnabled.collectAsState()
+    val miniPlayerShowProgress by appSettings.miniPlayerShowProgress.collectAsState()
+    val playerShowSeekButtons by appSettings.playerShowSeekButtons.collectAsState()
+    val gesturePlayerSwipeTracks by appSettings.gesturePlayerSwipeTracks.collectAsState()
+    val enableRatingSystem by appSettings.enableRatingSystem.collectAsState()
+
+    LaunchedEffect(limitMinutes, manualVolumeFloat) {
+        val statsRepo = chromahub.rhythm.app.shared.data.repository.PlaybackStatsRepository.getInstance(context)
+        val audioManager = context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+        
+        while (true) {
+            val stats = statsRepo.loadSummary(chromahub.rhythm.app.shared.data.repository.StatsTimeRange.TODAY)
+            todayExposureMinutes = (stats.totalDurationMs / 60000).toInt()
+            
+            val maxVol = audioManager.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC)
+            val currentVol = audioManager.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
+            val currentVolumePercent = if (maxVol > 0) ((currentVol.toFloat() / maxVol) * 100).toInt() else 0
+            
+            val safeLimit = if (limitMinutes > 0) limitMinutes else 90
+            val safeThreshold = (manualVolumeFloat * 100).toInt().coerceAtLeast(1)
+            
+            currentRiskLevel = chromahub.rhythm.app.shared.presentation.navigation.rhythmGuardResolveRiskLevel(
+                currentVolumePercent = currentVolumePercent, 
+                safeThresholdPercent = safeThreshold,
+                exposureMinutes = todayExposureMinutes,
+                exposureLimitMinutes = safeLimit
+            )
+            kotlinx.coroutines.delay(2000)
+        }
+    }
+    
+    // Generate a fixed seed when the view enters to keep shuffle stable during recompositions
+    val shuffleSeed = rememberSaveable { kotlin.random.Random.nextInt() }
+    
+    val tips = remember(
+        rhythmGuardMode,
+        appMode,
+        dismissedIds,
+        todayExposureMinutes,
+        currentRiskLevel,
+        autoBackupEnabled,
+        updatesEnabled,
+        miniPlayerShowProgress,
+        playerShowSeekButtons,
+        gesturePlayerSwipeTracks,
+        enableRatingSystem
+    ) {
+        val random = kotlin.random.Random(shuffleSeed)
+        val isLocalMode = appMode == "LOCAL"
+        val hourOfDay = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+        val dayMomentLabel = when (hourOfDay) {
+            in 5..11 -> "this morning"
+            in 12..16 -> "this afternoon"
+            in 17..21 -> "this evening"
+            else -> "tonight"
+        }
+        val listeningPulseLabel = when {
+            todayExposureMinutes < 20 -> "Fresh session energy"
+            todayExposureMinutes < 60 -> "Steady groove"
+            todayExposureMinutes < 120 -> "Heavy listening"
+            else -> "Marathon mode"
+        }
+
+        buildList {
+            if (isLocalMode && "rhythm_guard" !in dismissedIds) {
+                val desc = when (rhythmGuardMode) {
+                    "OFF" -> "${context.getString(R.string.settings_tip_rhythm_guard_off)} ${listeningPulseLabel.lowercase()} ${dayMomentLabel}."
+                    "MANUAL" -> "${context.getString(R.string.settings_tip_rhythm_guard_manual)} ${todayExposureMinutes} min played today."
+                    else -> "${context.getString(R.string.settings_tip_rhythm_guard_auto)} ${todayExposureMinutes} min tracked ${dayMomentLabel}."
+                }
+                
+                val progress = (todayExposureMinutes.toFloat() / 90f).coerceIn(0.05f, 1f)
+
+                add(
+                    SettingsTipData(
+                        id = "rhythm_guard",
+                        icon = Icons.Default.Security,
+                        title = "Rhythm Guard",
+                        text = desc,
+                        route = SettingsRoutes.RHYTHM_GUARD,
+                        isPrimary = true,
+                        riskLevel = if (rhythmGuardMode == "OFF") null else currentRiskLevel,
+                        fillProgress = if (rhythmGuardMode == "OFF") null else progress
                     )
-                ) + fadeIn(),
-                exit = scaleOut() + fadeOut()
-            ) {
-                Icon(
-                    imageVector = Icons.Default.CheckCircle,
-                    contentDescription = null,
-                    
-                    modifier = Modifier.size(16.dp)
+                )
+            }
+            if ("theme" !in dismissedIds) {
+                val descs = listOf(
+                    context.getString(R.string.settings_tip_theme),
+                    "Refresh your music player with lively AMOLED black and beautiful pastel colors.",
+                    "Make Rhythm truly yours by matching the app's accent to your system."
+                )
+                add(
+                    SettingsTipData(
+                        id = "theme",
+                        icon = Icons.Default.Palette,
+                        title = "Personalization",
+                        text = descs.random(random),
+                        route = SettingsRoutes.THEME_CUSTOMIZATION
+                    )
+                )
+            }
+            if ("gestures" !in dismissedIds) {
+                val descs = listOf(
+                    context.getString(R.string.settings_tip_gestures),
+                    context.getString(R.string.settings_tip_gestures_swipe),
+                    context.getString(R.string.settings_tip_gestures_artwork)
+                )
+                add(
+                    SettingsTipData(
+                        id = "gestures",
+                        icon = Icons.Default.Gesture,
+                        title = context.getString(R.string.settings_gestures),
+                        text = descs.random(random),
+                        route = SettingsRoutes.GESTURES
+                    )
+                )
+            }
+            if (isLocalMode && "media_scan" !in dismissedIds) {
+                val descs = listOf(
+                    context.getString(R.string.settings_tip_media_scan),
+                    "Avoid unwanted audio clips. Explicitly define which folders we should scan for music.",
+                    "Keep voice notes and ringtones away from your playlists using focus folders."
+                )
+                add(
+                    SettingsTipData(
+                        id = "media_scan",
+                        icon = Icons.Default.Folder,
+                        title = "Library Focus",
+                        text = descs.random(random),
+                        route = SettingsRoutes.MEDIA_SCAN
+                    )
+                )
+            }
+            if (isLocalMode && "sleep_timer" !in dismissedIds) {
+                val descs = listOf(
+                    "Drift off to sleep while your music is playing. We'll automatically pause it.",
+                    "Set an automated sleep timer before bed so playback stops perfectly."
+                )
+                add(
+                    SettingsTipData(
+                        id = "sleep_timer",
+                        icon = Icons.Default.AccessTime,
+                        title = "Sleep Timer",
+                        text = descs.random(random),
+                        route = SettingsRoutes.SLEEP_TIMER
+                    )
+                )
+            }
+            if (isLocalMode && "equalizer" !in dismissedIds) {
+                val descs = listOf(
+                    "Elevate your experience. Boost the bass and adjust frequencies using the Equalizer.",
+                    "Tune the sound to your headphones securely with our advanced audio effects."
+                )
+                add(
+                    SettingsTipData(
+                        id = "equalizer",
+                        icon = Icons.Default.Equalizer,
+                        title = "Audio Equalizer",
+                        text = descs.random(random),
+                        route = SettingsRoutes.EQUALIZER
+                    )
+                )
+            }
+            if (isLocalMode && "backup_restore" !in dismissedIds) {
+                val descs = if (autoBackupEnabled) {
+                    listOf(
+                        "Auto backup is active. Verify your backup sections so restores stay clean.",
+                        "Protection enabled: schedule looks good. Run a manual backup before big edits."
+                    )
+                } else {
+                    listOf(
+                        "Auto backup is off. Enable it to protect playlists and Rhythm Guard stats.",
+                        "No safety net yet. Turn on backups to avoid losing your setup."
+                    )
+                }
+                add(
+                    SettingsTipData(
+                        id = "backup_restore",
+                        icon = Icons.Default.Backup,
+                        title = "Backup & Restore",
+                        text = descs.random(random),
+                        route = SettingsRoutes.BACKUP_RESTORE
+                    )
+                )
+            }
+            if ("updates" !in dismissedIds) {
+                val descs = if (updatesEnabled) {
+                    listOf(
+                        "Updates are enabled. Keep them on for fixes and performance improvements.",
+                        "You are set to receive updates. Check channel preferences for stability vs freshness."
+                    )
+                } else {
+                    listOf(
+                        "Updates are disabled. Re-enable them to stay protected and current.",
+                        "You are pinned to the current build. Turn updates back on when ready."
+                    )
+                }
+                add(
+                    SettingsTipData(
+                        id = "updates",
+                        icon = Icons.Default.Update,
+                        title = "App Updates",
+                        text = descs.random(random),
+                        route = SettingsRoutes.UPDATES
+                    )
+                )
+            }
+            if ("queue_playback" !in dismissedIds) {
+                val descs = if (gesturePlayerSwipeTracks) {
+                    listOf(
+                        "Player swipe-to-skip is active. Tune queue rules for smoother transitions.",
+                        "Gesture skip is on. Match queue behavior to your listening flow."
+                    )
+                } else {
+                    listOf(
+                        "Swipe-to-skip is off. Queue controls can help keep playback efficient.",
+                        "Prefer explicit controls? Fine-tune queue behavior for predictable playback."
+                    )
+                }
+                add(
+                    SettingsTipData(
+                        id = "queue_playback",
+                        icon = Icons.Default.QueueMusic,
+                        title = "Queue Playback",
+                        text = descs.random(random),
+                        route = SettingsRoutes.QUEUE_PLAYBACK
+                    )
+                )
+            }
+            if ("player_controls" !in dismissedIds) {
+                val descs = if (playerShowSeekButtons) {
+                    listOf(
+                        "Seek buttons are visible. Customize player controls to reduce clutter.",
+                        "Control-rich player enabled. Tweak layout for your thumb reach."
+                    )
+                } else {
+                    listOf(
+                        "Minimal player controls enabled. Add seek buttons if you miss precise jumps.",
+                        "Clean layout active. Re-enable seek controls for finer playback handling."
+                    )
+                }
+                add(
+                    SettingsTipData(
+                        id = "player_controls",
+                        icon = Icons.Default.MusicNote,
+                        title = "Player Controls",
+                        text = descs.random(random),
+                        route = SettingsRoutes.PLAYER_CUSTOMIZATION
+                    )
+                )
+            }
+            if ("miniplayer" !in dismissedIds) {
+                val descs = if (miniPlayerShowProgress) {
+                    listOf(
+                        "Mini player progress is visible. Choose a style that matches your theme.",
+                        "Progress bar is active on mini player. Try shape and corner tweaks next."
+                    )
+                } else {
+                    listOf(
+                        "Mini player progress is hidden. Enable it for quick track awareness.",
+                        "Compact mode is minimal now. Turn progress on for better glanceability."
+                    )
+                }
+                add(
+                    SettingsTipData(
+                        id = "miniplayer",
+                        icon = Icons.Default.PlayCircleFilled,
+                        title = "Mini Player",
+                        text = descs.random(random),
+                        route = SettingsRoutes.MINIPLAYER_CUSTOMIZATION
+                    )
+                )
+            }
+            if (isLocalMode && "library_settings" !in dismissedIds) {
+                val descs = if (enableRatingSystem) {
+                    listOf(
+                        "Ratings are enabled. Use library settings to sharpen discovery and sorting.",
+                        "Your library supports ratings. Tune scan and grouping for cleaner browsing."
+                    )
+                } else {
+                    listOf(
+                        "Ratings are disabled. Library settings can still improve structure and speed.",
+                        "Simplified library mode detected. Adjust grouping for faster navigation."
+                    )
+                }
+                add(
+                    SettingsTipData(
+                        id = "library_settings",
+                        icon = Icons.Default.LibraryMusic,
+                        title = "Library Settings",
+                        text = descs.random(random),
+                        route = SettingsRoutes.LIBRARY_SETTINGS
+                    )
+                )
+            }
+        }.shuffled(random)
+    }
+
+    if (tips.isNotEmpty()) {
+        LazyRow(
+            modifier = modifier,
+            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(16.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 0.dp, end = 16.dp, top = 8.dp, bottom = 8.dp)
+        ) {
+            items(tips, key = { it.id }) { tip ->
+                SettingsTipCard(
+                    tip = tip,
+                    onDismiss = { dismissedIds = dismissedIds + tip.id },
+                    onClick = { tip.route?.let { onNavigateTo(it) } }
                 )
             }
         }
-    )
-}
-
-@Composable
-private fun TipItem(
-    icon: ImageVector,
-    text: String
-) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.padding(vertical = 6.dp)
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
-            modifier = Modifier.size(18.dp)
-        )
-        Spacer(modifier = Modifier.width(12.dp))
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onPrimaryContainer
-        )
     }
 }
 
+@Composable
+fun SettingsTipCard(
+    tip: SettingsTipData,
+    onDismiss: () -> Unit,
+    onClick: () -> Unit
+) {
+    val isPrimary = tip.isPrimary
+    val containerColor = if (isPrimary) {
+        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.84f)
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerHighest
+    }
+    val contentColor = if (isPrimary) {
+        MaterialTheme.colorScheme.onPrimaryContainer
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
 
+    val iconColor = if (isPrimary) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.secondary
+    }
+
+    // Use health status directly for icon background if available, looks much cleaner than partial filling!
+    val indicatorColor = if (tip.riskLevel != null) {
+        when (tip.riskLevel) {
+            RhythmGuardRiskLevel.LOW -> androidx.compose.ui.graphics.Color(0xFF4CAF50)
+            RhythmGuardRiskLevel.MODERATE -> androidx.compose.ui.graphics.Color(0xFFFF9800)
+            RhythmGuardRiskLevel.HIGH -> androidx.compose.ui.graphics.Color(0xFFFF5722)
+            RhythmGuardRiskLevel.SEVERE -> MaterialTheme.colorScheme.error
+        }
+    } else null
+
+    Card(
+        modifier = Modifier
+            .width(320.dp)
+            .height(160.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(if (isPrimary) 24.dp else 20.dp),
+        colors = CardDefaults.cardColors(containerColor = containerColor),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Row(modifier = Modifier.fillMaxSize()) {
+            Column(
+                modifier = Modifier
+                    .padding(20.dp)
+                    .fillMaxSize()
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        imageVector = tip.icon,
+                        contentDescription = null,
+                        tint = indicatorColor ?: iconColor,
+                        modifier = Modifier.size(30.dp)
+                    )
+                    
+                    androidx.compose.material3.IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.surface.copy(alpha = if (isPrimary) 0.55f else 0.44f))
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Dismiss",
+                            tint = contentColor,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(12.dp))
+                
+                Text(
+                    text = tip.title,
+                    style = MaterialTheme.typography.titleLarge, 
+                    fontWeight = FontWeight.Bold,
+                    color = contentColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                
+                Spacer(modifier = Modifier.height(6.dp))
+                
+                Text(
+                    text = tip.text,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = contentColor.copy(alpha = 0.85f),
+                    lineHeight = 18.sp,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                Spacer(modifier = Modifier.weight(1f))
+            }
+        }
+    }
+}

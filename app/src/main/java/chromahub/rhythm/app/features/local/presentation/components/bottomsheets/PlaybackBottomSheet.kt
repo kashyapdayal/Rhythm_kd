@@ -92,7 +92,9 @@ import chromahub.rhythm.app.shared.data.model.AppSettings
 import chromahub.rhythm.app.util.HapticUtils
 import chromahub.rhythm.app.features.local.presentation.viewmodel.MusicViewModel
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
+import chromahub.rhythm.app.shared.presentation.components.Material3SettingsGroup
+import chromahub.rhythm.app.shared.presentation.components.Material3SettingsItem
+import chromahub.rhythm.app.shared.presentation.components.common.rememberExpressiveShape
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -129,6 +131,10 @@ fun PlaybackBottomSheet(
     val syncSpeedAndPitch by appSettings.syncSpeedAndPitch.collectAsState()
     val gaplessPlayback by appSettings.gaplessPlayback.collectAsState()
     val useSystemVolume by appSettings.useSystemVolume.collectAsState()
+    val stopPlaybackOnZeroVolume by appSettings.stopPlaybackOnZeroVolume.collectAsState()
+    val resumeOnDeviceReconnect by appSettings.resumeOnDeviceReconnect.collectAsState()
+    val hidePlayedQueueSongs by appSettings.hidePlayedQueueSongs.collectAsState()
+    val showPlayedQueueSongs = !hidePlayedQueueSongs
     val crossfadeEnabled by appSettings.crossfade.collectAsState()
     val crossfadeDuration by appSettings.crossfadeDuration.collectAsState()
     val audioNormalization by appSettings.audioNormalization.collectAsState()
@@ -273,12 +279,18 @@ fun PlaybackBottomSheet(
                         PlaybackQuickSettingsCard(
                             gaplessPlayback = gaplessPlayback,
                             useSystemVolume = useSystemVolume,
+                            stopPlaybackOnZeroVolume = stopPlaybackOnZeroVolume,
+                            resumeOnDeviceReconnect = resumeOnDeviceReconnect,
+                            showPlayedQueueSongs = showPlayedQueueSongs,
                             crossfadeEnabled = crossfadeEnabled,
                             crossfadeDuration = crossfadeDuration,
                             onGaplessPlaybackChange = {
                                 musicViewModel.setGaplessPlayback(it)
                             },
                             onUseSystemVolumeChange = { appSettings.setUseSystemVolume(it) },
+                            onStopPlaybackOnZeroVolumeChange = { appSettings.setStopPlaybackOnZeroVolume(it) },
+                            onResumeOnDeviceReconnectChange = { appSettings.setResumeOnDeviceReconnect(it) },
+                            onShowPlayedQueueSongsChange = { appSettings.setHidePlayedQueueSongs(!it) },
                             onCrossfadeEnabledChange = { appSettings.setCrossfade(it) },
                             onCrossfadeDurationChange = { appSettings.setCrossfadeDuration(it) },
                             onNavigateToSettings = onNavigateToSettings,
@@ -413,8 +425,8 @@ private fun ActiveDeviceCard(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    
-    // Subtle pulse animation for connected device
+
+    // Subtle pulse animation for connected device icon
     val infiniteTransition = rememberInfiniteTransition(label = "devicePulse")
     val pulseScale by infiniteTransition.animateFloat(
         initialValue = 1f,
@@ -425,68 +437,106 @@ private fun ActiveDeviceCard(
         ),
         label = "pulseScale"
     )
-    
+
+    val cardShape = RoundedCornerShape(
+        topStart = 26.dp,
+        topEnd = 20.dp,
+        bottomStart = 20.dp,
+        bottomEnd = 30.dp
+    )
+    val expressiveIconShape = rememberExpressiveShape("COOKIE_7", CircleShape)
+    val refreshShape = RoundedCornerShape(
+        topStart = 14.dp,
+        topEnd = 10.dp,
+        bottomStart = 10.dp,
+        bottomEnd = 16.dp
+    )
+
+    var isRefreshing by remember { mutableStateOf(false) }
+    val refreshRotation by animateFloatAsState(
+        targetValue = if (isRefreshing) 360f else 0f,
+        animationSpec = tween(
+            durationMillis = 520,
+            easing = FastOutSlowInEasing
+        ),
+        finishedListener = {
+            isRefreshing = false
+        },
+        label = "refreshRotation"
+    )
+
+    val typeDescription = when {
+        location?.id?.startsWith("bt_") == true -> "Bluetooth device"
+        location?.id == "wired_headset" -> "Wired headphones"
+        location?.id == "speaker" -> "Phone speaker"
+        else -> "Audio device"
+    }
+
     Card(
         onClick = onSwitchDevice,
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 24.dp),
-            // .graphicsLayer {
-            //     if (location != null) {
-            //         scaleX = pulseScale
-            //         scaleY = pulseScale
-            //     }
-            // },
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer
+            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
         ),
-        shape = RoundedCornerShape(20.dp),
+        shape = cardShape,
         elevation = CardDefaults.cardElevation(
             defaultElevation = 0.dp,
-            pressedElevation = 4.dp
+            pressedElevation = 0.dp
         )
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .background(
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.48f)
+                )
+                .padding(18.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = context.getString(R.string.active_device),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
-                    maxLines = 1
-                )
-                
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = RhythmIcons.Speaker,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Text(
+                            text = context.getString(R.string.active_device),
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            maxLines = 1
+                        )
+                    }
+                }
+
                 Spacer(modifier = Modifier.weight(1f))
-                
-                // Refresh button with rotation animation
-                var isRefreshing by remember { mutableStateOf(false) }
-                val rotation by androidx.compose.animation.core.animateFloatAsState(
-                    targetValue = if (isRefreshing) 360f else 0f,
-                    animationSpec = androidx.compose.animation.core.tween(
-                        durationMillis = 500,
-                        easing = androidx.compose.animation.core.FastOutSlowInEasing
-                    ),
-                    finishedListener = {
-                        isRefreshing = false
-                    },
-                    label = "rotation"
-                )
-                
-                IconButton(
+
+                FilledTonalIconButton(
                     onClick = {
                         isRefreshing = true
                         HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
                         onRefreshDevices()
                     },
-                    modifier = Modifier
-                        .size(32.dp)
+                    modifier = Modifier.size(34.dp),
+                    shape = refreshShape,
+                    colors = IconButtonDefaults.filledTonalIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    )
                 ) {
                     Icon(
                         imageVector = RhythmIcons.Refresh,
@@ -494,37 +544,60 @@ private fun ActiveDeviceCard(
                         modifier = Modifier
                             .size(18.dp)
                             .graphicsLayer {
-                                rotationZ = rotation
+                                rotationZ = refreshRotation
                             }
                     )
                 }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(34.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Rounded.SyncAlt,
+                            contentDescription = "Switch device",
+                            tint = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
             }
-            
-            Spacer(modifier = Modifier.height(10.dp))
-            
+
+            Spacer(modifier = Modifier.height(12.dp))
+
             // Device info
             if (location != null) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    // Device icon background - smaller for compact screens
+                    // Expressive icon container with asymmetrical corners
                     Surface(
-                        modifier = Modifier.size(44.dp),
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.15f)
+                        modifier = Modifier
+                            .size(56.dp)
+                            .graphicsLayer {
+                                scaleX = pulseScale
+                                scaleY = pulseScale
+                            },
+                        shape = expressiveIconShape,
+                        color = MaterialTheme.colorScheme.primaryContainer
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                             Icon(
                                 imageVector = getDeviceIcon(location),
                                 contentDescription = null,
-                                modifier = Modifier.size(22.dp)
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.size(26.dp)
                             )
                         }
                     }
-                    
+
                     Spacer(modifier = Modifier.width(12.dp))
-                    
+
                     // Device details
                     Column(
                         modifier = Modifier.weight(1f)
@@ -532,46 +605,21 @@ private fun ActiveDeviceCard(
                         Text(
                             text = location.name,
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
+                            fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
-                        
-                        Spacer(modifier = Modifier.height(2.dp))
-                        
-                        val typeDescription = when {
-                            location.id.startsWith("bt_") -> "Bluetooth device"
-                            location.id == "wired_headset" -> "Wired headphones"
-                            location.id == "speaker" -> "Phone speaker"
-                            else -> "Audio device"
-                        }
-                        
+
+                        Spacer(modifier = Modifier.height(3.dp))
+
                         Text(
-                            text = "$typeDescription • Tap to switch",
+                            text = typeDescription,
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f),
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.82f),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
-                    }
-                    
-                    Spacer(modifier = Modifier.width(8.dp))
-                    
-                    // Active indicator with switch icon
-                    Surface(
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.12f),
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Rounded.SyncAlt,
-                                contentDescription = "Switch device",
-                                
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
                     }
                 }
             } else {
@@ -580,28 +628,30 @@ private fun ActiveDeviceCard(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Icon(
-                        imageVector = RhythmIcons.Speaker,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f),
-                        modifier = Modifier.size(28.dp)
-                    )
-                    
+                    Surface(
+                        modifier = Modifier.size(56.dp),
+                        shape = expressiveIconShape,
+                        color = MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                            Icon(
+                                imageVector = RhythmIcons.Speaker,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+
                     Spacer(modifier = Modifier.width(12.dp))
-                    
+
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = context.getString(R.string.bottomsheet_no_device),
                             style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
-                        )
-                        
-                        Text(
-                            text = context.getString(R.string.tap_select_output),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.5f)
                         )
                     }
                 }
@@ -1122,10 +1172,16 @@ private fun PlaybackSpeedCard(
 private fun PlaybackQuickSettingsCard(
     gaplessPlayback: Boolean,
     useSystemVolume: Boolean,
+    stopPlaybackOnZeroVolume: Boolean,
+    resumeOnDeviceReconnect: Boolean,
+    showPlayedQueueSongs: Boolean,
     crossfadeEnabled: Boolean,
     crossfadeDuration: Float,
     onGaplessPlaybackChange: (Boolean) -> Unit,
     onUseSystemVolumeChange: (Boolean) -> Unit,
+    onStopPlaybackOnZeroVolumeChange: (Boolean) -> Unit,
+    onResumeOnDeviceReconnectChange: (Boolean) -> Unit,
+    onShowPlayedQueueSongsChange: (Boolean) -> Unit,
     onCrossfadeEnabledChange: (Boolean) -> Unit,
     onCrossfadeDurationChange: (Float) -> Unit,
     onNavigateToSettings: (() -> Unit)? = null,
@@ -1133,160 +1189,192 @@ private fun PlaybackQuickSettingsCard(
     context: Context,
     modifier: Modifier = Modifier
 ) {
-    Card(
+    val quickSettingsItems = buildList {
+        add(
+            Material3SettingsItem(
+                icon = RhythmIcons.VolumeUp,
+                title = { Text(text = context.getString(R.string.playback_use_system_volume)) },
+                description = { Text(text = context.getString(R.string.playback_use_system_volume_desc)) },
+                trailingContent = {
+                    AnimatedAudioSwitch(
+                        checked = useSystemVolume,
+                        onCheckedChange = {
+                            HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
+                            onUseSystemVolumeChange(it)
+                        }
+                    )
+                },
+                onClick = {
+                    HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
+                    onUseSystemVolumeChange(!useSystemVolume)
+                }
+            )
+        )
+        add(
+            Material3SettingsItem(
+                icon = RhythmIcons.VolumeOff,
+                title = { Text(text = context.getString(R.string.settings_stop_playback_on_zero_volume)) },
+                description = { Text(text = context.getString(R.string.settings_stop_playback_on_zero_volume_desc)) },
+                trailingContent = {
+                    AnimatedAudioSwitch(
+                        checked = stopPlaybackOnZeroVolume,
+                        onCheckedChange = {
+                            HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
+                            onStopPlaybackOnZeroVolumeChange(it)
+                        }
+                    )
+                },
+                onClick = {
+                    HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
+                    onStopPlaybackOnZeroVolumeChange(!stopPlaybackOnZeroVolume)
+                }
+            )
+        )
+        add(
+            Material3SettingsItem(
+                icon = RhythmIcons.Bluetooth,
+                title = { Text(text = context.getString(R.string.settings_resume_on_device_reconnect)) },
+                description = { Text(text = context.getString(R.string.settings_resume_on_device_reconnect_desc)) },
+                trailingContent = {
+                    AnimatedAudioSwitch(
+                        checked = resumeOnDeviceReconnect,
+                        onCheckedChange = {
+                            HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
+                            onResumeOnDeviceReconnectChange(it)
+                        }
+                    )
+                },
+                onClick = {
+                    HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
+                    onResumeOnDeviceReconnectChange(!resumeOnDeviceReconnect)
+                }
+            )
+        )
+        add(
+            Material3SettingsItem(
+                icon = RhythmIcons.Repeat,
+                title = { Text(text = context.getString(R.string.settings_gapless_playback)) },
+                description = { Text(text = context.getString(R.string.settings_gapless_playback_desc)) },
+                trailingContent = {
+                    AnimatedAudioSwitch(
+                        checked = gaplessPlayback,
+                        onCheckedChange = {
+                            HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
+                            onGaplessPlaybackChange(it)
+                        }
+                    )
+                },
+                onClick = {
+                    HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
+                    onGaplessPlaybackChange(!gaplessPlayback)
+                }
+            )
+        )
+        add(
+            Material3SettingsItem(
+                icon = RhythmIcons.List,
+                title = { Text(text = context.getString(R.string.settings_show_played_queue_songs)) },
+                description = { Text(text = context.getString(R.string.settings_show_played_queue_songs_desc)) },
+                trailingContent = {
+                    AnimatedAudioSwitch(
+                        checked = showPlayedQueueSongs,
+                        onCheckedChange = {
+                            HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
+                            onShowPlayedQueueSongsChange(it)
+                        }
+                    )
+                },
+                onClick = {
+                    HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
+                    onShowPlayedQueueSongsChange(!showPlayedQueueSongs)
+                }
+            )
+        )
+        add(
+            Material3SettingsItem(
+                icon = RhythmIcons.Tune,
+                title = { Text(text = context.getString(R.string.settings_crossfade)) },
+                description = { Text(text = context.getString(R.string.settings_crossfade_desc)) },
+                trailingContent = {
+                    AnimatedAudioSwitch(
+                        checked = crossfadeEnabled,
+                        onCheckedChange = {
+                            HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
+                            onCrossfadeEnabledChange(it)
+                        }
+                    )
+                },
+                onClick = {
+                    HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
+                    onCrossfadeEnabledChange(!crossfadeEnabled)
+                }
+            )
+        )
+
+        if (crossfadeEnabled) {
+            add(
+                Material3SettingsItem(
+                    icon = RhythmIcons.Tune,
+                    title = { Text(text = context.getString(R.string.settings_crossfade_duration)) },
+                    description = {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                text = context.getString(R.string.settings_crossfade_duration_desc, crossfadeDuration),
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Slider(
+                                value = crossfadeDuration,
+                                onValueChange = { onCrossfadeDurationChange(it) },
+                                valueRange = 1f..10f,
+                                steps = 8,
+                                colors = SliderDefaults.colors(
+                                    thumbColor = MaterialTheme.colorScheme.primary,
+                                    activeTrackColor = MaterialTheme.colorScheme.primary,
+                                    inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
+                                )
+                            )
+                        }
+                    }
+                )
+            )
+        }
+
+        onNavigateToSettings?.let { navigateToSettings ->
+            add(
+                Material3SettingsItem(
+                    icon = RhythmIcons.Settings,
+                    title = { Text(text = context.getString(R.string.settings_queue_playback_title)) },
+                    description = { Text(text = context.getString(R.string.settings_queue_playback_desc)) },
+                    trailingContent = {
+                        Icon(
+                            imageVector = RhythmIcons.Forward,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    },
+                    onClick = {
+                        HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
+                        navigateToSettings.invoke()
+                    }
+                )
+            )
+        }
+    }
+
+    Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        shape = RoundedCornerShape(20.dp),
-        elevation = CardDefaults.cardElevation(
-            defaultElevation = 0.dp
-        )
+            .padding(horizontal = 24.dp)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(24.dp)
-        ) {
-            // Header
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = RhythmIcons.Settings,
-                    contentDescription = "Quick Settings",
-                    
-                    modifier = Modifier.size(24.dp)
-                )
-
-                Spacer(modifier = Modifier.width(12.dp))
-
-                Text(
-                    text = context.getString(R.string.playback_settings),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Use System Volume
-            AudioSettingRow(
-                title = "Use System Volume",
-                description = "Control system volume instead of app volume",
-                enabled = useSystemVolume,
-                onToggle = {
-                    HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
-                    onUseSystemVolumeChange(it)
-                }
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Gapless Playback
-            AudioSettingRow(
-                title = "Gapless Playback",
-                description = "Seamless transitions between tracks",
-                enabled = gaplessPlayback,
-                onToggle = {
-                    HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
-                    onGaplessPlaybackChange(it)
-                }
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Crossfade
-            AudioSettingRow(
-                title = "Crossfade",
-                description = "Fade between songs for smooth transitions",
-                enabled = crossfadeEnabled,
-                onToggle = {
-                    HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
-                    onCrossfadeEnabledChange(it)
-                }
-            )
-
-            // Crossfade duration slider (visible when crossfade enabled)
-            AnimatedVisibility(visible = crossfadeEnabled) {
-                Column {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Duration",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Text(
-                            text = "${String.format("%.1f", crossfadeDuration)}s",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    Slider(
-                        value = crossfadeDuration,
-                        onValueChange = { onCrossfadeDurationChange(it) },
-                        valueRange = 1f..10f,
-                        steps = 8,
-                        colors = SliderDefaults.colors(
-                            thumbColor = MaterialTheme.colorScheme.primary,
-                            activeTrackColor = MaterialTheme.colorScheme.primary,
-                            inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
-                        )
-                    )
-                }
-            }
-
-            // Info link to Queue & Playback settings — placed at the bottom of this card
-            if (onNavigateToSettings != null) {
-                Spacer(modifier = Modifier.height(16.dp))
-                HorizontalDivider(
-                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                    thickness = 0.5.dp
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .clickable { onNavigateToSettings.invoke() }
-                        .padding(vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Icon(
-                        imageVector = RhythmIcons.Settings,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "More adjustments in ",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                    )
-                    Text(
-                        text = context.getString(R.string.settings_queue_playback_title),
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f))
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
-                }
-            }
-        }
+        Material3SettingsGroup(
+            title = context.getString(R.string.playback_settings),
+            items = quickSettingsItems,
+            containerColor = MaterialTheme.colorScheme.surface
+        )
     }
 }
 
@@ -1481,41 +1569,6 @@ private fun PlaybackPitchCard(
 }
 
 @Composable
-private fun AudioSettingRow(
-    title: String,
-    description: String,
-    enabled: Boolean,
-    onToggle: (Boolean) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(
-            modifier = Modifier.weight(1f)
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = description,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        
-        AnimatedAudioSwitch(
-            checked = enabled,
-            onCheckedChange = onToggle
-        )
-    }
-}
-
-@Composable
 private fun AnimatedAudioSwitch(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
@@ -1648,216 +1701,149 @@ private fun AudioEffectsCard(
     haptics: androidx.compose.ui.hapticfeedback.HapticFeedback,
     context: Context
 ) {
-    Card(
+    val audioEffectItems = buildList {
+        add(
+            Material3SettingsItem(
+                icon = RhythmIcons.Equalizer,
+                title = { Text(text = context.getString(R.string.equalizer)) },
+                description = { Text(text = context.getString(R.string.settings_equalizer_desc)) },
+                trailingContent = {
+                    AnimatedAudioSwitch(
+                        checked = equalizerEnabled,
+                        onCheckedChange = {
+                            HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
+                            onEqualizerEnabledChange(it)
+                        }
+                    )
+                },
+                onClick = {
+                    HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
+                    onEqualizerEnabledChange(!equalizerEnabled)
+                }
+            )
+        )
+        add(
+            Material3SettingsItem(
+                icon = RhythmIcons.VolumeUp,
+                title = { Text(text = context.getString(R.string.bass_boost)) },
+                description = {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text(text = context.getString(R.string.bass_boost_desc))
+                        if (bassBoostEnabled) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "${context.getString(R.string.strength)} ${bassBoostStrength / 10}%",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Slider(
+                                value = bassBoostStrength.toFloat(),
+                                onValueChange = { onBassBoostStrengthChange(it.toInt()) },
+                                valueRange = 0f..1000f,
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = SliderDefaults.colors(
+                                    thumbColor = MaterialTheme.colorScheme.primary,
+                                    activeTrackColor = MaterialTheme.colorScheme.primary,
+                                    inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
+                                )
+                            )
+                        }
+                    }
+                },
+                trailingContent = {
+                    AnimatedAudioSwitch(
+                        checked = bassBoostEnabled,
+                        onCheckedChange = {
+                            HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
+                            onBassBoostEnabledChange(it)
+                        }
+                    )
+                },
+                onClick = {
+                    HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
+                    onBassBoostEnabledChange(!bassBoostEnabled)
+                }
+            )
+        )
+        add(
+            Material3SettingsItem(
+                icon = RhythmIcons.Headphones,
+                title = { Text(text = context.getString(R.string.virtualizer)) },
+                description = {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text(text = context.getString(R.string.virtualizer_desc))
+                        if (virtualizerEnabled) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "${context.getString(R.string.strength)} ${virtualizerStrength / 10}%",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Slider(
+                                value = virtualizerStrength.toFloat(),
+                                onValueChange = { onVirtualizerStrengthChange(it.toInt()) },
+                                valueRange = 0f..1000f,
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = SliderDefaults.colors(
+                                    thumbColor = MaterialTheme.colorScheme.primary,
+                                    activeTrackColor = MaterialTheme.colorScheme.primary,
+                                    inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
+                                )
+                            )
+                        }
+                    }
+                },
+                trailingContent = {
+                    AnimatedAudioSwitch(
+                        checked = virtualizerEnabled,
+                        onCheckedChange = {
+                            HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
+                            onVirtualizerEnabledChange(it)
+                        }
+                    )
+                },
+                onClick = {
+                    HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
+                    onVirtualizerEnabledChange(!virtualizerEnabled)
+                }
+            )
+        )
+
+        onNavigateToEqualizer?.let { navigateToEqualizer ->
+            add(
+                Material3SettingsItem(
+                    icon = RhythmIcons.Equalizer,
+                    title = { Text(text = context.getString(R.string.open_equalizer_settings)) },
+                    description = { Text(text = context.getString(R.string.settings_equalizer_desc)) },
+                    trailingContent = {
+                        Icon(
+                            imageVector = RhythmIcons.Forward,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    },
+                    onClick = {
+                        HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
+                        navigateToEqualizer.invoke()
+                    }
+                )
+            )
+        }
+    }
+
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+            .padding(horizontal = 24.dp)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(24.dp)
-        ) {
-            // Header
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = RhythmIcons.Equalizer,
-                    contentDescription = null,
-                    
-                    modifier = Modifier.size(24.dp)
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Text(
-                    text = context.getString(R.string.audio_effects),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Audio Normalization toggle
-            //AudioSettingRow(
-            //    title = context.getString(R.string.audio_normalization),
-            //    description = context.getString(R.string.audio_normalization_desc),
-            //    enabled = audioNormalization,
-            //    onToggle = {
-            //        HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
-            //        onAudioNormalizationChange(it)
-            //    }
-            //)
-
-            //Spacer(modifier = Modifier.height(16.dp))
-
-            // Replay Gain toggle
-            //AudioSettingRow(
-            //    title = context.getString(R.string.replay_gain),
-            //    description = context.getString(R.string.replay_gain_desc),
-            //    enabled = replayGain,
-            //    onToggle = {
-            //        HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
-            //        onReplayGainChange(it)
-            //    }
-            //)
-
-            //Spacer(modifier = Modifier.height(16.dp))
-
-            //HorizontalDivider(
-            //    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-            //    thickness = 0.5.dp
-            //)
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Equalizer quick toggle
-            AudioSettingRow(
-                title = context.getString(R.string.equalizer),
-                description = context.getString(R.string.settings_equalizer_desc),
-                enabled = equalizerEnabled,
-                onToggle = {
-                    HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
-                    onEqualizerEnabledChange(it)
-                }
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Bass Boost toggle + strength slider
-            AudioSettingRow(
-                title = context.getString(R.string.bass_boost),
-                description = context.getString(R.string.bass_boost_desc),
-                enabled = bassBoostEnabled,
-                onToggle = {
-                    HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
-                    onBassBoostEnabledChange(it)
-                }
-            )
-            AnimatedVisibility(visible = bassBoostEnabled) {
-                Column {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = context.getString(R.string.strength),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Text(
-                            text = "${bassBoostStrength / 10}%",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    Slider(
-                        value = bassBoostStrength.toFloat(),
-                        onValueChange = { onBassBoostStrengthChange(it.toInt()) },
-                        valueRange = 0f..1000f,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = SliderDefaults.colors(
-                            thumbColor = MaterialTheme.colorScheme.primary,
-                            activeTrackColor = MaterialTheme.colorScheme.primary,
-                            inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
-                        )
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Virtualizer toggle + strength slider
-            AudioSettingRow(
-                title = context.getString(R.string.virtualizer),
-                description = context.getString(R.string.virtualizer_desc),
-                enabled = virtualizerEnabled,
-                onToggle = {
-                    HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
-                    onVirtualizerEnabledChange(it)
-                }
-            )
-            AnimatedVisibility(visible = virtualizerEnabled) {
-                Column {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = context.getString(R.string.strength),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Text(
-                            text = "${virtualizerStrength / 10}%",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    Slider(
-                        value = virtualizerStrength.toFloat(),
-                        onValueChange = { onVirtualizerStrengthChange(it.toInt()) },
-                        valueRange = 0f..1000f,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = SliderDefaults.colors(
-                            thumbColor = MaterialTheme.colorScheme.primary,
-                            activeTrackColor = MaterialTheme.colorScheme.primary,
-                            inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
-                        )
-                    )
-                }
-            }
-
-            // Open EQ settings link
-            if (onNavigateToEqualizer != null) {
-                Spacer(modifier = Modifier.height(16.dp))
-                HorizontalDivider(
-                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                    thickness = 0.5.dp
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .clickable { onNavigateToEqualizer.invoke() }
-                        .padding(vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Icon(
-                        imageVector = RhythmIcons.Equalizer,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = context.getString(R.string.open_equalizer_settings),
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f))
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
-                }
-            }
-        }
+        Material3SettingsGroup(
+            title = context.getString(R.string.audio_effects),
+            items = audioEffectItems,
+            containerColor = MaterialTheme.colorScheme.surface
+        )
     }
 }
 

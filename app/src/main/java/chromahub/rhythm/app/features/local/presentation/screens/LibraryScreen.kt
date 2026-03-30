@@ -1560,6 +1560,7 @@ fun LibraryScreen(
                                 showSongInfoSheet = true
                             },
                             onPlayQueue = onPlayQueue,
+                            onPlayQueueFromIndex = onPlayQueueFromIndex,
                             onShuffleQueue = onShuffleQueue,
                             haptics = haptics,
                             appSettings = appSettings,
@@ -2946,16 +2947,17 @@ fun SingleCardPlaylistsContent(
             }
 
             // Playlist Items
-            items(
+            itemsIndexed(
                 items = preparedPlaylists,
-                key = { it.id },
-                contentType = { "playlist" }
-            ) { playlist ->
+                key = { _, playlist -> playlist.id },
+                contentType = { _, _ -> "playlist" }
+            ) { index, playlist ->
                 AnimateIn(modifier = Modifier.animateItem()) {
                     PlaylistItem(
                         playlist = playlist,
                         onClick = { onPlaylistClick(playlist) },
-                        haptics = haptics
+                        haptics = haptics,
+                        itemShape = groupedLibraryItemShape(index, preparedPlaylists.size)
                     )
                 }
             }
@@ -3220,17 +3222,18 @@ fun SingleCardAlbumsContent(
                 }
 
                 // Album List Items
-                items(
+                itemsIndexed(
                     items = preparedAlbums,
-                    key = { it.id },
-                    contentType = { "album" }
-                ) { album ->
+                    key = { _, album -> album.id },
+                    contentType = { _, _ -> "album" }
+                ) { index, album ->
                     AnimateIn(modifier = Modifier.animateItem()) {
                         LibraryAlbumItem(
                             album = album,
                             onClick = { onAlbumBottomSheetClick(album) },
                             onPlayClick = { onAlbumClick(album) },
-                            haptics = haptics
+                            haptics = haptics,
+                            itemShape = groupedLibraryItemShape(index, preparedAlbums.size)
                         )
                     }
                 }
@@ -4119,6 +4122,7 @@ fun LibrarySongItemWrapper(
     isPlaying: Boolean = false,
     haptics: androidx.compose.ui.hapticfeedback.HapticFeedback,
     enableRatingSystem: Boolean = true,
+    itemShape: RoundedCornerShape = RoundedCornerShape(12.dp),
     // Multi-selection parameters
     isSelected: Boolean = false,
     isSelectionMode: Boolean = false,
@@ -4167,7 +4171,7 @@ fun LibrarySongItemWrapper(
                     onLongPress()
                 }
             ),
-        shape = RoundedCornerShape(12.dp),
+        shape = itemShape,
         color = containerColor
     ) {
         LibrarySongItem(
@@ -4199,7 +4203,8 @@ fun LibrarySongItemWrapper(
 fun PlaylistItem(
     playlist: Playlist,
     onClick: () -> Unit,
-    haptics: androidx.compose.ui.hapticfeedback.HapticFeedback // Add haptics parameter
+    haptics: androidx.compose.ui.hapticfeedback.HapticFeedback,
+    itemShape: RoundedCornerShape = RoundedCornerShape(20.dp)
 ) {
     val context = LocalContext.current
     
@@ -4218,7 +4223,7 @@ fun PlaylistItem(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 20.dp, vertical = 6.dp),
-        shape = RoundedCornerShape(20.dp),
+        shape = itemShape,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         tonalElevation = 2.dp,
         shadowElevation = 0.dp
@@ -4382,6 +4387,25 @@ fun PlaylistItem(
     }
 }
 
+private fun groupedLibraryItemShape(index: Int, totalCount: Int): RoundedCornerShape {
+    return when {
+        totalCount <= 1 -> RoundedCornerShape(24.dp)
+        index == 0 -> RoundedCornerShape(
+            topStart = 24.dp,
+            topEnd = 24.dp,
+            bottomStart = 6.dp,
+            bottomEnd = 6.dp
+        )
+        index == totalCount - 1 -> RoundedCornerShape(
+            topStart = 6.dp,
+            topEnd = 6.dp,
+            bottomStart = 24.dp,
+            bottomEnd = 24.dp
+        )
+        else -> RoundedCornerShape(6.dp)
+    }
+}
+
 @Composable
 fun PlaylistArtCollage(
     songs: List<Song>,
@@ -4533,7 +4557,8 @@ fun LibraryAlbumItem(
     album: Album,
     onClick: () -> Unit,
     onPlayClick: () -> Unit = {},
-    haptics: androidx.compose.ui.hapticfeedback.HapticFeedback // Add haptics parameter
+    haptics: androidx.compose.ui.hapticfeedback.HapticFeedback,
+    itemShape: RoundedCornerShape = RoundedCornerShape(20.dp)
 ) {
     val context = LocalContext.current
     val artworkShape = rememberExpressiveShapeFor(
@@ -4549,7 +4574,7 @@ fun LibraryAlbumItem(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp),
-        shape = RoundedCornerShape(20.dp),
+        shape = itemShape,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         tonalElevation = 0.dp,
         shadowElevation = 0.dp
@@ -5254,7 +5279,7 @@ fun SingleCardArtistsContent(
             contentPadding = PaddingValues(
                 start = 20.dp,
                 end = 20.dp,
-                top = 8.dp,
+                top = 0.dp,
                 bottom = 16.dp // Simple spacing - Scaffold handles rest
             ),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -5265,6 +5290,7 @@ fun SingleCardArtistsContent(
                 ArtistSectionHeader(
                     artistCount = sortedArtists.size,
                     artists = sortedArtists,
+                    applyOuterHorizontalPadding = false,
                     onPlayAll = {
                         val allSongs = sortedArtists.flatMap { it.songs }
                         if (allSongs.isNotEmpty()) {
@@ -5314,12 +5340,9 @@ fun SingleCardArtistsContent(
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
-                start = 20.dp,
-                end = 20.dp,
-                top = 8.dp,
                 bottom = 16.dp // Simple spacing - Scaffold handles rest
             ),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
             // Section header (not sticky in list view)
             item {
@@ -5343,29 +5366,24 @@ fun SingleCardArtistsContent(
             }
             
             if (sortedArtists.isNotEmpty()) {
-                items(
+                itemsIndexed(
                     items = sortedArtists,
-                    key = { "listartist_${it.id}" },
-                    contentType = { "artist" }
-                ) { artist ->
+                    key = { _, artist -> "listartist_${artist.id}" },
+                    contentType = { _, _ -> "artist" }
+                ) { index, artist ->
                     AnimateIn(modifier = Modifier.animateItem()) {
-                        Surface(
-                            color = MaterialTheme.colorScheme.surfaceContainer,
-                            shape = RoundedCornerShape(16.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            ArtistListCard(
-                                artist = artist,
-                                onClick = {
-                                    HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
-                                    onArtistClick(artist)
-                                },
-                                onPlayClick = {
-                                    HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
-                                    viewModel.playArtist(artist)
-                                }
-                            )
-                        }
+                        ArtistListCard(
+                            artist = artist,
+                            onClick = {
+                                HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
+                                onArtistClick(artist)
+                            },
+                            onPlayClick = {
+                                HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
+                                viewModel.playArtist(artist)
+                            },
+                            itemShape = groupedLibraryItemShape(index, sortedArtists.size)
+                        )
                     }
                 }
             }
@@ -5431,6 +5449,7 @@ fun SingleCardArtistsContent(
 private fun ArtistSectionHeader(
     artistCount: Int,
     artists: List<Artist> = emptyList(),
+    applyOuterHorizontalPadding: Boolean = true,
     onPlayAll: () -> Unit = {},
     onShuffleAll: () -> Unit = {},
     haptics: androidx.compose.ui.hapticfeedback.HapticFeedback? = null
@@ -5438,7 +5457,12 @@ private fun ArtistSectionHeader(
     val context = LocalContext.current
     
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(
+                horizontal = if (applyOuterHorizontalPadding) 20.dp else 0.dp,
+                vertical = 8.dp
+            ),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.8f)
@@ -5672,27 +5696,23 @@ private fun ArtistListCard(
     artist: Artist,
     onClick: () -> Unit,
     onPlayClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    itemShape: RoundedCornerShape = RoundedCornerShape(20.dp)
 ) {
-    val context = LocalContext.current
-    val artworkShape = rememberExpressiveShapeFor(ExpressiveShapeTarget.ALBUM_ART)
-
-    Card(
+    Surface(
         onClick = onClick,
-        modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-        ),
-        shape = RoundedCornerShape(20.dp),
-        elevation = CardDefaults.cardElevation(
-            defaultElevation = 0.dp,
-            pressedElevation = 0.dp
-        )
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        shape = itemShape,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(20.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Artist image with expressive shape
@@ -5700,25 +5720,27 @@ private fun ArtistListCard(
                 imageUrl = artist.artworkUri,
                 artistName = artist.name,
                 modifier = Modifier
-                    .size(90.dp)
+                    .size(68.dp)
             )
 
-            Spacer(modifier = Modifier.width(16.dp))
+            Spacer(modifier = Modifier.width(18.dp))
 
             Column(
-                modifier = Modifier.weight(1f)
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 8.dp)
             ) {
                 // Artist name
                 Text(
                     text = artist.name,
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
+                    fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
 
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(6.dp))
 
                 // Artist info with pills
                 Row(
@@ -5783,16 +5805,15 @@ private fun ArtistListCard(
             FilledIconButton(
                 onClick = onPlayClick,
                 colors = IconButtonDefaults.filledIconButtonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 ),
-                modifier = Modifier.size(40.dp)
+                modifier = Modifier.size(48.dp)
             ) {
                 Icon(
                     imageVector = RhythmIcons.Play,
                     contentDescription = "Play ${artist.name}",
-                    tint = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(24.dp)
                 )
             }
         }
@@ -5807,6 +5828,7 @@ fun SingleCardExplorerContent(
     onAddToQueue: (Song) -> Unit,
     onShowSongInfo: (Song) -> Unit,
     onPlayQueue: (List<Song>) -> Unit,
+    onPlayQueueFromIndex: (List<Song>, Int) -> Unit,
     onShuffleQueue: (List<Song>) -> Unit,
     haptics: androidx.compose.ui.hapticfeedback.HapticFeedback,
     appSettings: AppSettings,
@@ -6288,63 +6310,50 @@ fun SingleCardExplorerContent(
                             )
                         }
 
-                        // Play All Button (only show if current folder has songs)
-                        if (currentPath != null && currentFolderSongs.isNotEmpty()) {
-                            ExpressiveButtonGroup(
-                                style = ButtonGroupStyle.Tonal
-                            ) {
-                                ExpressiveGroupButton(
-                                    onClick = {
-                                        HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
-                                        onPlayQueue(currentFolderSongs)
-                                    },
-                                    isStart = true,
-                                    isEnd = false
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.PlayArrow,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-                                
-                                ExpressiveGroupButton(
-                                    onClick = {
-                                        HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
-                                        onShuffleQueue(currentFolderSongs)
-                                    },
-                                    isStart = false,
-                                    isEnd = true
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Shuffle,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.width(10.dp))
-                        }
-
-                        // Back button if not at root
+                        // Grouped back + shuffle controls in folder view
                         if (currentPath != null) {
-                            Surface(
-                                onClick = {
-                                    HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
-                                    currentPath = getParentPath(currentPath!!)
-                                },
-                                shape = CircleShape,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(44.dp)
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Box(contentAlignment = Alignment.Center) {
+                                FilledTonalIconButton(
+                                    onClick = {
+                                        HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
+                                        currentPath = getParentPath(currentPath!!)
+                                    },
+                                    shape = ButtonGroupDefaults.connectedLeadingButtonShapes().shape,
+                                    colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                                        contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+                                    ),
+                                    modifier = Modifier.size(44.dp)
+                                ) {
                                     Icon(
                                         imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
                                         contentDescription = "Go back",
-                                        tint = MaterialTheme.colorScheme.onPrimary,
                                         modifier = Modifier.size(22.dp)
                                     )
+                                }
+
+                                if (currentFolderSongs.isNotEmpty()) {
+                                    FilledTonalIconButton(
+                                        onClick = {
+                                            HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
+                                            onShuffleQueue(currentFolderSongs)
+                                        },
+                                        shape = ButtonGroupDefaults.connectedTrailingButtonShapes().shape,
+                                        colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                                            contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+                                        ),
+                                        modifier = Modifier.size(44.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Shuffle,
+                                            contentDescription = context.getString(R.string.cd_shuffle),
+                                            modifier = Modifier.size(22.dp)
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -6436,10 +6445,10 @@ fun SingleCardExplorerContent(
                     }
 
                     // Storage items
-                    items(
+                    itemsIndexed(
                         items = storageItems,
-                        key = { "storage_" + it.path }
-                    ) { item ->
+                        key = { _, item -> "storage_${item.path}" }
+                    ) { index, item ->
                         AnimateIn {
                             ExplorerItemCard(
                                 item = item,
@@ -6458,7 +6467,8 @@ fun SingleCardExplorerContent(
                                 onAddFolderToQueue = null, // Storages don't have queue option
                                 currentSong = currentSong,
                                 isPlaying = isPlaying,
-                                enableRatingSystem = enableRatingSystem
+                                enableRatingSystem = enableRatingSystem,
+                                itemShape = groupedLibraryItemShape(index, storageItems.size)
                             )
                         }
                     }
@@ -6517,10 +6527,10 @@ fun SingleCardExplorerContent(
                         }
 
                         // Pinned folder items
-                        items(
+                        itemsIndexed(
                             items = pinnedFolderItems,
-                            key = { "pinned_" + it.path }
-                        ) { item ->
+                            key = { _, item -> "pinned_${item.path}" }
+                        ) { index, item ->
                             AnimateIn {
                                 ExplorerItemCard(
                                     item = item,
@@ -6573,7 +6583,8 @@ fun SingleCardExplorerContent(
                                     },
                                     currentSong = currentSong,
                                     isPlaying = isPlaying,
-                                    enableRatingSystem = enableRatingSystem
+                                    enableRatingSystem = enableRatingSystem,
+                                    itemShape = groupedLibraryItemShape(index, pinnedFolderItems.size)
                                 )
                             }
                         }
@@ -6582,9 +6593,9 @@ fun SingleCardExplorerContent(
 
                 // Explorer Items - only show when not loading and not at root level
                 if (!isLoadingDirectory && currentPath != null) {
-                    items(
+                    itemsIndexed(
                         items = currentItems,
-                        key = { item -> 
+                        key = { _, item -> 
                             // Use song ID if it's a file with a song, otherwise use path + name + type
                             if (item.type == ExplorerItemType.FILE && item.song != null) {
                                 "song_${item.song.id}"
@@ -6592,7 +6603,7 @@ fun SingleCardExplorerContent(
                                 "${item.type}_${item.path}_${item.name}"
                             }
                         }
-                    ) { item ->
+                    ) { index, item ->
                         AnimateIn {
                             ExplorerItemCard(
                                 item = item,
@@ -6605,14 +6616,14 @@ fun SingleCardExplorerContent(
                                             currentPath = item.path
                                         }
                                         ExplorerItemType.FILE -> {
-                                            // Play the song and add ALL folder songs to queue
-                                            item.song?.let { song -> 
-                                                // Add all songs in folder to queue first
-                                                currentFolderSongs.forEach { folderSong -> 
-                                                    onAddToQueue(folderSong) 
+                                            // Play from current folder context to keep queue + start index deterministic.
+                                            item.song?.let { song ->
+                                                val songIndex = currentFolderSongs.indexOfFirst { it.id == song.id }
+                                                if (songIndex >= 0) {
+                                                    onPlayQueueFromIndex(currentFolderSongs, songIndex)
+                                                } else {
+                                                    onSongClick(song)
                                                 }
-                                                // Then play the selected song (which is already in queue)
-                                                onSongClick(song)
                                             }
                                         }
                                     }
@@ -6672,7 +6683,8 @@ fun SingleCardExplorerContent(
                                 } else null,
                                 currentSong = currentSong,
                                 isPlaying = isPlaying,
-                                enableRatingSystem = enableRatingSystem
+                                enableRatingSystem = enableRatingSystem,
+                                itemShape = groupedLibraryItemShape(index, currentItems.size)
                             )
                         }
                     }
@@ -8418,6 +8430,7 @@ fun ExplorerItemCard(
     onShowSongInfo: (Song) -> Unit,
     haptics: androidx.compose.ui.hapticfeedback.HapticFeedback,
     modifier: Modifier = Modifier,
+    itemShape: RoundedCornerShape? = null,
     isPinned: Boolean = false,
     onPinToggle: (() -> Unit)? = null,
     onPlayFolder: ((ExplorerItem) -> Unit)? = null,
@@ -8438,7 +8451,7 @@ fun ExplorerItemCard(
                 modifier = modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 6.dp),
-                shape = RoundedCornerShape(20.dp),
+                shape = itemShape ?: RoundedCornerShape(20.dp),
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surface
                 ),
@@ -8522,7 +8535,7 @@ fun ExplorerItemCard(
                 modifier = modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 4.dp),
-                shape = RoundedCornerShape(16.dp),
+                shape = itemShape ?: RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
                 ),
@@ -8777,7 +8790,7 @@ fun ExplorerItemCard(
                 // Use the existing LibrarySongItemWrapper for files
                 LibrarySongItemWrapper(
                     song = song,
-                    onClick = { onSongClick(song) },
+                    onClick = { onItemClick() },
                     onMoreClick = { onAddToPlaylist(song) },
                     onAddToQueue = { onAddToQueue(song) },
                     onShowSongInfo = { onShowSongInfo(song) },
@@ -8785,7 +8798,8 @@ fun ExplorerItemCard(
                     currentSong = currentSong,
                     isPlaying = isPlaying,
                     haptics = haptics,
-                    enableRatingSystem = enableRatingSystem
+                    enableRatingSystem = enableRatingSystem,
+                    itemShape = itemShape ?: RoundedCornerShape(16.dp)
                 )
             }
         }

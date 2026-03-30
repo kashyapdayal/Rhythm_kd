@@ -9,6 +9,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -300,7 +301,7 @@ fun AddToPlaylistScreen(
                     }
                     .padding(horizontal = 16.dp),
                 contentPadding = PaddingValues(vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 
                 // Empty state
@@ -313,14 +314,16 @@ fun AddToPlaylistScreen(
                     }
                 } else {
                     // Song items
-                    items(
+                    itemsIndexed(
                         items = filteredSongs,
-                        key = { "addsong_${it.id}_${filteredSongs.indexOf(it)}" }
-                    ) { song ->
+                        key = { index, song -> "addsong_${song.id}_$index" }
+                    ) { index, song ->
                         SongSelectionItem(
                             song = song,
                             isSelectionMode = isSelectionMode,
                             isSelected = selectedSongs.contains(song.id),
+                            index = index,
+                            totalCount = filteredSongs.size,
                             onSongClick = {
                                 HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
                                 if (isSelectionMode) {
@@ -355,6 +358,8 @@ private fun SongSelectionItem(
     song: Song,
     isSelectionMode: Boolean,
     isSelected: Boolean,
+    index: Int,
+    totalCount: Int,
     onSongClick: () -> Unit,
     onLongClick: () -> Unit,
     modifier: Modifier = Modifier
@@ -382,7 +387,7 @@ private fun SongSelectionItem(
         } else {
             MaterialTheme.colorScheme.surfaceContainer
         },
-        shape = RoundedCornerShape(12.dp),
+        shape = groupedSongItemShape(index, totalCount),
         tonalElevation = if (isSelected) 2.dp else 1.dp
     ) {
         Row(
@@ -477,6 +482,25 @@ private fun SongSelectionItem(
                 }
             }
         }
+    }
+}
+
+private fun groupedSongItemShape(index: Int, totalCount: Int): RoundedCornerShape {
+    return when {
+        totalCount <= 1 -> RoundedCornerShape(24.dp)
+        index == 0 -> RoundedCornerShape(
+            topStart = 24.dp,
+            topEnd = 24.dp,
+            bottomStart = 6.dp,
+            bottomEnd = 6.dp
+        )
+        index == totalCount - 1 -> RoundedCornerShape(
+            topStart = 6.dp,
+            topEnd = 6.dp,
+            bottomStart = 24.dp,
+            bottomEnd = 24.dp
+        )
+        else -> RoundedCornerShape(6.dp)
     }
 }
 

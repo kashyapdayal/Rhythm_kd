@@ -24,6 +24,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import chromahub.rhythm.app.shared.data.model.AppSettings
+import chromahub.rhythm.app.shared.presentation.components.Material3SettingsGroup
+import chromahub.rhythm.app.shared.presentation.components.Material3SettingsItem
 import chromahub.rhythm.app.shared.presentation.components.common.CollapsibleHeaderScreen
 import chromahub.rhythm.app.util.HapticUtils
 import chromahub.rhythm.app.infrastructure.widget.MusicWidgetProvider
@@ -47,6 +49,33 @@ fun WidgetSettingsScreen(
     val autoUpdate by appSettings.widgetAutoUpdate.collectAsState()
     
     var showCornerRadiusSheet by remember { mutableStateOf(false) }
+
+    fun buildToggleSettingsItem(
+        icon: androidx.compose.ui.graphics.vector.ImageVector,
+        title: String,
+        description: String,
+        checked: Boolean,
+        onToggle: (Boolean) -> Unit
+    ): Material3SettingsItem {
+        return Material3SettingsItem(
+            icon = icon,
+            title = { Text(title) },
+            description = { Text(description) },
+            trailingContent = {
+                TunerAnimatedSwitch(
+                    checked = checked,
+                    onCheckedChange = {
+                        HapticUtils.performHapticFeedback(context, hapticFeedback, HapticFeedbackType.TextHandleMove)
+                        onToggle(it)
+                    }
+                )
+            },
+            onClick = {
+                HapticUtils.performHapticFeedback(context, hapticFeedback, HapticFeedbackType.TextHandleMove)
+                onToggle(!checked)
+            }
+        )
+    }
     
     CollapsibleHeaderScreen(
         title = "Widget Settings",
@@ -119,136 +148,99 @@ fun WidgetSettingsScreen(
             // Display Options
             item {
                 Spacer(modifier = Modifier.height(24.dp))
-                Text(
-                    text = "Display Options",
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
+                val displayItems = listOf(
+                    buildToggleSettingsItem(
+                        icon = Icons.Default.Image,
+                        title = "Show Album Art",
+                        description = "Display album artwork in widget",
+                        checked = showAlbumArt,
+                        onToggle = {
+                            appSettings.setWidgetShowAlbumArt(it)
+                            updateAllWidgets(context)
+                        }
+                    ),
+                    buildToggleSettingsItem(
+                        icon = Icons.Default.Person,
+                        title = "Show Artist Name",
+                        description = "Display artist information",
+                        checked = showArtist,
+                        onToggle = {
+                            appSettings.setWidgetShowArtist(it)
+                            updateAllWidgets(context)
+                        }
+                    ),
+                    buildToggleSettingsItem(
+                        icon = Icons.Default.Album,
+                        title = "Show Album Name",
+                        description = "Display album information",
+                        checked = showAlbum,
+                        onToggle = {
+                            appSettings.setWidgetShowAlbum(it)
+                            updateAllWidgets(context)
+                        }
+                    ),
+                    buildToggleSettingsItem(
+                        icon = Icons.Default.Favorite,
+                        title = "Show Favorite Button",
+                        description = "Display favorite toggle on large widgets",
+                        checked = showFavoriteButton,
+                        onToggle = {
+                            appSettings.setWidgetShowFavoriteButton(it)
+                            updateAllWidgets(context)
+                        }
+                    )
                 )
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                ) {
-                    Column {
-                        TunerSettingRow(
-                            item = SettingItem(
-                                Icons.Default.Image,
-                                "Show Album Art",
-                                "Display album artwork in widget",
-                                toggleState = showAlbumArt,
-                                onToggleChange = { 
-                                    appSettings.setWidgetShowAlbumArt(it)
-                                    updateAllWidgets(context)
-                                }
-                            )
-                        )
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 20.dp),
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                        )
-                        TunerSettingRow(
-                            item = SettingItem(
-                                Icons.Default.Person,
-                                "Show Artist Name",
-                                "Display artist information",
-                                toggleState = showArtist,
-                                onToggleChange = { 
-                                    appSettings.setWidgetShowArtist(it)
-                                    updateAllWidgets(context)
-                                }
-                            )
-                        )
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 20.dp),
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                        )
-                        TunerSettingRow(
-                            item = SettingItem(
-                                Icons.Default.Album,
-                                "Show Album Name",
-                                "Display album information",
-                                toggleState = showAlbum,
-                                onToggleChange = { 
-                                    appSettings.setWidgetShowAlbum(it)
-                                    updateAllWidgets(context)
-                                }
-                            )
-                        )
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 20.dp),
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                        )
-                        TunerSettingRow(
-                            item = SettingItem(
-                                Icons.Default.Favorite,
-                                "Show Favorite Button",
-                                "Display favorite toggle on large widgets",
-                                toggleState = showFavoriteButton,
-                                onToggleChange = { 
-                                    appSettings.setWidgetShowFavoriteButton(it)
-                                    updateAllWidgets(context)
-                                }
-                            )
-                        )
-                    }
-                }
+
+                Material3SettingsGroup(
+                    title = "Display Options",
+                    items = displayItems,
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
             }
             
             // Appearance Options
             item {
                 Spacer(modifier = Modifier.height(24.dp))
-                Text(
-                    text = "Appearance",
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
-                )
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                ) {
-                    TunerSettingRow(
-                        item = SettingItem(
-                            Icons.Default.RoundedCorner,
-                            "Corner Radius",
-                            "${cornerRadius}dp (Glance widgets only)",
-                            onClick = { showCornerRadiusSheet = true }
+                Material3SettingsGroup(
+                    title = "Appearance",
+                    items = listOf(
+                        Material3SettingsItem(
+                            icon = Icons.Default.RoundedCorner,
+                            title = { Text("Corner Radius") },
+                            description = { Text("${cornerRadius}dp (Glance widgets only)") },
+                            trailingContent = {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            },
+                            onClick = {
+                                HapticUtils.performHapticFeedback(context, hapticFeedback, HapticFeedbackType.TextHandleMove)
+                                showCornerRadiusSheet = true
+                            }
                         )
-                    )
-                }
+                    ),
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
             }
             
             // Behavior Options
             item {
                 Spacer(modifier = Modifier.height(24.dp))
-                Text(
-                    text = "Behavior",
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
-                )
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                ) {
-                    TunerSettingRow(
-                        item = SettingItem(
-                            Icons.Default.AutoMode,
-                            "Auto Update",
-                            "Automatically update widget when song changes",
-                            toggleState = autoUpdate,
-                            onToggleChange = { 
-                                appSettings.setWidgetAutoUpdate(it)
-                            }
+                Material3SettingsGroup(
+                    title = "Behavior",
+                    items = listOf(
+                        buildToggleSettingsItem(
+                            icon = Icons.Default.AutoMode,
+                            title = "Auto Update",
+                            description = "Automatically update widget when song changes",
+                            checked = autoUpdate,
+                            onToggle = { appSettings.setWidgetAutoUpdate(it) }
                         )
-                    )
-                }
+                    ),
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
             }
             
             // Tips Card

@@ -7,9 +7,6 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
-import chromahub.rhythm.app.shared.data.model.ImmersiveScope
-import chromahub.rhythm.app.shared.data.model.ImmersiveBehaviour
-import chromahub.rhythm.app.shared.data.model.ImmersiveConfig
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -50,21 +47,42 @@ enum class PlaylistViewType {
     LIST, GRID
 }
 
+data class RhythmAuraPolicyBand(
+    val minAge: Int,
+    val maxAge: Int,
+    val maxVolumeThreshold: Float,
+    val recommendedDailyMinutes: Int,
+    val stopPlaybackOnZeroVolume: Boolean,
+    val enforceHapticFeedback: Boolean
+)
+
+typealias RhythmGuardPolicyBand = RhythmAuraPolicyBand
+
+private val RHYTHM_AURA_POLICY_BANDS = listOf(
+    RhythmAuraPolicyBand(8, 12, 0.50f, 40, true, true),
+    RhythmAuraPolicyBand(13, 15, 0.56f, 55, true, true),
+    RhythmAuraPolicyBand(16, 17, 0.60f, 70, true, true),
+    RhythmAuraPolicyBand(18, 25, 0.68f, 95, false, false),
+    RhythmAuraPolicyBand(26, 40, 0.72f, 120, false, false),
+    RhythmAuraPolicyBand(41, 55, 0.70f, 105, false, false),
+    RhythmAuraPolicyBand(56, 80, 0.65f, 90, true, true)
+)
+
+private val RHYTHM_GUARD_POLICY_BANDS = RHYTHM_AURA_POLICY_BANDS
+
 /**
  * Singleton class to manage all app settings using SharedPreferences
  */
 class AppSettings private constructor(context: Context) {
     companion object {
         private const val PREFS_NAME = "rhythm_preferences"
-
-        private const val KEY_RHYTHM_GUARD_TIMEOUT_UNTIL_MS = "rhythm_guard_timeout_until_ms"
-        private const val KEY_RHYTHM_GUARD_TIMEOUT_REASON = "rhythm_guard_timeout_reason"
-
+        
         // Playback Settings
         private const val KEY_HIGH_QUALITY_AUDIO = "high_quality_audio"
         private const val KEY_GAPLESS_PLAYBACK = "gapless_playback"
         private const val KEY_CROSSFADE = "crossfade"
         private const val KEY_CROSSFADE_DURATION = "crossfade_duration"
+        private const val KEY_CROSSFADE_REPEAT_ONE = "crossfade_repeat_one"
         private const val KEY_AUDIO_NORMALIZATION = "audio_normalization"
         private const val KEY_REPLAY_GAIN = "replay_gain"
         private const val KEY_BIT_PERFECT_MODE = "bit_perfect_mode"
@@ -115,6 +133,7 @@ class AppSettings private constructor(context: Context) {
         private const val KEY_LAST_AUDIO_DEVICE = "last_audio_device"
         private const val KEY_AUTO_CONNECT_DEVICE = "auto_connect_device"
         private const val KEY_USE_SYSTEM_VOLUME = "use_system_volume"
+        private const val KEY_STOP_PLAYBACK_ON_ZERO_VOLUME = "stop_playback_on_zero_volume"
         private const val KEY_DISMISSED_AUTOEQ_SUGGESTIONS = "dismissed_autoeq_suggestions"
         
         // Equalizer Settings
@@ -136,6 +155,7 @@ class AppSettings private constructor(context: Context) {
         
         // Search History
         private const val KEY_SEARCH_HISTORY = "search_history"
+        private const val KEY_SHOW_KEYBOARD_ON_SEARCH_OPEN = "show_keyboard_on_search_open"
         
         // Playlists
         private const val KEY_PLAYLISTS = "playlists"
@@ -150,6 +170,36 @@ class AppSettings private constructor(context: Context) {
         private const val KEY_UNIQUE_ARTISTS = "unique_artists"
         private const val KEY_GENRE_PREFERENCES = "genre_preferences"
         private const val KEY_TIME_BASED_PREFERENCES = "time_based_preferences"
+
+        // Rhythm Guard (listening health)
+        private const val KEY_RHYTHM_GUARD_MODE = "rhythm_guard_mode"
+        private const val KEY_RHYTHM_GUARD_AGE = "rhythm_guard_age"
+        private const val KEY_RHYTHM_GUARD_MANUAL_WARNINGS_ENABLED = "rhythm_guard_manual_warnings_enabled"
+        private const val KEY_RHYTHM_GUARD_MANUAL_VOLUME_THRESHOLD = "rhythm_guard_manual_volume_threshold"
+        private const val KEY_RHYTHM_GUARD_LAST_AUTO_APPLIED_AT = "rhythm_guard_last_auto_applied_at"
+        private const val KEY_RHYTHM_GUARD_ALERT_THRESHOLD_MINUTES = "rhythm_guard_alert_threshold_minutes"
+        private const val KEY_RHYTHM_GUARD_WARNING_TIMEOUT_MINUTES = "rhythm_guard_warning_timeout_minutes"
+        private const val KEY_RHYTHM_GUARD_BREAK_RESUME_MINUTES = "rhythm_guard_break_resume_minutes"
+        private const val KEY_RHYTHM_GUARD_TIMEOUT_UNTIL_MS = "rhythm_guard_timeout_until_ms"
+        private const val KEY_RHYTHM_GUARD_TIMEOUT_REASON = "rhythm_guard_timeout_reason"
+
+        // Legacy keys kept for migration compatibility.
+        private const val KEY_RHYTHM_AURA_MODE = "rhythm_aura_mode"
+        private const val KEY_RHYTHM_AURA_AGE = "rhythm_aura_age"
+        private const val KEY_RHYTHM_AURA_MANUAL_WARNINGS_ENABLED = "rhythm_aura_manual_warnings_enabled"
+        private const val KEY_RHYTHM_AURA_MANUAL_VOLUME_THRESHOLD = "rhythm_aura_manual_volume_threshold"
+        private const val KEY_RHYTHM_AURA_LAST_AUTO_APPLIED_AT = "rhythm_aura_last_auto_applied_at"
+
+        const val RHYTHM_GUARD_MODE_OFF = "OFF"
+        const val RHYTHM_GUARD_MODE_AUTO = "AUTO"
+        const val RHYTHM_GUARD_MODE_MANUAL = "MANUAL"
+
+        @Deprecated("Use RHYTHM_GUARD_MODE_OFF")
+        const val RHYTHM_AURA_MODE_OFF = RHYTHM_GUARD_MODE_OFF
+        @Deprecated("Use RHYTHM_GUARD_MODE_AUTO")
+        const val RHYTHM_AURA_MODE_AUTO = RHYTHM_GUARD_MODE_AUTO
+        @Deprecated("Use RHYTHM_GUARD_MODE_MANUAL")
+        const val RHYTHM_AURA_MODE_MANUAL = RHYTHM_GUARD_MODE_MANUAL
         
         // Recently Played
         private const val KEY_RECENTLY_PLAYED = "recently_played"
@@ -204,8 +254,6 @@ class AppSettings private constructor(context: Context) {
         
         // Haptic Feedback
         private const val KEY_HAPTIC_FEEDBACK_ENABLED = "haptic_feedback_enabled"
-        private const val KEY_IMMERSIVE_SCOPE = "immersive_scope"
-        private const val KEY_IMMERSIVE_BEHAVIOUR = "immersive_behaviour"
         
         // Notification Settings
     private const val KEY_USE_CUSTOM_NOTIFICATION = "use_custom_notification"
@@ -213,6 +261,7 @@ class AppSettings private constructor(context: Context) {
     // UI Settings
     private const val KEY_USE_SETTINGS = "use_settings"
     private const val KEY_DEFAULT_SCREEN = "default_screen"
+    private const val KEY_FORCE_PLAYER_COMPACT_MODE = "force_player_compact_mode"
     
         // Codec Monitoring & Enhanced Seeking
         private const val KEY_CODEC_MONITORING_ENABLED = "codec_monitoring_enabled"
@@ -293,7 +342,9 @@ class AppSettings private constructor(context: Context) {
         private const val KEY_SHUFFLE_USES_EXOPLAYER = "shuffle_uses_exoplayer"
         private const val KEY_AUTO_ADD_TO_QUEUE = "auto_add_to_queue"
         private const val KEY_CLEAR_QUEUE_ON_NEW_SONG = "clear_queue_on_new_song"
+        private const val KEY_HIDE_PLAYED_SONGS_IN_QUEUE = "hide_played_songs_in_queue"
         private const val KEY_SHOW_QUEUE_DIALOG = "show_queue_dialog"
+        private const val KEY_LIST_QUEUE_ACTION_BEHAVIOR = "list_queue_action_behavior" // "replace", "ask", "play_next", "add_to_end"
         private const val KEY_REPEAT_MODE_PERSISTENCE = "repeat_mode_persistence"
         private const val KEY_SHUFFLE_MODE_PERSISTENCE = "shuffle_mode_persistence"
         private const val KEY_SAVED_SHUFFLE_STATE = "saved_shuffle_state"
@@ -303,11 +354,11 @@ class AppSettings private constructor(context: Context) {
         private const val KEY_SYNC_SPEED_AND_PITCH = "sync_speed_and_pitch"
         private const val KEY_USE_HOURS_IN_TIME_FORMAT = "use_hours_in_time_format"
         private const val KEY_STOP_PLAYBACK_ON_APP_CLOSE = "stop_playback_on_app_close"
-        private const val KEY_STOP_PLAYBACK_ON_ZERO_VOLUME = "stop_playback_on_zero_volume"
         private const val KEY_QUEUE_PERSISTENCE_ENABLED = "queue_persistence_enabled" // Enable/disable queue persistence
         private const val KEY_SAVED_QUEUE = "saved_queue" // Queue persistence - list of song IDs
         private const val KEY_SAVED_QUEUE_INDEX = "saved_queue_index" // Current position in queue
         private const val KEY_SAVED_PLAYBACK_POSITION = "saved_playback_position" // Current playback position in ms
+        private const val KEY_HIDE_PLAYED_QUEUE_SONGS = "hide_played_queue_songs" // Hide already-played songs in queue
         
         // Widget Settings
         private const val KEY_WIDGET_SHOW_ALBUM_ART = "widget_show_album_art"
@@ -412,6 +463,7 @@ class AppSettings private constructor(context: Context) {
         private const val KEY_EXPRESSIVE_SHAPE_ARTIST_ART = "expressive_shape_artist_art" // Shape for artist artwork
         private const val KEY_EXPRESSIVE_SHAPE_PLAYER_CONTROLS = "expressive_shape_player_controls" // Shape for player controls
         private const val KEY_EXPRESSIVE_SHAPE_MINI_PLAYER = "expressive_shape_mini_player" // Shape for mini player
+        private const val KEY_SHOW_SETTINGS_SUGGESTIONS = "show_settings_suggestions"
         
         @Volatile
         private var INSTANCE: AppSettings? = null
@@ -425,19 +477,7 @@ class AppSettings private constructor(context: Context) {
     
     private val context: Context = context.applicationContext
     private val prefs: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-
-    private val _rhythmGuardTimeoutUntilMs = MutableStateFlow(prefs.getLong(KEY_RHYTHM_GUARD_TIMEOUT_UNTIL_MS, 0L))
-    val rhythmGuardTimeoutUntilMs: StateFlow<Long> = _rhythmGuardTimeoutUntilMs
-
-    private val _rhythmGuardTimeoutReason = MutableStateFlow(prefs.getString(KEY_RHYTHM_GUARD_TIMEOUT_REASON, "") ?: "")
-    val rhythmGuardTimeoutReason: StateFlow<String> = _rhythmGuardTimeoutReason
-
-    fun clearRhythmGuardListeningTimeout() {
-        prefs.edit().remove(KEY_RHYTHM_GUARD_TIMEOUT_UNTIL_MS).remove(KEY_RHYTHM_GUARD_TIMEOUT_REASON).apply()
-        _rhythmGuardTimeoutUntilMs.value = 0L
-        _rhythmGuardTimeoutReason.value = ""
-    }
-
+    
     // Playback Settings
     private val _highQualityAudio = MutableStateFlow(prefs.getBoolean(KEY_HIGH_QUALITY_AUDIO, true))
     val highQualityAudio: StateFlow<Boolean> = _highQualityAudio.asStateFlow()
@@ -453,6 +493,9 @@ class AppSettings private constructor(context: Context) {
     
     private val _crossfadeDuration = MutableStateFlow(prefs.getFloat(KEY_CROSSFADE_DURATION, 4f))
     val crossfadeDuration: StateFlow<Float> = _crossfadeDuration.asStateFlow()
+
+    private val _crossfadeRepeatOne = MutableStateFlow(prefs.getBoolean(KEY_CROSSFADE_REPEAT_ONE, false))
+    val crossfadeRepeatOne: StateFlow<Boolean> = _crossfadeRepeatOne.asStateFlow()
     
     private val _audioNormalization = MutableStateFlow(prefs.getBoolean(KEY_AUDIO_NORMALIZATION, true))
     val audioNormalization: StateFlow<Boolean> = _audioNormalization.asStateFlow()
@@ -686,6 +729,9 @@ class AppSettings private constructor(context: Context) {
     private val _useSystemVolume = MutableStateFlow(prefs.getBoolean(KEY_USE_SYSTEM_VOLUME, false))
     val useSystemVolume: StateFlow<Boolean> = _useSystemVolume.asStateFlow()
     
+    private val _stopPlaybackOnZeroVolume = MutableStateFlow(prefs.getBoolean(KEY_STOP_PLAYBACK_ON_ZERO_VOLUME, false))
+    val stopPlaybackOnZeroVolume: StateFlow<Boolean> = _stopPlaybackOnZeroVolume.asStateFlow()
+    
     // Equalizer Settings
     private val _equalizerEnabled = MutableStateFlow(prefs.getBoolean(KEY_EQUALIZER_ENABLED, false))
     val equalizerEnabled: StateFlow<Boolean> = _equalizerEnabled.asStateFlow()
@@ -739,9 +785,25 @@ class AppSettings private constructor(context: Context) {
     
     private val _clearQueueOnNewSong = MutableStateFlow(prefs.getBoolean(KEY_CLEAR_QUEUE_ON_NEW_SONG, false))
     val clearQueueOnNewSong: StateFlow<Boolean> = _clearQueueOnNewSong.asStateFlow()
+
+    private val initialHidePlayedQueueValue = prefs.getBoolean(
+        KEY_HIDE_PLAYED_QUEUE_SONGS,
+        prefs.getBoolean(KEY_HIDE_PLAYED_SONGS_IN_QUEUE, false)
+    )
+
+    private val _hidePlayedSongsInQueue = MutableStateFlow(initialHidePlayedQueueValue)
+    val hidePlayedSongsInQueue: StateFlow<Boolean> = _hidePlayedSongsInQueue.asStateFlow()
     
     private val _showQueueDialog = MutableStateFlow(prefs.getBoolean(KEY_SHOW_QUEUE_DIALOG, true))
     val showQueueDialog: StateFlow<Boolean> = _showQueueDialog.asStateFlow()
+
+    private val _listQueueActionBehavior = MutableStateFlow(
+        prefs.getString(KEY_LIST_QUEUE_ACTION_BEHAVIOR, "replace") ?: "replace"
+    )
+    val listQueueActionBehavior: StateFlow<String> = _listQueueActionBehavior.asStateFlow()
+    
+    private val _hidePlayedQueueSongs = MutableStateFlow(initialHidePlayedQueueValue)
+    val hidePlayedQueueSongs: StateFlow<Boolean> = _hidePlayedQueueSongs.asStateFlow()
     
     private val _repeatModePersistence = MutableStateFlow(prefs.getBoolean(KEY_REPEAT_MODE_PERSISTENCE, true))
     val repeatModePersistence: StateFlow<Boolean> = _repeatModePersistence.asStateFlow()
@@ -771,9 +833,6 @@ class AppSettings private constructor(context: Context) {
     // Stop Playback on App Close
     private val _stopPlaybackOnAppClose = MutableStateFlow(prefs.getBoolean(KEY_STOP_PLAYBACK_ON_APP_CLOSE, false))
     val stopPlaybackOnAppClose: StateFlow<Boolean> = _stopPlaybackOnAppClose.asStateFlow()
-
-    private val _stopPlaybackOnZeroVolume = MutableStateFlow(prefs.getBoolean(KEY_STOP_PLAYBACK_ON_ZERO_VOLUME, false))
-    val stopPlaybackOnZeroVolume: StateFlow<Boolean> = _stopPlaybackOnZeroVolume.asStateFlow()
     
     // Queue Persistence
     private val _queuePersistenceEnabled = MutableStateFlow(prefs.getBoolean(KEY_QUEUE_PERSISTENCE_ENABLED, true))
@@ -809,6 +868,10 @@ class AppSettings private constructor(context: Context) {
     // Search History
     private val _searchHistory = MutableStateFlow<String?>(prefs.getString(KEY_SEARCH_HISTORY, null))
     val searchHistory: StateFlow<String?> = _searchHistory.asStateFlow()
+
+    // Search UX
+    private val _showKeyboardOnSearchOpen = MutableStateFlow(prefs.getBoolean(KEY_SHOW_KEYBOARD_ON_SEARCH_OPEN, true))
+    val showKeyboardOnSearchOpen: StateFlow<Boolean> = _showKeyboardOnSearchOpen.asStateFlow()
     
     // Playlists
     private val _playlists = MutableStateFlow<String?>(prefs.getString(KEY_PLAYLISTS, null))
@@ -845,6 +908,77 @@ class AppSettings private constructor(context: Context) {
     
     private val _songsPlayed = MutableStateFlow(prefs.getInt(KEY_SONGS_PLAYED, 0))
     val songsPlayed: StateFlow<Int> = _songsPlayed.asStateFlow()
+
+    private val _rhythmAuraMode = MutableStateFlow(
+        sanitizeRhythmGuardMode(
+            prefs.getString(
+                KEY_RHYTHM_GUARD_MODE,
+                prefs.getString(KEY_RHYTHM_AURA_MODE, RHYTHM_GUARD_MODE_OFF)
+            )
+        )
+    )
+    val rhythmGuardMode: StateFlow<String> = _rhythmAuraMode.asStateFlow()
+    @Deprecated("Use rhythmGuardMode")
+    val rhythmAuraMode: StateFlow<String> = rhythmGuardMode
+
+    private val _rhythmAuraAge = MutableStateFlow(
+        prefs.getInt(KEY_RHYTHM_GUARD_AGE, prefs.getInt(KEY_RHYTHM_AURA_AGE, 18)).coerceIn(8, 80)
+    )
+    val rhythmGuardAge: StateFlow<Int> = _rhythmAuraAge.asStateFlow()
+    @Deprecated("Use rhythmGuardAge")
+    val rhythmAuraAge: StateFlow<Int> = rhythmGuardAge
+
+    private val _rhythmAuraManualWarningsEnabled = MutableStateFlow(
+        prefs.getBoolean(
+            KEY_RHYTHM_GUARD_MANUAL_WARNINGS_ENABLED,
+            prefs.getBoolean(KEY_RHYTHM_AURA_MANUAL_WARNINGS_ENABLED, true)
+        )
+    )
+    val rhythmGuardManualWarningsEnabled: StateFlow<Boolean> = _rhythmAuraManualWarningsEnabled.asStateFlow()
+    @Deprecated("Use rhythmGuardManualWarningsEnabled")
+    val rhythmAuraManualWarningsEnabled: StateFlow<Boolean> = rhythmGuardManualWarningsEnabled
+
+    private val _rhythmAuraManualVolumeThreshold = MutableStateFlow(
+        prefs.getFloat(
+            KEY_RHYTHM_GUARD_MANUAL_VOLUME_THRESHOLD,
+            prefs.getFloat(KEY_RHYTHM_AURA_MANUAL_VOLUME_THRESHOLD, 0.68f)
+        ).coerceIn(0.40f, 0.95f)
+    )
+    val rhythmGuardManualVolumeThreshold: StateFlow<Float> = _rhythmAuraManualVolumeThreshold.asStateFlow()
+    @Deprecated("Use rhythmGuardManualVolumeThreshold")
+    val rhythmAuraManualVolumeThreshold: StateFlow<Float> = rhythmGuardManualVolumeThreshold
+
+    private val _rhythmAuraLastAutoAppliedAt = MutableStateFlow(
+        safeLong(KEY_RHYTHM_GUARD_LAST_AUTO_APPLIED_AT, safeLong(KEY_RHYTHM_AURA_LAST_AUTO_APPLIED_AT, 0L))
+    )
+    val rhythmGuardLastAutoAppliedAt: StateFlow<Long> = _rhythmAuraLastAutoAppliedAt.asStateFlow()
+    @Deprecated("Use rhythmGuardLastAutoAppliedAt")
+    val rhythmAuraLastAutoAppliedAt: StateFlow<Long> = rhythmGuardLastAutoAppliedAt
+
+    private val _rhythmGuardAlertThresholdMinutes = MutableStateFlow(
+        prefs.getInt(KEY_RHYTHM_GUARD_ALERT_THRESHOLD_MINUTES, -1).coerceIn(-1, 24 * 60)
+    )
+    val rhythmGuardAlertThresholdMinutes: StateFlow<Int> = _rhythmGuardAlertThresholdMinutes.asStateFlow()
+
+    private val _rhythmGuardWarningTimeoutMinutes = MutableStateFlow(
+        prefs.getInt(KEY_RHYTHM_GUARD_WARNING_TIMEOUT_MINUTES, 2).coerceIn(1, 60)
+    )
+    val rhythmGuardWarningTimeoutMinutes: StateFlow<Int> = _rhythmGuardWarningTimeoutMinutes.asStateFlow()
+
+    private val _rhythmGuardBreakResumeMinutes = MutableStateFlow(
+        prefs.getInt(KEY_RHYTHM_GUARD_BREAK_RESUME_MINUTES, 15).coerceIn(1, 180)
+    )
+    val rhythmGuardBreakResumeMinutes: StateFlow<Int> = _rhythmGuardBreakResumeMinutes.asStateFlow()
+
+    private val _rhythmGuardTimeoutUntilMs = MutableStateFlow(
+        safeLong(KEY_RHYTHM_GUARD_TIMEOUT_UNTIL_MS, 0L).coerceAtLeast(0L)
+    )
+    val rhythmGuardTimeoutUntilMs: StateFlow<Long> = _rhythmGuardTimeoutUntilMs.asStateFlow()
+
+    private val _rhythmGuardTimeoutReason = MutableStateFlow(
+        prefs.getString(KEY_RHYTHM_GUARD_TIMEOUT_REASON, null).orEmpty()
+    )
+    val rhythmGuardTimeoutReason: StateFlow<String> = _rhythmGuardTimeoutReason.asStateFlow()
     
     private val _uniqueArtists = MutableStateFlow(prefs.getInt(KEY_UNIQUE_ARTISTS, 0))
     val uniqueArtists: StateFlow<Int> = _uniqueArtists.asStateFlow()
@@ -1055,18 +1189,7 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
     // Haptic Feedback Settings
     private val _hapticFeedbackEnabled = MutableStateFlow(prefs.getBoolean(KEY_HAPTIC_FEEDBACK_ENABLED, true))
     val hapticFeedbackEnabled: StateFlow<Boolean> = _hapticFeedbackEnabled.asStateFlow()
-
-    // Immersive Mode
-    private val _immersiveScope = MutableStateFlow(
-        ImmersiveScope.valueOf(prefs.getString(KEY_IMMERSIVE_SCOPE, ImmersiveScope.OFF.name) ?: ImmersiveScope.OFF.name)
-    )
-    val immersiveScope: StateFlow<ImmersiveScope> = _immersiveScope.asStateFlow()
-
-    private val _immersiveBehaviour = MutableStateFlow(
-        ImmersiveBehaviour.valueOf(prefs.getString(KEY_IMMERSIVE_BEHAVIOUR, ImmersiveBehaviour.STICKY.name) ?: ImmersiveBehaviour.STICKY.name)
-    )
-    val immersiveBehaviour: StateFlow<ImmersiveBehaviour> = _immersiveBehaviour.asStateFlow()
-
+    
     // Notification Settings
     private val _useCustomNotification = MutableStateFlow(prefs.getBoolean(KEY_USE_CUSTOM_NOTIFICATION, false))
     val useCustomNotification: StateFlow<Boolean> = _useCustomNotification.asStateFlow()
@@ -1074,6 +1197,9 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
     // UI Settings
     private val _useSettings = MutableStateFlow(prefs.getBoolean(KEY_USE_SETTINGS, true))
     val useSettings: StateFlow<Boolean> = _useSettings.asStateFlow()
+    
+    private val _forcePlayerCompactMode = MutableStateFlow(prefs.getBoolean(KEY_FORCE_PLAYER_COMPACT_MODE, false))
+    val forcePlayerCompactMode: StateFlow<Boolean> = _forcePlayerCompactMode.asStateFlow()
     
     // Festive Theme Settings
     private val _festiveThemeEnabled = MutableStateFlow(prefs.getBoolean(KEY_FESTIVE_THEME_ENABLED, true))
@@ -1292,15 +1418,20 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
             Log.w("AppSettings", "Invalid crossfade duration: $duration, keeping current value")
         }
     }
+
+    fun setCrossfadeRepeatOne(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_CROSSFADE_REPEAT_ONE, enabled).apply()
+        _crossfadeRepeatOne.value = enabled
+    }
     
     fun setBitPerfectMode(enable: Boolean) {
         prefs.edit().putBoolean(KEY_BIT_PERFECT_MODE, enable).apply()
         _bitPerfectMode.value = enable
-        Log.d("AppSettings", "Bit-perfect mode ${if (enable) "enabled" else "disabled"} - audio will be output at native sample rate")
+        Log.d("AppSettings", "High-resolution audio mode ${if (enable) "enabled" else "disabled"} - audio will be output at native sample rate")
     }
     
     fun setAudioRoutingMode(mode: String) {
-        require(mode in listOf("default", "app", "system", "hardware")) { "Invalid audio routing mode: $mode" }
+        require(mode in listOf("default", "app", "system")) { "Invalid audio routing mode: $mode" }
         prefs.edit().putString(KEY_AUDIO_ROUTING_MODE, mode).apply()
         _audioRoutingMode.value = mode
         Log.d("AppSettings", "Audio routing mode set to: $mode")
@@ -1579,6 +1710,11 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
         _useSystemVolume.value = enable
     }
     
+    fun setStopPlaybackOnZeroVolume(enable: Boolean) {
+        prefs.edit().putBoolean(KEY_STOP_PLAYBACK_ON_ZERO_VOLUME, enable).apply()
+        _stopPlaybackOnZeroVolume.value = enable
+    }
+    
     // Equalizer Settings Methods
     fun setEqualizerEnabled(enable: Boolean) {
         prefs.edit().putBoolean(KEY_EQUALIZER_ENABLED, enable).apply()
@@ -1674,10 +1810,35 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
         prefs.edit().putBoolean(KEY_CLEAR_QUEUE_ON_NEW_SONG, clearQueue).apply()
         _clearQueueOnNewSong.value = clearQueue
     }
+
+    fun setHidePlayedSongsInQueue(hidePlayedSongs: Boolean) {
+        prefs.edit()
+            .putBoolean(KEY_HIDE_PLAYED_SONGS_IN_QUEUE, hidePlayedSongs)
+            .putBoolean(KEY_HIDE_PLAYED_QUEUE_SONGS, hidePlayedSongs)
+            .apply()
+        _hidePlayedSongsInQueue.value = hidePlayedSongs
+        _hidePlayedQueueSongs.value = hidePlayedSongs
+    }
     
     fun setShowQueueDialog(show: Boolean) {
         prefs.edit().putBoolean(KEY_SHOW_QUEUE_DIALOG, show).apply()
         _showQueueDialog.value = show
+    }
+
+    fun setListQueueActionBehavior(behavior: String) {
+        if (behavior in listOf("replace", "ask", "play_next", "add_to_end")) {
+            prefs.edit().putString(KEY_LIST_QUEUE_ACTION_BEHAVIOR, behavior).apply()
+            _listQueueActionBehavior.value = behavior
+        }
+    }
+    
+    fun setHidePlayedQueueSongs(hide: Boolean) {
+        prefs.edit()
+            .putBoolean(KEY_HIDE_PLAYED_QUEUE_SONGS, hide)
+            .putBoolean(KEY_HIDE_PLAYED_SONGS_IN_QUEUE, hide)
+            .apply()
+        _hidePlayedQueueSongs.value = hide
+        _hidePlayedSongsInQueue.value = hide
     }
     
     fun setRepeatModePersistence(persist: Boolean) {
@@ -1725,12 +1886,6 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
     fun setStopPlaybackOnAppClose(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_STOP_PLAYBACK_ON_APP_CLOSE, enabled).apply()
         _stopPlaybackOnAppClose.value = enabled
-    }
-    
-    // Stop Playback on Zero Volume Methods
-    fun setStopPlaybackOnZeroVolume(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_STOP_PLAYBACK_ON_ZERO_VOLUME, enabled).apply()
-        _stopPlaybackOnZeroVolume.value = enabled
     }
     
     // Queue Persistence Methods
@@ -1794,6 +1949,11 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
         _searchHistory.value = history
     }
 
+    fun setShowKeyboardOnSearchOpen(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_SHOW_KEYBOARD_ON_SEARCH_OPEN, enabled).apply()
+        _showKeyboardOnSearchOpen.value = enabled
+    }
+
     // Playlists
     fun setPlaylists(playlistsJson: String?) {
         if (playlistsJson == null) {
@@ -1833,6 +1993,171 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
         prefs.edit().putInt(KEY_SONGS_PLAYED, count).apply()
         _songsPlayed.value = count
     }
+
+    fun setRhythmGuardMode(mode: String) {
+        val normalizedMode = sanitizeRhythmGuardMode(mode)
+        prefs.edit()
+            .putString(KEY_RHYTHM_GUARD_MODE, normalizedMode)
+            .putString(KEY_RHYTHM_AURA_MODE, normalizedMode)
+            .apply()
+        _rhythmAuraMode.value = normalizedMode
+    }
+
+    @Deprecated("Use setRhythmGuardMode")
+    fun setRhythmAuraMode(mode: String) = setRhythmGuardMode(mode)
+
+    fun setRhythmGuardAge(age: Int) {
+        val safeAge = age.coerceIn(8, 80)
+        prefs.edit()
+            .putInt(KEY_RHYTHM_GUARD_AGE, safeAge)
+            .putInt(KEY_RHYTHM_AURA_AGE, safeAge)
+            .apply()
+        _rhythmAuraAge.value = safeAge
+    }
+
+    @Deprecated("Use setRhythmGuardAge")
+    fun setRhythmAuraAge(age: Int) = setRhythmGuardAge(age)
+
+    fun setRhythmGuardManualWarningsEnabled(enabled: Boolean) {
+        prefs.edit()
+            .putBoolean(KEY_RHYTHM_GUARD_MANUAL_WARNINGS_ENABLED, enabled)
+            .putBoolean(KEY_RHYTHM_AURA_MANUAL_WARNINGS_ENABLED, enabled)
+            .apply()
+        _rhythmAuraManualWarningsEnabled.value = enabled
+    }
+
+    @Deprecated("Use setRhythmGuardManualWarningsEnabled")
+    fun setRhythmAuraManualWarningsEnabled(enabled: Boolean) = setRhythmGuardManualWarningsEnabled(enabled)
+
+    fun setRhythmGuardManualVolumeThreshold(threshold: Float) {
+        val safeThreshold = threshold.coerceIn(0.40f, 0.95f)
+        prefs.edit()
+            .putFloat(KEY_RHYTHM_GUARD_MANUAL_VOLUME_THRESHOLD, safeThreshold)
+            .putFloat(KEY_RHYTHM_AURA_MANUAL_VOLUME_THRESHOLD, safeThreshold)
+            .apply()
+        _rhythmAuraManualVolumeThreshold.value = safeThreshold
+    }
+
+    @Deprecated("Use setRhythmGuardManualVolumeThreshold")
+    fun setRhythmAuraManualVolumeThreshold(threshold: Float) = setRhythmGuardManualVolumeThreshold(threshold)
+
+    fun setRhythmGuardLastAutoAppliedAt(timestamp: Long) {
+        prefs.edit()
+            .putLong(KEY_RHYTHM_GUARD_LAST_AUTO_APPLIED_AT, timestamp)
+            .putLong(KEY_RHYTHM_AURA_LAST_AUTO_APPLIED_AT, timestamp)
+            .apply()
+        _rhythmAuraLastAutoAppliedAt.value = timestamp
+    }
+
+    @Deprecated("Use setRhythmGuardLastAutoAppliedAt")
+    fun setRhythmAuraLastAutoAppliedAt(timestamp: Long) = setRhythmGuardLastAutoAppliedAt(timestamp)
+
+    fun setRhythmGuardAlertThresholdMinutes(minutes: Int) {
+        val safeMinutes = minutes.coerceIn(-1, 24 * 60)
+        prefs.edit().putInt(KEY_RHYTHM_GUARD_ALERT_THRESHOLD_MINUTES, safeMinutes).apply()
+        _rhythmGuardAlertThresholdMinutes.value = safeMinutes
+    }
+
+    fun setRhythmGuardWarningTimeoutMinutes(minutes: Int) {
+        val safeMinutes = minutes.coerceIn(1, 60)
+        prefs.edit().putInt(KEY_RHYTHM_GUARD_WARNING_TIMEOUT_MINUTES, safeMinutes).apply()
+        _rhythmGuardWarningTimeoutMinutes.value = safeMinutes
+    }
+
+    fun setRhythmGuardBreakResumeMinutes(minutes: Int) {
+        val safeMinutes = minutes.coerceIn(1, 180)
+        prefs.edit().putInt(KEY_RHYTHM_GUARD_BREAK_RESUME_MINUTES, safeMinutes).apply()
+        _rhythmGuardBreakResumeMinutes.value = safeMinutes
+    }
+
+    fun setRhythmGuardListeningTimeout(untilEpochMs: Long, reason: String = "") {
+        val safeUntil = untilEpochMs.coerceAtLeast(0L)
+        val safeReason = reason.trim()
+        prefs.edit()
+            .putLong(KEY_RHYTHM_GUARD_TIMEOUT_UNTIL_MS, safeUntil)
+            .putString(KEY_RHYTHM_GUARD_TIMEOUT_REASON, safeReason)
+            .apply()
+        _rhythmGuardTimeoutUntilMs.value = safeUntil
+        _rhythmGuardTimeoutReason.value = safeReason
+    }
+
+    fun clearRhythmGuardListeningTimeout() {
+        setRhythmGuardListeningTimeout(0L, "")
+    }
+
+    fun isRhythmGuardTimeoutActive(nowMs: Long = System.currentTimeMillis()): Boolean {
+        val timeoutUntil = _rhythmGuardTimeoutUntilMs.value
+        return timeoutUntil > nowMs
+    }
+
+    fun getRhythmGuardPolicyBands(): List<RhythmGuardPolicyBand> = RHYTHM_GUARD_POLICY_BANDS
+
+    @Deprecated("Use getRhythmGuardPolicyBands")
+    fun getRhythmAuraPolicyBands(): List<RhythmAuraPolicyBand> = RHYTHM_AURA_POLICY_BANDS
+
+    fun getRhythmGuardPolicy(age: Int = _rhythmAuraAge.value): RhythmGuardPolicyBand {
+        val safeAge = age.coerceIn(8, 80)
+        return RHYTHM_GUARD_POLICY_BANDS.firstOrNull { safeAge in it.minAge..it.maxAge }
+            ?: RHYTHM_GUARD_POLICY_BANDS.last()
+    }
+
+    @Deprecated("Use getRhythmGuardPolicy")
+    fun getRhythmAuraPolicy(age: Int = _rhythmAuraAge.value): RhythmAuraPolicyBand = getRhythmGuardPolicy(age)
+
+    fun estimateRhythmGuardTodayListeningMinutes(
+        dailyListeningStats: Map<String, Long>,
+        songsPlayed: Int,
+        listeningTimeMs: Long
+    ): Int {
+        val today = java.time.LocalDate.now().toString()
+        val songsToday = (dailyListeningStats[today] ?: 0L).coerceAtLeast(0L)
+        if (songsToday == 0L) return 0
+
+        val safeSongsPlayed = songsPlayed.coerceAtLeast(1)
+        val averageSongMinutes = ((listeningTimeMs / (1000f * 60f)) / safeSongsPlayed)
+            .coerceIn(2.0f, 6.0f)
+
+        return (songsToday * averageSongMinutes).toInt().coerceAtLeast(0)
+    }
+
+    @Deprecated("Use estimateRhythmGuardTodayListeningMinutes")
+    fun estimateRhythmAuraTodayListeningMinutes(
+        dailyListeningStats: Map<String, Long>,
+        songsPlayed: Int,
+        listeningTimeMs: Long
+    ): Int = estimateRhythmGuardTodayListeningMinutes(dailyListeningStats, songsPlayed, listeningTimeMs)
+
+    fun applyRhythmGuardAutoProfileForAge(age: Int) {
+        val safeAge = age.coerceIn(8, 80)
+        val policy = getRhythmGuardPolicy(safeAge)
+
+        setRhythmGuardManualVolumeThreshold(policy.maxVolumeThreshold)
+        setAudioNormalization(true)
+        setReplayGain(true)
+        setUseSystemVolume(true)
+        setStopPlaybackOnZeroVolume(policy.stopPlaybackOnZeroVolume)
+
+        if (policy.enforceHapticFeedback && !_hapticFeedbackEnabled.value) {
+            setHapticFeedbackEnabled(true)
+        }
+
+        setRhythmGuardLastAutoAppliedAt(System.currentTimeMillis())
+    }
+
+    @Deprecated("Use applyRhythmGuardAutoProfileForAge")
+    fun applyRhythmAuraAutoProfileForAge(age: Int) = applyRhythmGuardAutoProfileForAge(age)
+
+    private fun sanitizeRhythmGuardMode(mode: String?): String {
+        return when (mode) {
+            RHYTHM_GUARD_MODE_AUTO,
+            RHYTHM_GUARD_MODE_MANUAL,
+            RHYTHM_GUARD_MODE_OFF -> mode
+            else -> RHYTHM_GUARD_MODE_OFF
+        }
+    }
+
+    @Deprecated("Use sanitizeRhythmGuardMode")
+    private fun sanitizeRhythmAuraMode(mode: String?): String = sanitizeRhythmGuardMode(mode)
     
     fun setUniqueArtists(count: Int) {
         prefs.edit().putInt(KEY_UNIQUE_ARTISTS, count).apply()
@@ -2064,22 +2389,16 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
         prefs.edit().putBoolean(KEY_HAPTIC_FEEDBACK_ENABLED, enabled).apply()
         _hapticFeedbackEnabled.value = enabled
     }
-
-    // Immersive Mode Methods
-    fun setImmersiveScope(scope: ImmersiveScope) {
-        prefs.edit().putString(KEY_IMMERSIVE_SCOPE, scope.name).apply()
-        _immersiveScope.value = scope
-    }
-
-    fun setImmersiveBehaviour(behaviour: ImmersiveBehaviour) {
-        prefs.edit().putString(KEY_IMMERSIVE_BEHAVIOUR, behaviour.name).apply()
-        _immersiveBehaviour.value = behaviour
-    }
-
+    
     // Notification Settings Methods
     fun setUseCustomNotification(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_USE_CUSTOM_NOTIFICATION, enabled).apply()
         _useCustomNotification.value = enabled
+    }
+    
+    fun setForcePlayerCompactMode(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_FORCE_PLAYER_COMPACT_MODE, enabled).apply()
+        _forcePlayerCompactMode.value = enabled
     }
     
     // Codec Monitoring & Enhanced Seeking Methods
@@ -2665,21 +2984,82 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
         }
         _backupLocation.value = location
     }
+
+    data class BackupRestoreSections(
+        val includeGeneralSettings: Boolean = true,
+        val includeLibraryData: Boolean = true,
+        val includeStatsAndRhythmGuard: Boolean = true
+    ) {
+        val hasAtLeastOneSectionSelected: Boolean
+            get() = includeGeneralSettings || includeLibraryData || includeStatsAndRhythmGuard
+    }
+
+    private fun isLibraryBackupKey(key: String): Boolean {
+        return key == KEY_PLAYLISTS ||
+            key == KEY_FAVORITE_SONGS ||
+            key == KEY_BLACKLISTED_SONGS ||
+            key == KEY_BLACKLISTED_FOLDERS ||
+            key == KEY_WHITELISTED_SONGS ||
+            key == KEY_WHITELISTED_FOLDERS ||
+            key == KEY_PINNED_FOLDERS
+    }
+
+    private fun isStatsAndRhythmGuardBackupKey(key: String): Boolean {
+        return key == KEY_LAST_PLAYED_TIMESTAMP ||
+            key == KEY_RECENTLY_PLAYED ||
+            key == KEY_LISTENING_TIME ||
+            key == KEY_SONGS_PLAYED ||
+            key == KEY_GENRE_PREFERENCES ||
+            key == KEY_FAVORITE_GENRES ||
+            key == KEY_DAILY_LISTENING_STATS ||
+            key == KEY_SONG_PLAY_COUNTS ||
+            key == KEY_HOME_SHOW_LISTENING_STATS ||
+            key == KEY_RHYTHM_GUARD_MODE ||
+            key == KEY_RHYTHM_GUARD_AGE ||
+            key == KEY_RHYTHM_GUARD_MANUAL_WARNINGS_ENABLED ||
+            key == KEY_RHYTHM_GUARD_MANUAL_VOLUME_THRESHOLD ||
+            key == KEY_RHYTHM_GUARD_LAST_AUTO_APPLIED_AT ||
+            key == KEY_RHYTHM_GUARD_ALERT_THRESHOLD_MINUTES ||
+            key == KEY_RHYTHM_GUARD_WARNING_TIMEOUT_MINUTES ||
+            key == KEY_RHYTHM_GUARD_BREAK_RESUME_MINUTES ||
+            key == KEY_RHYTHM_GUARD_TIMEOUT_UNTIL_MS ||
+            key == KEY_RHYTHM_GUARD_TIMEOUT_REASON ||
+            key == KEY_RHYTHM_AURA_MODE ||
+            key == KEY_RHYTHM_AURA_AGE ||
+            key.startsWith("rhythm_guard_") ||
+            key.startsWith("rhythm_aura_")
+    }
+
+    private fun shouldIncludeKeyInBackupSections(
+        key: String,
+        sections: BackupRestoreSections
+    ): Boolean {
+        return when {
+            isLibraryBackupKey(key) -> sections.includeLibraryData
+            isStatsAndRhythmGuardBackupKey(key) -> sections.includeStatsAndRhythmGuard
+            else -> sections.includeGeneralSettings
+        }
+    }
     
     /**
      * Creates a complete backup of all app data as JSON
      */
-    fun createBackup(): String {
+    fun createBackup(sections: BackupRestoreSections = BackupRestoreSections()): String {
         val backupData = mutableMapOf<String, Any?>()
         val preferencesTypes = mutableMapOf<String, String>()
+
+        val effectiveSections = if (sections.hasAtLeastOneSectionSelected) {
+            sections
+        } else {
+            BackupRestoreSections()
+        }
         
         // Get all preferences
         val allPrefs = prefs.all
         
-        // Filter out sensitive or temporary data if needed
+        // Filter based on selected backup sections.
         val filteredPrefs = allPrefs.filterKeys { key ->
-            // Include all keys for now, but you could exclude sensitive data here
-            true
+            shouldIncludeKeyInBackupSections(key, effectiveSections)
         }
         
         // Store type information for each preference
@@ -2700,10 +3080,16 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
         backupData["timestamp"] = System.currentTimeMillis()
         backupData["app_version"] = "1.0.0" // You might want to get this dynamically
         backupData["backup_version"] = 2 // Increment version to handle playlist data properly
+        backupData["selected_sections"] = mapOf(
+            "general_settings" to effectiveSections.includeGeneralSettings,
+            "library_data" to effectiveSections.includeLibraryData,
+            "stats_rhythm_guard" to effectiveSections.includeStatsAndRhythmGuard
+        )
         
         // Explicitly include playlist and favorite songs data even if already in preferences
         // This ensures they are properly backed up and restored
-        try {
+        if (effectiveSections.includeLibraryData) {
+            try {
             val playlistsJson = prefs.getString(KEY_PLAYLISTS, null)
             val favoriteSongsJson = prefs.getString(KEY_FAVORITE_SONGS, null)
             
@@ -2747,8 +3133,9 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
                 backupData["pinned_folders_data"] = pinnedFoldersJson
             }
             
-        } catch (e: Exception) {
-            Log.e("AppSettings", "Error including playlist data in backup", e)
+            } catch (e: Exception) {
+                Log.e("AppSettings", "Error including playlist data in backup", e)
+            }
         }
         
         return Gson().toJson(backupData)
@@ -2757,13 +3144,33 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
     /**
      * Restores app data from a backup JSON string
      */
-    fun restoreFromBackup(backupJson: String): Boolean {
+    fun restoreFromBackup(
+        backupJson: String,
+        sections: BackupRestoreSections = BackupRestoreSections()
+    ): Boolean {
         return try {
             Log.d("AppSettings", "Attempting to restore from backup...")
-            val backupData = Gson().fromJson(backupJson, Map::class.java) as Map<String, Any?>
-            val preferences = backupData["preferences"] as? Map<String, Any?> ?: return false
-            val preferencesTypes = backupData["preferences_types"] as? Map<String, String> ?: emptyMap()
+            val backupData = Gson().fromJson(backupJson, Map::class.java) as? Map<String, Any?> ?: return false
+            val preferences = (backupData["preferences"] as? Map<*, *>)
+                ?.mapNotNull { (key, value) ->
+                    (key as? String)?.let { safeKey -> safeKey to value }
+                }
+                ?.toMap()
+                ?: return false
+            val preferencesTypes = (backupData["preferences_types"] as? Map<*, *>)
+                ?.mapNotNull { (key, value) ->
+                    val safeKey = key as? String ?: return@mapNotNull null
+                    val safeValue = value as? String ?: return@mapNotNull null
+                    safeKey to safeValue
+                }
+                ?.toMap()
+                ?: emptyMap()
             val backupVersion = (backupData["backup_version"] as? Double)?.toInt() ?: 1
+
+            if (!sections.hasAtLeastOneSectionSelected) {
+                Log.w("AppSettings", "Restore skipped: no backup sections selected")
+                return false
+            }
             
             Log.d("AppSettings", "Backup version: $backupVersion")
             
@@ -2772,6 +3179,10 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
             
             // Restore all preferences with proper type handling
             preferences.forEach { (key, value) ->
+                if (!shouldIncludeKeyInBackupSections(key, sections)) {
+                    return@forEach
+                }
+
                 val originalType = preferencesTypes[key]
                 when (value) {
                     is Boolean -> editor.putBoolean(key, value)
@@ -2786,6 +3197,16 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
                     is Int -> editor.putInt(key, value)
                     is Long -> editor.putLong(key, value)
                     is String -> editor.putString(key, value)
+                    is List<*> -> {
+                        if (originalType == "StringSet") {
+                            editor.putStringSet(key, value.mapNotNull { it?.toString() }.toSet())
+                        }
+                    }
+                    is Set<*> -> {
+                        if (originalType == "StringSet") {
+                            editor.putStringSet(key, value.mapNotNull { it?.toString() }.toSet())
+                        }
+                    }
                     is Double -> {
                         // JSON deserializes numbers as Double, convert based on original type
                         when (originalType) {
@@ -2800,7 +3221,7 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
             }
             
             // Handle backup version 2 and above - explicit playlist data restoration
-            if (backupVersion >= 2) {
+            if (backupVersion >= 2 && sections.includeLibraryData) {
                 Log.d("AppSettings", "Restoring playlist data from backup version $backupVersion")
                 
                 // Restore playlists data explicitly
@@ -2849,7 +3270,7 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
                     editor.putString(KEY_PINNED_FOLDERS, pinnedFoldersData)
                     Log.d("AppSettings", "Restored pinned folders data")
                 }
-            } else {
+            } else if (backupVersion < 2) {
                 Log.d("AppSettings", "Backup version $backupVersion - using preferences-based restoration")
             }
             
@@ -2979,8 +3400,9 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
         // Playback Settings
         _highQualityAudio.value = prefs.getBoolean(KEY_HIGH_QUALITY_AUDIO, true)
         _gaplessPlayback.value = prefs.getBoolean(KEY_GAPLESS_PLAYBACK, true)
-        _crossfade.value = prefs.getBoolean(KEY_CROSSFADE, false)
-        _crossfadeDuration.value = prefs.getFloat(KEY_CROSSFADE_DURATION, 2f)
+        _crossfade.value = prefs.getBoolean(KEY_CROSSFADE, true)
+        _crossfadeDuration.value = prefs.getFloat(KEY_CROSSFADE_DURATION, 4f)
+        _crossfadeRepeatOne.value = prefs.getBoolean(KEY_CROSSFADE_REPEAT_ONE, false)
         _audioNormalization.value = prefs.getBoolean(KEY_AUDIO_NORMALIZATION, true)
         _replayGain.value = prefs.getBoolean(KEY_REPLAY_GAIN, false)
         
@@ -3003,6 +3425,7 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
         _lastAudioDevice.value = prefs.getString(KEY_LAST_AUDIO_DEVICE, null)
         _autoConnectDevice.value = prefs.getBoolean(KEY_AUTO_CONNECT_DEVICE, true)
         _useSystemVolume.value = prefs.getBoolean(KEY_USE_SYSTEM_VOLUME, false)
+        _stopPlaybackOnZeroVolume.value = prefs.getBoolean(KEY_STOP_PLAYBACK_ON_ZERO_VOLUME, false)
         
         // Cache Settings
         _maxCacheSize.value = safeLong(KEY_MAX_CACHE_SIZE, 500L * 1024L * 1024L)
@@ -3012,6 +3435,7 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
         _showLyrics.value = prefs.getBoolean(KEY_SHOW_LYRICS, true)
         _onlineOnlyLyrics.value = prefs.getBoolean(KEY_ONLINE_ONLY_LYRICS, true)
         _searchHistory.value = prefs.getString(KEY_SEARCH_HISTORY, null)
+        _showKeyboardOnSearchOpen.value = prefs.getBoolean(KEY_SHOW_KEYBOARD_ON_SEARCH_OPEN, true)
         _playlists.value = prefs.getString(KEY_PLAYLISTS, null)
         _favoriteSongs.value = prefs.getString(KEY_FAVORITE_SONGS, null)
         
@@ -3019,6 +3443,27 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
         _listeningTime.value = safeLong(KEY_LISTENING_TIME, 0L)
         _songsPlayed.value = prefs.getInt(KEY_SONGS_PLAYED, 0)
         _uniqueArtists.value = prefs.getInt(KEY_UNIQUE_ARTISTS, 0)
+        _rhythmAuraMode.value = sanitizeRhythmGuardMode(
+            prefs.getString(KEY_RHYTHM_GUARD_MODE, prefs.getString(KEY_RHYTHM_AURA_MODE, RHYTHM_GUARD_MODE_OFF))
+        )
+        _rhythmAuraAge.value = prefs.getInt(KEY_RHYTHM_GUARD_AGE, prefs.getInt(KEY_RHYTHM_AURA_AGE, 18)).coerceIn(8, 80)
+        _rhythmAuraManualWarningsEnabled.value = prefs.getBoolean(
+            KEY_RHYTHM_GUARD_MANUAL_WARNINGS_ENABLED,
+            prefs.getBoolean(KEY_RHYTHM_AURA_MANUAL_WARNINGS_ENABLED, true)
+        )
+        _rhythmAuraManualVolumeThreshold.value = prefs.getFloat(
+            KEY_RHYTHM_GUARD_MANUAL_VOLUME_THRESHOLD,
+            prefs.getFloat(KEY_RHYTHM_AURA_MANUAL_VOLUME_THRESHOLD, 0.68f)
+        ).coerceIn(0.40f, 0.95f)
+        _rhythmAuraLastAutoAppliedAt.value = safeLong(
+            KEY_RHYTHM_GUARD_LAST_AUTO_APPLIED_AT,
+            safeLong(KEY_RHYTHM_AURA_LAST_AUTO_APPLIED_AT, 0L)
+        )
+        _rhythmGuardAlertThresholdMinutes.value = prefs.getInt(KEY_RHYTHM_GUARD_ALERT_THRESHOLD_MINUTES, -1).coerceIn(-1, 24 * 60)
+        _rhythmGuardWarningTimeoutMinutes.value = prefs.getInt(KEY_RHYTHM_GUARD_WARNING_TIMEOUT_MINUTES, 2).coerceIn(1, 60)
+        _rhythmGuardBreakResumeMinutes.value = prefs.getInt(KEY_RHYTHM_GUARD_BREAK_RESUME_MINUTES, 15).coerceIn(1, 180)
+        _rhythmGuardTimeoutUntilMs.value = safeLong(KEY_RHYTHM_GUARD_TIMEOUT_UNTIL_MS, 0L).coerceAtLeast(0L)
+        _rhythmGuardTimeoutReason.value = prefs.getString(KEY_RHYTHM_GUARD_TIMEOUT_REASON, null).orEmpty()
         
         // Enhanced User Preferences
         _favoriteGenres.value = try {
@@ -3097,6 +3542,7 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
         
         // Other settings
         _hapticFeedbackEnabled.value = prefs.getBoolean(KEY_HAPTIC_FEEDBACK_ENABLED, true)
+        _forcePlayerCompactMode.value = prefs.getBoolean(KEY_FORCE_PLAYER_COMPACT_MODE, false)
         _onboardingCompleted.value = prefs.getBoolean(KEY_ONBOARDING_COMPLETED, false)
         _initialMediaScanCompleted.value = prefs.getBoolean(KEY_INITIAL_MEDIA_SCAN_COMPLETED, false)
         _genreDetectionCompleted.value = prefs.getBoolean(KEY_GENRE_DETECTION_COMPLETED, false)
@@ -3711,13 +4157,24 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
     // Shape preset selection
     private val _expressiveShapePreset = MutableStateFlow(prefs.getString(KEY_EXPRESSIVE_SHAPE_PRESET, "DEFAULT") ?: "DEFAULT")
     val expressiveShapePreset: StateFlow<String> = _expressiveShapePreset.asStateFlow()
+
+
+
+
+    private val _showSettingsSuggestions = MutableStateFlow(prefs.getBoolean(KEY_SHOW_SETTINGS_SUGGESTIONS, true))
+    val showSettingsSuggestions: StateFlow<Boolean> = _showSettingsSuggestions.asStateFlow()
+    fun setShowSettingsSuggestions(show: Boolean) {
+        prefs.edit().putBoolean(KEY_SHOW_SETTINGS_SUGGESTIONS, show).apply()
+        _showSettingsSuggestions.value = show
+    }
+
     fun setExpressiveShapePreset(value: String) {
         _expressiveShapePreset.value = value
         prefs.edit().putString(KEY_EXPRESSIVE_SHAPE_PRESET, value).apply()
     }
     
     // Individual shape settings for each artwork target
-    private val _expressiveShapeAlbumArt = MutableStateFlow(prefs.getString(KEY_EXPRESSIVE_SHAPE_ALBUM_ART, "COOKIE_6") ?: "COOKIE_6")
+    private val _expressiveShapeAlbumArt = MutableStateFlow(prefs.getString(KEY_EXPRESSIVE_SHAPE_ALBUM_ART, "GHOSTISH") ?: "GHOSTISH")
     val expressiveShapeAlbumArt: StateFlow<String> = _expressiveShapeAlbumArt.asStateFlow()
     fun setExpressiveShapeAlbumArt(value: String) {
         _expressiveShapeAlbumArt.value = value
@@ -3728,7 +4185,7 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
         }
     }
     
-    private val _expressiveShapePlayerArt = MutableStateFlow(prefs.getString(KEY_EXPRESSIVE_SHAPE_PLAYER_ART, "COOKIE_6") ?: "COOKIE_6")
+    private val _expressiveShapePlayerArt = MutableStateFlow(prefs.getString(KEY_EXPRESSIVE_SHAPE_PLAYER_ART, "BUN") ?: "BUN")
     val expressiveShapePlayerArt: StateFlow<String> = _expressiveShapePlayerArt.asStateFlow()
     fun setExpressiveShapePlayerArt(value: String) {
         _expressiveShapePlayerArt.value = value
@@ -3748,7 +4205,7 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
         }
     }
     
-    private val _expressiveShapePlaylistArt = MutableStateFlow(prefs.getString(KEY_EXPRESSIVE_SHAPE_PLAYLIST_ART, "COOKIE_4") ?: "COOKIE_4")
+    private val _expressiveShapePlaylistArt = MutableStateFlow(prefs.getString(KEY_EXPRESSIVE_SHAPE_PLAYLIST_ART, "CLOVER_4_LEAF") ?: "CLOVER_4_LEAF")
     val expressiveShapePlaylistArt: StateFlow<String> = _expressiveShapePlaylistArt.asStateFlow()
     fun setExpressiveShapePlaylistArt(value: String) {
         _expressiveShapePlaylistArt.value = value
@@ -3758,7 +4215,7 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
         }
     }
     
-    private val _expressiveShapeArtistArt = MutableStateFlow(prefs.getString(KEY_EXPRESSIVE_SHAPE_ARTIST_ART, "CIRCLE") ?: "CIRCLE")
+    private val _expressiveShapeArtistArt = MutableStateFlow(prefs.getString(KEY_EXPRESSIVE_SHAPE_ARTIST_ART, "PIXEL_CIRCLE") ?: "PIXEL_CIRCLE")
     val expressiveShapeArtistArt: StateFlow<String> = _expressiveShapeArtistArt.asStateFlow()
     fun setExpressiveShapeArtistArt(value: String) {
         _expressiveShapeArtistArt.value = value
@@ -3768,7 +4225,7 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
         }
     }
     
-    private val _expressiveShapePlayerControls = MutableStateFlow(prefs.getString(KEY_EXPRESSIVE_SHAPE_PLAYER_CONTROLS, "CIRCLE") ?: "CIRCLE")
+    private val _expressiveShapePlayerControls = MutableStateFlow(prefs.getString(KEY_EXPRESSIVE_SHAPE_PLAYER_CONTROLS, "COOKIE_12") ?: "COOKIE_12")
     val expressiveShapePlayerControls: StateFlow<String> = _expressiveShapePlayerControls.asStateFlow()
     fun setExpressiveShapePlayerControls(value: String) {
         _expressiveShapePlayerControls.value = value
@@ -3794,12 +4251,12 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
     fun applyExpressiveShapePreset(preset: String) {
         when (preset) {
             "DEFAULT" -> {
-                _expressiveShapeAlbumArt.value = "COOKIE_6"
-                _expressiveShapePlayerArt.value = "COOKIE_6"
+                _expressiveShapeAlbumArt.value = "GHOSTISH"
+                _expressiveShapePlayerArt.value = "BUN"
                 _expressiveShapeSongArt.value = "CLOVER_8_LEAF"
-                _expressiveShapePlaylistArt.value = "COOKIE_4"
-                _expressiveShapeArtistArt.value = "CIRCLE"
-                _expressiveShapePlayerControls.value = "CIRCLE"
+                _expressiveShapePlaylistArt.value = "CLOVER_4_LEAF"
+                _expressiveShapeArtistArt.value = "PIXEL_CIRCLE"
+                _expressiveShapePlayerControls.value = "COOKIE_12"
                 _expressiveShapeMiniPlayer.value = "COOKIE_4"
             }
             "FRIENDLY" -> {
@@ -3879,5 +4336,41 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
             putString(KEY_EXPRESSIVE_SHAPE_MINI_PLAYER, _expressiveShapeMiniPlayer.value)
         }.apply()
         _expressiveShapePreset.value = preset
+    }
+    
+    /**
+     * Randomize all expressive shape targets with randomly picked shapes.
+     * Sets the preset to CUSTOM after randomizing.
+     */
+    fun randomizeExpressiveShapes() {
+        val allShapes = listOf(
+            "CIRCLE", "SQUARE", "OVAL", "PILL", "DIAMOND", "TRIANGLE", "PENTAGON",
+            "FLOWER", "CLOVER_4_LEAF", "CLOVER_8_LEAF", "HEART", "BOOM", "SOFT_BOOM",
+            "BURST", "SOFT_BURST", "SUNNY", "VERY_SUNNY",
+            "COOKIE_4", "COOKIE_6", "COOKIE_7", "COOKIE_9", "COOKIE_12",
+            "GHOSTISH", "PUFFY", "PUFFY_DIAMOND", "BUN", "FAN",
+            "ARCH", "CLAM_SHELL", "GEM", "SLANTED", "PIXEL_CIRCLE", "PIXEL_TRIANGLE"
+        )
+        
+        _expressiveShapeAlbumArt.value = allShapes.random()
+        _expressiveShapePlayerArt.value = allShapes.random()
+        _expressiveShapeSongArt.value = allShapes.random()
+        _expressiveShapePlaylistArt.value = allShapes.random()
+        _expressiveShapeArtistArt.value = allShapes.random()
+        _expressiveShapePlayerControls.value = allShapes.random()
+        _expressiveShapeMiniPlayer.value = allShapes.random()
+        
+        // Save as CUSTOM preset
+        prefs.edit().apply {
+            putString(KEY_EXPRESSIVE_SHAPE_PRESET, "CUSTOM")
+            putString(KEY_EXPRESSIVE_SHAPE_ALBUM_ART, _expressiveShapeAlbumArt.value)
+            putString(KEY_EXPRESSIVE_SHAPE_PLAYER_ART, _expressiveShapePlayerArt.value)
+            putString(KEY_EXPRESSIVE_SHAPE_SONG_ART, _expressiveShapeSongArt.value)
+            putString(KEY_EXPRESSIVE_SHAPE_PLAYLIST_ART, _expressiveShapePlaylistArt.value)
+            putString(KEY_EXPRESSIVE_SHAPE_ARTIST_ART, _expressiveShapeArtistArt.value)
+            putString(KEY_EXPRESSIVE_SHAPE_PLAYER_CONTROLS, _expressiveShapePlayerControls.value)
+            putString(KEY_EXPRESSIVE_SHAPE_MINI_PLAYER, _expressiveShapeMiniPlayer.value)
+        }.apply()
+        _expressiveShapePreset.value = "CUSTOM"
     }
 }

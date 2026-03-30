@@ -65,6 +65,16 @@ import chromahub.rhythm.app.shared.presentation.components.icons.RhythmIcons
 import chromahub.rhythm.app.util.HapticUtils
 import kotlinx.coroutines.launch
 
+private fun groupedBottomSheetItemShape(index: Int, totalCount: Int): RoundedCornerShape {
+    if (totalCount <= 1) return RoundedCornerShape(24.dp)
+
+    return when (index) {
+        0 -> RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 6.dp, bottomEnd = 6.dp)
+        totalCount - 1 -> RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
+        else -> RoundedCornerShape(6.dp)
+    }
+}
+
 @Composable
 fun LibraryTabOrderBottomSheet(
     onDismiss: () -> Unit,
@@ -162,7 +172,7 @@ fun LibraryTabOrderBottomSheet(
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
                     ),
-                    shape = RoundedCornerShape(16.dp)
+                    shape = groupedBottomSheetItemShape(index, reorderableList.size)
                 ) {
                     Row(
                         modifier = Modifier
