@@ -450,6 +450,32 @@ class MusicRepository(context: Context) {
         }
     }
 
+    suspend fun removeSong(songId: String): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val longId = songId.toLongOrNull() ?: return@withContext false
+            val uri = ContentUris.withAppendedId(android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, longId)
+            
+            try {
+                context.contentResolver.delete(uri, null, null)
+            } catch (e: Exception) {
+                // Ignore errors here since Android 10+ handles deletion via IntentSender
+            }
+            
+            // Remove from simple cache
+            cachedSongs = cachedSongs?.filter { it.id != songId }
+            
+            // Remove from room cache
+            try {
+                songDao.deleteById(songId)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error removing song from DB cache", e)
+            }
+            return@withContext true
+        } catch (e: Exception) {
+            return@withContext false
+        }
+    }
+
     suspend fun loadSongs(
         forceRefresh: Boolean = false,
         allowedFormats: Set<String>? = null,

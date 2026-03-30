@@ -189,9 +189,21 @@ class SiphonUsbAudioSink(
         val payload = ByteArray(buffer.remaining())
         buffer.get(payload)
 
+        val processedPayload = if (format.bitDepth == 16) {
+            val shortBuffer = java.nio.ByteBuffer.wrap(payload).order(java.nio.ByteOrder.LITTLE_ENDIAN).asShortBuffer()
+            val shortArray = ShortArray(shortBuffer.remaining())
+            shortBuffer.get(shortArray)
+            val processedShorts = GlobalVolumeController.processPcmBuffer(shortArray)
+            val processedBytes = java.nio.ByteBuffer.allocate(processedShorts.size * 2).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            processedBytes.asShortBuffer().put(processedShorts)
+            processedBytes.array()
+        } else {
+            payload
+        }
+
         // Gain is applied natively, pass the raw payload
         val result = SiphonIsochronousEngine.writeAudio(
-            audioData = payload,
+            audioData = processedPayload,
             numFrames = payload.size / (format.channelCount * (format.bitDepth / 8)),
             bitDepth = format.bitDepth,
             channelCount = format.channelCount

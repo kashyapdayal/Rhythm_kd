@@ -1,5 +1,6 @@
 package chromahub.rhythm.app.activities
 
+import chromahub.rhythm.app.infrastructure.audio.siphon.GlobalVolumeController
 import android.Manifest
 import android.content.Intent
 import android.hardware.usb.UsbDevice
@@ -710,24 +711,18 @@ class MainActivity : ComponentActivity() {
         }
 }
     override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent?): Boolean {
-        // Bug 4 FIX: Route volume keys appropriately based on engine mode
-        // Note: For simplicity in MainActivity, we default to standard mode volume handling
-        // The actual USB exclusive mode check is done in MediaPlaybackService
-        
-        // Always use standard volume key handling in MainActivity
-        // USB exclusive volume control is routed through the broadcast system
-        if (keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP) {
-            val intent = Intent("chromahub.rhythm.app.action.VOLUME_UP")
-            sendBroadcast(intent)
-            return true  // Consume event — prevent system volume bar
+        if (GlobalVolumeController.isUsbDirectActive.value) {
+            when (keyCode) {
+                android.view.KeyEvent.KEYCODE_VOLUME_UP -> {
+                    GlobalVolumeController.step(1)
+                    return true 
+                }
+                android.view.KeyEvent.KEYCODE_VOLUME_DOWN -> {
+                    GlobalVolumeController.step(-1)
+                    return true
+                }
+            }
         }
-        if (keyCode == android.view.KeyEvent.KEYCODE_VOLUME_DOWN) {
-            val intent = Intent("chromahub.rhythm.app.action.VOLUME_DOWN")
-            sendBroadcast(intent)
-            return true  // Consume event — prevent system volume bar
-        }
-
         return super.onKeyDown(keyCode, event)
     }
 }
-

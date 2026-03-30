@@ -1,7 +1,11 @@
 package chromahub.rhythm.app.features.local.presentation.screens
 
 import android.content.Context
+import chromahub.rhythm.app.features.local.presentation.components.UsbDirectVolumeSlider
 import android.net.Uri
+import chromahub.rhythm.app.infrastructure.audio.siphon.GlobalVolumeController
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -2392,6 +2396,10 @@ fun PlayerScreen(
 
                         Spacer(modifier = Modifier.height(if (isTablet) 20.dp else if (isCompactHeight) 6.dp else 12.dp))
                         
+                        // USB DAC Volume Slider
+                        val isUsbDirectActive by GlobalVolumeController.isUsbDirectActive.collectAsState(initial = false)
+                        UsbDirectVolumeSlider(isUsbDirectActive = isUsbDirectActive)
+
                         // Add spacing below progress bar on both views
                         Spacer(modifier = Modifier.height(if (isTablet) 12.dp else if (isCompactHeight) 4.dp else 8.dp))
 

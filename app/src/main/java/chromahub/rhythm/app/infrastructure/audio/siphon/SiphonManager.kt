@@ -109,6 +109,12 @@ class SiphonManager(
             if (_currentVolumeMode.value == VolumeMode.HARDWARE) SiphonRoutingMode.HARDWARE else SiphonRoutingMode.SOFTWARE
         )
         usbSink = sink
+
+        GlobalVolumeController.init(
+            connection = connection,
+            featureUnit = capabilities.featureUnitId,
+            hardwareSupport = capabilities.supportsHardwareVolume
+        )
         
         // Hardware volume logic moved to direct JNI
         
@@ -184,6 +190,7 @@ class SiphonManager(
         }
         activeDevice = null
         activeConnection = null
+        GlobalVolumeController.release()
         usbSink = null
         _state.value = SiphonState.Disconnected
         isSiphonActive = false

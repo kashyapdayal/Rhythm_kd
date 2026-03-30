@@ -127,6 +127,7 @@ fun SongInfoBottomSheet(
     onDismiss: () -> Unit,
     appSettings: AppSettings,
     onEditSong: ((title: String, artist: String, album: String, genre: String, year: Int, trackNumber: Int, artworkUri: Uri?, removeArtwork: Boolean) -> Unit)? = null,
+    onDeleteSong: (() -> Unit)? = null,
     onShowLyricsEditor: (() -> Unit)? = null,
     sheetState: SheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 ) {
@@ -567,6 +568,32 @@ fun SongInfoBottomSheet(
                                                 }
                                             }
 
+                                            // Delete button
+                                            onDeleteSong?.let { deleteAction ->
+                                                FilledTonalIconButton(
+                                                    onClick = {
+                                                        HapticUtils.performHapticFeedback(
+                                                            context,
+                                                            haptics,
+                                                            HapticFeedbackType.LongPress
+                                                        )
+                                                        deleteAction()
+                                                        onDismiss()
+                                                    },
+                                                    modifier = Modifier.size(44.dp),
+                                                    colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                                                        contentColor = MaterialTheme.colorScheme.onErrorContainer
+                                                    )
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Rounded.Delete,
+                                                        contentDescription = "Delete",
+                                                        modifier = Modifier.size(20.dp)
+                                                    )
+                                                }
+                                            }
+
                                             // Close button on tablet
                                             IconButton(
                                                 onClick = onDismiss,
@@ -877,7 +904,35 @@ fun SongInfoBottomSheet(
                                 }
                             }
                         }
-                        
+
+                        // Delete button
+                        onDeleteSong?.let { deleteAction ->
+                            ExpressiveFilledTonalButton(
+                                onClick = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    deleteAction()
+                                    onDismiss()
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp),
+                                shape = ExpressiveShapes.Full,
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                                    contentColor = MaterialTheme.colorScheme.onErrorContainer
+                                ),
+                                contentPadding = PaddingValues(vertical = 12.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Delete,
+                                    contentDescription = "Delete from device",
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Delete from device", fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+
                         // Row(
                         //     modifier = Modifier.fillMaxWidth(),
                         //     horizontalArrangement = Arrangement.spacedBy(8.dp)

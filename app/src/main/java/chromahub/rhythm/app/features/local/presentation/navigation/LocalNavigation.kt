@@ -2005,6 +2005,9 @@ private fun LocalNavigationContent(
                             },
                             onGoToArtist = { song ->
                                 navController.navigate(Screen.ArtistDetail.createRoute(song.artist))
+                            },
+                            onUpdateCover = { uri ->
+                                viewModel.updatePlaylistCover(playlistId, uri)
                             }
                         )
                     }

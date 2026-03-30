@@ -184,8 +184,18 @@ fun PlaylistDetailScreen(
     onToggleFavorite: (Song) -> Unit = {},
     onGoToAlbum: (Song) -> Unit = {},
     onGoToArtist: (Song) -> Unit = {},
-    onShare: (Song) -> Unit = {}
+    onShare: (Song) -> Unit = {},
+    onUpdateCover: (android.net.Uri?) -> Unit = {}
 ) {
+    // Media picker for custom covers
+    val pickMedia = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            onUpdateCover(uri)
+        }
+    }
+
     // Screen size detection for responsive UI
     val configuration = LocalConfiguration.current
     val screenWidthDp = configuration.screenWidthDp
@@ -953,6 +963,49 @@ fun PlaylistDetailScreen(
                         }
                     }
                     
+                    // Change cover option
+                    if (!isDefault) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.surface,
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 2.dp)
+                        ) {
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        "Change cover",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                },
+                                leadingIcon = {
+                                    Surface(
+                                        color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.6f),
+                                        shape = CircleShape,
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = androidx.compose.material.icons.Icons.Filled.Image,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .padding(6.dp)
+                                        )
+                                    }
+                                },
+                                onClick = {
+                                    HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
+                                    showMenu = false
+                                    pickMedia.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly))
+                                }
+                            )
+                        }
+                    }
+
                     // Rename playlist option
                     if (!isDefault) {
                         Surface(

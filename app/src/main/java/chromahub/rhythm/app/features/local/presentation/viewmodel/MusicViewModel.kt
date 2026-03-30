@@ -72,6 +72,11 @@ import chromahub.rhythm.app.util.QueueUtils
 import chromahub.rhythm.app.util.GenreUtils
 import chromahub.rhythm.app.shared.data.repository.PlaybackStatsRepository // Import for enhanced stats tracking
 
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import androidx.activity.result.IntentSenderRequest
+
 class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     companion object {
@@ -99,6 +104,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private val repository = MusicRepository(application)
+    private val deleteSongUseCase = chromahub.rhythm.app.features.local.domain.usecase.DeleteSongUseCase(application, repository)
+    private val playlistCoverManager = chromahub.rhythm.app.features.local.domain.PlaylistCoverManager(application)
     
     // Job for debouncing ContentObserver-triggered refreshes
     private var mediaStoreRefreshJob: kotlinx.coroutines.Job? = null
@@ -4933,6 +4940,48 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         }
         savePlaylists()
         Log.d(TAG, "Populated Most Played playlist with ${topSongs.size} songs.")
+    }
+
+    // Delete Song feature (PROMPT 1)
+    private val _deleteConfirmationLauncher = MutableSharedFlow<IntentSenderRequest>()
+    val deleteConfirmationLauncher = _deleteConfirmationLauncher.asSharedFlow()
+
+    private val _errorMessage = MutableSharedFlow<String>()
+    val errorMessage = _errorMessage.asSharedFlow()
+
+    fun requestDeleteSong(song: Song) = viewModelScope.launch {
+        when (val result = deleteSongUseCase(song)) {
+            is chromahub.rhythm.app.features.local.domain.usecase.DeleteResult.RequiresPermission -> {
+                _deleteConfirmationLauncher.emit(IntentSenderRequest.Builder(result.intentSender).build())
+            }
+            is chromahub.rhythm.app.features.local.domain.usecase.DeleteResult.Success -> {
+                Log.d(TAG, "Song successfully deleted: ${song.title}")
+            }
+            is chromahub.rhythm.app.features.local.domain.usecase.DeleteResult.Error -> {
+                _errorMessage.emit(result.message)
+            }
+        }
+    }
+
+    fun onDeleteConfirmed(song: Song) {
+        viewModelScope.launch {
+            repository.removeSong(song.id)
+            Log.d(TAG, "Song successfully removed from repository: ${song.title}")
+        }
+    }
+
+    // Custom Playlist Covers (PROMPT 2)
+    fun updatePlaylistCover(playlistId: String, newUri: android.net.Uri?) {
+        viewModelScope.launch {
+            val updated = _playlists.value.map { playlist ->
+                if (playlist.id == playlistId) {
+                    val finalUri = newUri?.let { playlistCoverManager.saveCustomCover(playlistId, it) }
+                    playlist.copy(artworkUri = finalUri)
+                } else playlist
+            }
+            _playlists.value = updated
+            savePlaylists()
+        }
     }
 
     // New functions for playlist management
