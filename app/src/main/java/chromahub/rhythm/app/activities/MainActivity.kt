@@ -692,6 +692,8 @@ class MainActivity : ComponentActivity() {
         return when (step) {
             OnboardingStep.WELCOME -> "Welcome"
             OnboardingStep.PERMISSIONS -> "Permissions"
+            OnboardingStep.RHYTHM_GUARD -> "Rhythm Guard"
+            OnboardingStep.FULL_TOUR_PROMPT -> "Full Tour Choice"
             OnboardingStep.NOTIFICATIONS -> "Notifications"
             OnboardingStep.BACKUP_RESTORE -> "Backup & Restore"
             OnboardingStep.AUDIO_PLAYBACK -> "Audio & Playback"
