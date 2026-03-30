@@ -3,6 +3,8 @@ package chromahub.rhythm.app.features.local.presentation.screens.onboarding
 enum class OnboardingStep {
     WELCOME,
     PERMISSIONS,
+    RHYTHM_GUARD,
+    FULL_TOUR_PROMPT,
     NOTIFICATIONS, // Step for notification preferences setup
     BACKUP_RESTORE, // Step for backup and restore setup
     AUDIO_PLAYBACK, // Step for audio and playback settings

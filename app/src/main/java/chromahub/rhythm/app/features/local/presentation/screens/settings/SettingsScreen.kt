@@ -348,7 +348,7 @@ fun SettingsScreen(
                         onToggleChange = { appSettings.setUseSystemVolume(it) }
                     ))
                     add(SettingItem(
-                        RhythmIcons.Player.Stop,
+                        RhythmIcons.Player.VolumeOff,
                         context.getString(R.string.settings_stop_playback_on_zero_volume),
                         context.getString(R.string.settings_stop_playback_on_zero_volume_desc),
                         toggleState = stopPlaybackOnZeroVolume,

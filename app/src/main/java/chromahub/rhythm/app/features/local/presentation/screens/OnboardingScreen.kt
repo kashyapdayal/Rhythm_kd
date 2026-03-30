@@ -4319,7 +4319,7 @@ private fun AudioPlaybackSettingsCard(
                 }
             ),
             Material3SettingsItem(
-                icon = RhythmIcons.Player.Stop,
+                icon = RhythmIcons.Player.VolumeOff,
                 title = { Text(context.getString(R.string.settings_stop_playback_on_zero_volume)) },
                 description = { Text(context.getString(R.string.settings_stop_playback_on_zero_volume_desc)) },
                 trailingContent = {
