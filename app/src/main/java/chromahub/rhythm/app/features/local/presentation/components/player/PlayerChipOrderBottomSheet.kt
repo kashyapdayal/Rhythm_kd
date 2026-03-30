@@ -67,6 +67,25 @@ import chromahub.rhythm.app.shared.presentation.components.icons.RhythmIcons
 import chromahub.rhythm.app.util.HapticUtils
 import kotlinx.coroutines.launch
 
+private fun groupedChipItemShape(index: Int, totalCount: Int): RoundedCornerShape {
+    return when {
+        totalCount <= 1 -> RoundedCornerShape(24.dp)
+        index == 0 -> RoundedCornerShape(
+            topStart = 24.dp,
+            topEnd = 24.dp,
+            bottomStart = 8.dp,
+            bottomEnd = 8.dp
+        )
+        index == totalCount - 1 -> RoundedCornerShape(
+            topStart = 8.dp,
+            topEnd = 8.dp,
+            bottomStart = 24.dp,
+            bottomEnd = 24.dp
+        )
+        else -> RoundedCornerShape(8.dp)
+    }
+}
+
 @Composable
 fun PlayerChipOrderBottomSheet(
     onDismiss: () -> Unit,
@@ -168,7 +187,7 @@ fun PlayerChipOrderBottomSheet(
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
                     ),
-                    shape = RoundedCornerShape(16.dp)
+                    shape = groupedChipItemShape(index, reorderableList.size)
                 ) {
                     Row(
                         modifier = Modifier

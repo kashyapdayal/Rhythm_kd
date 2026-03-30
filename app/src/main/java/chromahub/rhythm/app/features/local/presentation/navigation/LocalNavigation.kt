@@ -105,6 +105,7 @@ import chromahub.rhythm.app.features.local.presentation.components.bottomsheets.
 import chromahub.rhythm.app.features.local.presentation.screens.AddToPlaylistScreen
 import chromahub.rhythm.app.features.local.presentation.components.dialogs.CreatePlaylistDialog
 import chromahub.rhythm.app.features.local.presentation.components.dialogs.QueueActionDialog
+import chromahub.rhythm.app.features.local.presentation.components.dialogs.QueueListActionDialog
 import chromahub.rhythm.app.features.local.presentation.components.player.MiniPlayer
 import chromahub.rhythm.app.features.local.presentation.components.player.SleepTimerBottomSheetNew
 import chromahub.rhythm.app.shared.presentation.components.icons.RhythmIcons
@@ -1212,7 +1213,9 @@ private fun LocalNavigationContent(
                         currentSong = currentSong,
                         isPlaying = isPlaying,
                         progress = progress,
-                        onSongClick = onPlaySong,
+                        onSongClick = { song ->
+                            viewModel.playSongFromSearch(song, songs)
+                        },
                         onAlbumClick = onPlayAlbum,
                         onArtistClick = onPlayArtist,
                         onPlaylistClick = { playlist ->
@@ -1269,7 +1272,8 @@ private fun LocalNavigationContent(
                             navController.popBackStack()
                         },
                         appSettings = appSettings,
-                        navController = navController
+                        navController = navController,
+                        musicViewModel = viewModel
                     )
                 }
                 // Tuner Settings Subroutes
@@ -1539,12 +1543,16 @@ private fun LocalNavigationContent(
                         },
                         onAlbumShufflePlay = onPlayAlbumShuffled,
                         onPlayQueue = { songs ->
-                            // Play queue with proper replacement
-                            viewModel.playQueue(songs)
+                            // Play queue using user-selected list queue behavior
+                            viewModel.playQueueWithUserRule(songs, sourceLabel = "Library")
                         },
                         onPlayQueueFromIndex = { songs, startIndex ->
-                            // Play queue from specific index
-                            viewModel.playQueue(songs, startIndex = startIndex)
+                            // Play queue from specific index using user-selected behavior
+                            viewModel.playQueueWithUserRule(
+                                songs = songs,
+                                startIndex = startIndex,
+                                sourceLabel = "Library"
+                            )
                         },
                         onShuffleQueue = { songs ->
                             // Shuffle using playShuffled to respect settings
@@ -1817,8 +1825,8 @@ private fun LocalNavigationContent(
                             // Play song at specific index to handle duplicates correctly
                             viewModel.playSongAtIndex(index)
                         },
-                        onRemoveFromQueue = { song ->
-                            viewModel.removeFromQueue(song)
+                        onRemoveFromQueueAtIndex = { index ->
+                            viewModel.removeFromQueueAtIndex(index)
                         },
                         onMoveQueueItem = { fromIndex, toIndex ->
                             viewModel.moveQueueItem(fromIndex, toIndex)
@@ -2406,6 +2414,7 @@ private fun LocalNavigationContent(
 
     // Queue action dialog - show at top level
     val queueActionRequest by viewModel.queueActionRequest.collectAsState()
+    val queueListActionRequest by viewModel.queueListActionRequest.collectAsState()
     val currentQueueForDialog by viewModel.currentQueue.collectAsState()
 
     queueActionRequest?.let { request ->
@@ -2418,6 +2427,24 @@ private fun LocalNavigationContent(
             },
             onAddToQueue = {
                 viewModel.handleQueueActionChoice(request.song, clearQueue = false)
+            }
+        )
+    }
+
+    queueListActionRequest?.let { request ->
+        QueueListActionDialog(
+            queueSize = currentQueueForDialog.songs.size,
+            incomingCount = request.songs.size,
+            sourceLabel = request.sourceLabel,
+            onDismiss = { viewModel.dismissQueueListActionDialog() },
+            onReplaceQueue = {
+                viewModel.handleQueueListActionChoice("replace")
+            },
+            onPlayNext = {
+                viewModel.handleQueueListActionChoice("play_next")
+            },
+            onAddToEnd = {
+                viewModel.handleQueueListActionChoice("add_to_end")
             }
         )
     }

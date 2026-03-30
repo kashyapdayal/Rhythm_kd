@@ -147,6 +147,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import chromahub.rhythm.app.features.local.presentation.components.player.SleepTimerBottomSheetNew
 import chromahub.rhythm.app.features.local.presentation.navigation.Screen
 import chromahub.rhythm.app.features.local.presentation.viewmodel.MusicViewModel
+import chromahub.rhythm.app.shared.presentation.components.Material3SettingsGroup
+import chromahub.rhythm.app.shared.presentation.components.Material3SettingsItem
 
 // Define routes for navigation
 object SettingsRoutes {
@@ -471,39 +473,105 @@ fun SettingsScreen(
                                 if (index == 0 && showSettingsSuggestions) 10.dp else 28.dp
                             )
                         )
-                        Text(
-                            text = group.title,
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(start = 4.dp, bottom = 12.dp),
-                            letterSpacing = 0.5.sp
-                        )
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(24.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                            elevation = CardDefaults.cardElevation(
-                                defaultElevation = 0.dp
-                            )
-                        ) {
-                            Column {
-                                group.items.forEachIndexed { index, item ->
-                                    SettingRow(item = item)
-                                    
-                                    if (index < group.items.lastIndex) {
-                                        HorizontalDivider(
-                                            modifier = Modifier.padding(horizontal = 20.dp),
-                                            thickness = 1.dp,
-                                            color = MaterialTheme.colorScheme.surfaceContainerHighest
-                                        )
+
+                        val materialItems = group.items.map { item ->
+                            Material3SettingsItem(
+                                icon = item.icon,
+                                title = { Text(item.title) },
+                                description = item.description?.let { descriptionText ->
+                                    { Text(descriptionText) }
+                                },
+                                trailingContent = when {
+                                    item.toggleState != null && item.onClick != null -> {
+                                        {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(
+                                                    imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                                                    contentDescription = null,
+                                                    modifier = Modifier
+                                                        .size(18.dp)
+                                                        .padding(end = 8.dp),
+                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                                )
+                                                AnimatedSwitch(
+                                                    checked = item.toggleState,
+                                                    onCheckedChange = {
+                                                        HapticUtils.performHapticFeedback(
+                                                            context,
+                                                            hapticFeedback,
+                                                            HapticFeedbackType.TextHandleMove
+                                                        )
+                                                        item.onToggleChange?.invoke(it)
+                                                    }
+                                                )
+                                            }
+                                        }
                                     }
+
+                                    item.toggleState != null -> {
+                                        {
+                                            AnimatedSwitch(
+                                                checked = item.toggleState,
+                                                onCheckedChange = {
+                                                    HapticUtils.performHapticFeedback(
+                                                        context,
+                                                        hapticFeedback,
+                                                        HapticFeedbackType.TextHandleMove
+                                                    )
+                                                    item.onToggleChange?.invoke(it)
+                                                }
+                                            )
+                                        }
+                                    }
+
+                                    item.onClick != null -> {
+                                        {
+                                            Icon(
+                                                imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(18.dp),
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                            )
+                                        }
+                                    }
+
+                                    else -> null
+                                },
+                                isHighlighted = item.toggleState == true,
+                                enabled = item.enabled,
+                                onClick = when {
+                                    item.onClick != null -> {
+                                        {
+                                            HapticUtils.performHapticFeedback(
+                                                context,
+                                                hapticFeedback,
+                                                HapticFeedbackType.LongPress
+                                            )
+                                            item.onClick.invoke()
+                                        }
+                                    }
+
+                                    item.toggleState != null && item.onToggleChange != null -> {
+                                        {
+                                            HapticUtils.performHapticFeedback(
+                                                context,
+                                                hapticFeedback,
+                                                HapticFeedbackType.TextHandleMove
+                                            )
+                                            item.onToggleChange.invoke(!item.toggleState)
+                                        }
+                                    }
+
+                                    else -> null
                                 }
-                            }
+                            )
                         }
-                    
-                        
-                    
+
+                        Material3SettingsGroup(
+                            title = group.title,
+                            items = materialItems,
+                            containerColor = MaterialTheme.colorScheme.surfaceContainer
+                        )
                     }
                 }
             } // End of else branch for search
@@ -886,14 +954,14 @@ fun SettingsScreenPreview() {
 fun SettingsScreenWrapper(
     onBack: () -> Unit,
     appSettings: chromahub.rhythm.app.shared.data.model.AppSettings,
-    navController: androidx.navigation.NavController
+    navController: androidx.navigation.NavController,
+    musicViewModel: MusicViewModel
 ) {
     val configuration = LocalConfiguration.current
     val isTablet = configuration.screenWidthDp >= 600
 
     var currentRoute by rememberSaveable { mutableStateOf<String?>(null) }
     var showSleepTimerBottomSheet by rememberSaveable { mutableStateOf(false) }
-    val musicViewModel: MusicViewModel = viewModel()
     val currentSong by musicViewModel.currentSong.collectAsState()
     val isPlaying by musicViewModel.isPlaying.collectAsState()
 

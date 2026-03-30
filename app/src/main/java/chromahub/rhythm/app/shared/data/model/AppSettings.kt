@@ -344,6 +344,7 @@ class AppSettings private constructor(context: Context) {
         private const val KEY_CLEAR_QUEUE_ON_NEW_SONG = "clear_queue_on_new_song"
         private const val KEY_HIDE_PLAYED_SONGS_IN_QUEUE = "hide_played_songs_in_queue"
         private const val KEY_SHOW_QUEUE_DIALOG = "show_queue_dialog"
+        private const val KEY_LIST_QUEUE_ACTION_BEHAVIOR = "list_queue_action_behavior" // "replace", "ask", "play_next", "add_to_end"
         private const val KEY_REPEAT_MODE_PERSISTENCE = "repeat_mode_persistence"
         private const val KEY_SHUFFLE_MODE_PERSISTENCE = "shuffle_mode_persistence"
         private const val KEY_SAVED_SHUFFLE_STATE = "saved_shuffle_state"
@@ -785,13 +786,23 @@ class AppSettings private constructor(context: Context) {
     private val _clearQueueOnNewSong = MutableStateFlow(prefs.getBoolean(KEY_CLEAR_QUEUE_ON_NEW_SONG, false))
     val clearQueueOnNewSong: StateFlow<Boolean> = _clearQueueOnNewSong.asStateFlow()
 
-    private val _hidePlayedSongsInQueue = MutableStateFlow(prefs.getBoolean(KEY_HIDE_PLAYED_SONGS_IN_QUEUE, false))
+    private val initialHidePlayedQueueValue = prefs.getBoolean(
+        KEY_HIDE_PLAYED_QUEUE_SONGS,
+        prefs.getBoolean(KEY_HIDE_PLAYED_SONGS_IN_QUEUE, false)
+    )
+
+    private val _hidePlayedSongsInQueue = MutableStateFlow(initialHidePlayedQueueValue)
     val hidePlayedSongsInQueue: StateFlow<Boolean> = _hidePlayedSongsInQueue.asStateFlow()
     
     private val _showQueueDialog = MutableStateFlow(prefs.getBoolean(KEY_SHOW_QUEUE_DIALOG, true))
     val showQueueDialog: StateFlow<Boolean> = _showQueueDialog.asStateFlow()
+
+    private val _listQueueActionBehavior = MutableStateFlow(
+        prefs.getString(KEY_LIST_QUEUE_ACTION_BEHAVIOR, "replace") ?: "replace"
+    )
+    val listQueueActionBehavior: StateFlow<String> = _listQueueActionBehavior.asStateFlow()
     
-    private val _hidePlayedQueueSongs = MutableStateFlow(prefs.getBoolean(KEY_HIDE_PLAYED_QUEUE_SONGS, false))
+    private val _hidePlayedQueueSongs = MutableStateFlow(initialHidePlayedQueueValue)
     val hidePlayedQueueSongs: StateFlow<Boolean> = _hidePlayedQueueSongs.asStateFlow()
     
     private val _repeatModePersistence = MutableStateFlow(prefs.getBoolean(KEY_REPEAT_MODE_PERSISTENCE, true))
@@ -1801,18 +1812,33 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
     }
 
     fun setHidePlayedSongsInQueue(hidePlayedSongs: Boolean) {
-        prefs.edit().putBoolean(KEY_HIDE_PLAYED_SONGS_IN_QUEUE, hidePlayedSongs).apply()
+        prefs.edit()
+            .putBoolean(KEY_HIDE_PLAYED_SONGS_IN_QUEUE, hidePlayedSongs)
+            .putBoolean(KEY_HIDE_PLAYED_QUEUE_SONGS, hidePlayedSongs)
+            .apply()
         _hidePlayedSongsInQueue.value = hidePlayedSongs
+        _hidePlayedQueueSongs.value = hidePlayedSongs
     }
     
     fun setShowQueueDialog(show: Boolean) {
         prefs.edit().putBoolean(KEY_SHOW_QUEUE_DIALOG, show).apply()
         _showQueueDialog.value = show
     }
+
+    fun setListQueueActionBehavior(behavior: String) {
+        if (behavior in listOf("replace", "ask", "play_next", "add_to_end")) {
+            prefs.edit().putString(KEY_LIST_QUEUE_ACTION_BEHAVIOR, behavior).apply()
+            _listQueueActionBehavior.value = behavior
+        }
+    }
     
     fun setHidePlayedQueueSongs(hide: Boolean) {
-        prefs.edit().putBoolean(KEY_HIDE_PLAYED_QUEUE_SONGS, hide).apply()
+        prefs.edit()
+            .putBoolean(KEY_HIDE_PLAYED_QUEUE_SONGS, hide)
+            .putBoolean(KEY_HIDE_PLAYED_SONGS_IN_QUEUE, hide)
+            .apply()
         _hidePlayedQueueSongs.value = hide
+        _hidePlayedSongsInQueue.value = hide
     }
     
     fun setRepeatModePersistence(persist: Boolean) {

@@ -1185,6 +1185,7 @@ fun ExpressiveGroupButton(
 fun ExpressiveSettingsGroup(
     modifier: Modifier = Modifier,
     title: String? = null,
+    containerColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
     content: @Composable () -> Unit
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
@@ -1200,7 +1201,7 @@ fun ExpressiveSettingsGroup(
         ExpressiveCard(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainer
+                containerColor = containerColor
             ),
             shape = ExpressiveShapes.Large
         ) {

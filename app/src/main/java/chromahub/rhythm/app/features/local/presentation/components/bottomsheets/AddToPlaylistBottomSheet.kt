@@ -24,7 +24,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -71,6 +71,16 @@ import chromahub.rhythm.app.shared.presentation.components.icons.RhythmIcons
 import chromahub.rhythm.app.shared.presentation.components.common.M3PlaceholderType
 import chromahub.rhythm.app.util.ImageUtils
 import chromahub.rhythm.app.util.HapticUtils
+
+private fun groupedPlaylistItemShape(index: Int, totalCount: Int): RoundedCornerShape {
+    if (totalCount <= 1) return RoundedCornerShape(24.dp)
+
+    return when (index) {
+        0 -> RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 6.dp, bottomEnd = 6.dp)
+        totalCount - 1 -> RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
+        else -> RoundedCornerShape(6.dp)
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -173,16 +183,17 @@ fun AddToPlaylistBottomSheet(
                     Column {
                         // List of existing playlists
                         LazyColumn(
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                            contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            items(
+                            itemsIndexed(
                                 items = playlists,
-                                key = { "playlist_${it.id}" },
-                                contentType = { "playlist" }
-                            ) { playlist ->
+                                key = { _, playlist -> "playlist_${playlist.id}" },
+                                contentType = { _, _ -> "playlist" }
+                            ) { index, playlist ->
                                 PlaylistCard(
                                     playlist = playlist,
+                                    itemShape = groupedPlaylistItemShape(index, playlists.size),
                                     onClick = {
                                         HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
                                         scope.launch { sheetState.hide() }.invokeOnCompletion {
@@ -402,6 +413,7 @@ private fun CreateNewPlaylistCard(
 @Composable
 private fun PlaylistCard(
     playlist: Playlist,
+    itemShape: RoundedCornerShape = RoundedCornerShape(16.dp),
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -429,7 +441,7 @@ private fun PlaylistCard(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
         ),
-        shape = RoundedCornerShape(16.dp),
+        shape = itemShape,
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Row(

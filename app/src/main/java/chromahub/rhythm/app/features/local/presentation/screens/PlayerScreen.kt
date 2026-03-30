@@ -270,7 +270,7 @@ fun PlayerScreen(
     queue: List<Song> = emptyList(),
     onSongClick: (Song) -> Unit = {},
     onSongClickAtIndex: (Int) -> Unit = { _ -> }, // New parameter for index-based queue clicks
-    onRemoveFromQueue: (Song) -> Unit = {},
+    onRemoveFromQueueAtIndex: (Int) -> Unit = { _ -> },
     onMoveQueueItem: (Int, Int) -> Unit = { _, _ -> },
     onAddSongsToQueue: () -> Unit = {},
     onNavigateToLibrary: (LibraryTab) -> Unit = {},
@@ -664,27 +664,39 @@ fun PlayerScreen(
     // Swipe to dismiss gesture state - enhanced for mini player-like transition
     var swipeOffsetY by remember { mutableStateOf(0f) }
     var isDragging by remember { mutableStateOf(false) }
+    var isSwipeDismissing by remember { mutableStateOf(false) }
+    val dismissTargetOffset = screenHeight * 1.18f
     
     val animatedSwipeOffset by animateFloatAsState(
         targetValue = swipeOffsetY,
-        animationSpec = spring(
-            dampingRatio = if (isDragging) Spring.DampingRatioNoBouncy else Spring.DampingRatioMediumBouncy,
-            stiffness = if (isDragging) Spring.StiffnessHigh else Spring.StiffnessMedium
-        ),
+        animationSpec = if (isDragging) {
+            spring(
+                dampingRatio = Spring.DampingRatioNoBouncy,
+                stiffness = Spring.StiffnessMediumLow
+            )
+        } else if (isSwipeDismissing) {
+            tween(durationMillis = 220, easing = EaseInOut)
+        } else {
+            spring(
+                dampingRatio = 0.82f,
+                stiffness = Spring.StiffnessLow
+            )
+        },
         label = "swipeOffset"
     )
     
     // Calculate swipe-based transformations for mini-player-like effect
     val swipeProgress = (animatedSwipeOffset / screenHeight).coerceIn(0f, 1f)
+    val swipeDismissThreshold = screenHeight * 0.16f
     
     // Enhanced scale that creates a "collapsing to mini player" effect
-    val swipeScale = 1f - (swipeProgress * 0.15f) // More pronounced scaling
+    val swipeScale = 1f - (swipeProgress * 0.10f)
     
     // Alpha fades more gradually for smoother transition
-    val swipeAlpha = 1f - (swipeProgress * 0.5f)
+    val swipeAlpha = 1f - (swipeProgress * 0.42f)
     
     // Corner radius increases as we swipe down (mini player has more rounded corners)
-    val swipeCornerRadius = (swipeProgress * 28f).dp
+    val swipeCornerRadius = (swipeProgress * 26f).dp
 
     // Calculate current and total time
     val currentTimeMs = ((song?.duration ?: 0) * progress).toLong()
@@ -816,9 +828,8 @@ fun PlayerScreen(
                 showQueueSheet = false
             },
             onDismiss = { showQueueSheet = false },
-            onRemoveSong = { songToRemove ->
-                // Remove the song from the queue
-                onRemoveFromQueue(songToRemove)
+            onRemoveSongAtIndex = { indexToRemove ->
+                onRemoveFromQueueAtIndex(indexToRemove)
             },
             onMoveQueueItem = { fromIndex, toIndex ->
                 onMoveQueueItem(fromIndex, toIndex)
@@ -1211,61 +1222,59 @@ fun PlayerScreen(
                 }
                 .pointerInput(gesturePlayerSwipeDismiss) {
                     if (gesturePlayerSwipeDismiss) {
-                        var initialDragY = 0f
                         var velocityTracker = 0f
-                        
+
                         detectVerticalDragGestures(
                             onDragStart = {
                                 isDragging = true
-                                initialDragY = swipeOffsetY
+                                isSwipeDismissing = false
                                 velocityTracker = 0f
                             },
                             onVerticalDrag = { change, dragAmount ->
                                 // Only allow downward swipes
                                 if (dragAmount > 0) {
                                     change.consume()
-                                    swipeOffsetY = (swipeOffsetY + dragAmount).coerceAtLeast(0f)
-                                    velocityTracker = dragAmount
+                                    val dragResistance = (1f - (swipeProgress * 0.35f)).coerceAtLeast(0.55f)
+                                    swipeOffsetY = (swipeOffsetY + dragAmount * dragResistance).coerceIn(0f, dismissTargetOffset)
+                                    velocityTracker = (dragAmount * 0.55f) + (velocityTracker * 0.45f)
                                 }
                             },
                             onDragEnd = {
                                 isDragging = false
 
-                                // Reduced dismiss threshold: 15% of screen height for easier dismissal
-                                val dismissThreshold = screenHeight * 0.15f
-                                
-                                // Fast swipe threshold for quick dismissal
-                                val fastSwipeThreshold = 1500f
+                                val fastSwipeThreshold = 900f
+                                val shouldDismiss = swipeOffsetY > swipeDismissThreshold ||
+                                    (velocityTracker > fastSwipeThreshold && swipeOffsetY > screenHeight * 0.03f)
 
-                                if (swipeOffsetY > dismissThreshold || abs(velocityTracker) > fastSwipeThreshold) {
-                                    // Trigger dismiss
+                                if (shouldDismiss) {
                                     HapticUtils.performHapticFeedback(
                                         context,
                                         haptic,
                                         HapticFeedbackType.LongPress
-                                )
-                                scope.launch {
-                                    // Animate out smoothly
-                                    swipeOffsetY = screenHeight
-                                    delay(200)
-                                    onBack()
+                                    )
+                                    scope.launch {
+                                        isSwipeDismissing = true
+                                        swipeOffsetY = dismissTargetOffset
+                                        delay(240)
+                                        onBack()
+                                    }
+                                } else {
+                                    isSwipeDismissing = false
+                                    swipeOffsetY = 0f
                                 }
-                            } else {
-                                // Spring back
+                            },
+                            onDragCancel = {
+                                isDragging = false
+                                isSwipeDismissing = false
                                 swipeOffsetY = 0f
                             }
-                        },
-                        onDragCancel = {
-                            isDragging = false
-                            swipeOffsetY = 0f
-                        }
                         )
                     }
                 }
         ) {
             // Enhanced swipe indicator with progress feedback
             AnimatedVisibility(
-                visible = swipeOffsetY > 30f,
+                visible = swipeOffsetY > 16f,
                 enter = fadeIn() + slideInVertically { -it },
                 exit = fadeOut() + slideOutVertically { -it },
                 modifier = Modifier
@@ -1278,7 +1287,7 @@ fun PlayerScreen(
                 ) {
                     Surface(
                         shape = RoundedCornerShape(20.dp),
-                        color = if (swipeOffsetY > screenHeight * 0.15f) {
+                        color = if (swipeOffsetY > swipeDismissThreshold) {
                             MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.95f)
                         } else {
                             MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f)
@@ -1286,11 +1295,11 @@ fun PlayerScreen(
                         tonalElevation = 2.dp
                     ) {
                         Text(
-                            text = if (swipeOffsetY > screenHeight * 0.15f) "Release to close" else "Swipe down to close",
+                            text = if (swipeOffsetY > swipeDismissThreshold) "Release to close" else "Swipe down to close",
                             style = MaterialTheme.typography.labelMedium.copy(
-                                fontWeight = if (swipeOffsetY > screenHeight * 0.15f) FontWeight.Bold else FontWeight.Normal
+                                fontWeight = if (swipeOffsetY > swipeDismissThreshold) FontWeight.Bold else FontWeight.Normal
                             ),
-                            color = if (swipeOffsetY > screenHeight * 0.15f) {
+                            color = if (swipeOffsetY > swipeDismissThreshold) {
                                 MaterialTheme.colorScheme.onPrimaryContainer
                             } else {
                                 MaterialTheme.colorScheme.onSurfaceVariant
@@ -1310,9 +1319,9 @@ fun PlayerScreen(
                         Box(
                             modifier = Modifier
                                 .fillMaxHeight()
-                                .fillMaxWidth((swipeOffsetY / (screenHeight * 0.15f)).coerceIn(0f, 1f))
+                                .fillMaxWidth((swipeOffsetY / swipeDismissThreshold).coerceIn(0f, 1f))
                                 .background(
-                                    if (swipeOffsetY > screenHeight * 0.15f) {
+                                    if (swipeOffsetY > swipeDismissThreshold) {
                                         MaterialTheme.colorScheme.primary
                                     } else {
                                         MaterialTheme.colorScheme.secondary

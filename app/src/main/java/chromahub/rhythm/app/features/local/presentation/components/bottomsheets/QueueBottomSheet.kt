@@ -100,6 +100,16 @@ import chromahub.rhythm.app.shared.presentation.components.common.ExpressiveShap
 import chromahub.rhythm.app.shared.presentation.components.common.rememberExpressiveShapeFor
 import chromahub.rhythm.app.util.ImageUtils
 
+private fun groupedQueueItemShape(index: Int, totalCount: Int): RoundedCornerShape {
+    if (totalCount <= 1) return RoundedCornerShape(24.dp)
+
+    return when (index) {
+        0 -> RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 6.dp, bottomEnd = 6.dp)
+        totalCount - 1 -> RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
+        else -> RoundedCornerShape(6.dp)
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun QueueBottomSheet(
@@ -111,7 +121,7 @@ fun QueueBottomSheet(
     onSongClick: (Song) -> Unit,
     onSongClickAtIndex: (Int) -> Unit = { _ -> }, // New parameter for index-based clicking
     onDismiss: () -> Unit,
-    onRemoveSong: (Song) -> Unit = {},
+    onRemoveSongAtIndex: (Int) -> Unit = {},
     onMoveQueueItem: (Int, Int) -> Unit = { _, _ -> },
     onAddSongsClick: () -> Unit = {},
     onClearQueue: () -> Unit = {},
@@ -334,13 +344,13 @@ fun QueueBottomSheet(
                                 
                                 Box(
                                     modifier = Modifier
-                                        .padding(vertical = 4.dp)
-                                        .clip(RoundedCornerShape(16.dp))
+                                        .padding(horizontal = 16.dp, vertical = 4.dp)
                                 ) {
                                     AnimateIn {
                                         QueueItem(
                                             song = song,
                                             index = actualQueuePosition,
+                                            itemShape = groupedQueueItemShape(index, visibleQueue.size),
                                             isPlayed = isPlayed,
                                             isDragging = false, // Never dragging when shuffle is enabled
                                             onSongClick = { 
@@ -353,7 +363,7 @@ fun QueueBottomSheet(
                                                     if (indexToRemove >= 0 && indexToRemove < mutableQueue.size) {
                                                         mutableQueue.removeAt(indexToRemove)
                                                     }
-                                                    onRemoveSong(song)
+                                                    onRemoveSongAtIndex(actualQueuePosition)
                                                 } catch (e: Exception) {
                                                     // Handle error silently
                                                 }
@@ -376,7 +386,7 @@ fun QueueBottomSheet(
                                 onMoveQueueItem(actualFromIndex, actualToIndex)
                             },
                             itemKey = { queueItem -> "${queueItem.first}_${queueItem.second.id}" }
-                        ) { queueItem, isDragging, _ ->
+                        ) { queueItem, isDragging, visibleIndex ->
                             val actualQueuePosition = queueItem.first
                             val song = queueItem.second
                             val isPlayed = !isShuffleEnabled && actualQueuePosition < currentSongIndexInQueue
@@ -384,12 +394,12 @@ fun QueueBottomSheet(
                             Box(
                                 modifier = Modifier
                                     .padding(horizontal = 16.dp, vertical = 4.dp)
-                                    .clip(RoundedCornerShape(16.dp))
                             ) {
                                 AnimateIn {
                                     QueueItem(
                                         song = song,
                                         index = actualQueuePosition,
+                                        itemShape = groupedQueueItemShape(visibleIndex, visibleQueue.size),
                                         isPlayed = isPlayed,
                                         isDragging = isDragging,
                                         onSongClick = { 
@@ -402,7 +412,7 @@ fun QueueBottomSheet(
                                                 if (indexToRemove >= 0 && indexToRemove < mutableQueue.size) {
                                                     mutableQueue.removeAt(indexToRemove)
                                                 }
-                                                onRemoveSong(song)
+                                                onRemoveSongAtIndex(actualQueuePosition)
                                             } catch (e: Exception) {
                                                 // Handle error silently
                                             }
@@ -633,6 +643,7 @@ private fun NowPlayingCard(
 private fun QueueItem(
     song: Song,
     index: Int,
+    itemShape: RoundedCornerShape = RoundedCornerShape(20.dp),
     isPlayed: Boolean,
     isDragging: Boolean,
     onSongClick: () -> Unit,
@@ -699,7 +710,7 @@ private fun QueueItem(
         color = cardColor,
         tonalElevation = if (isDragging) 0.dp else 1.dp,
         shadowElevation = 0.dp,
-        shape = RoundedCornerShape(20.dp),
+        shape = itemShape,
         modifier = Modifier
             .fillMaxWidth()
             .graphicsLayer {

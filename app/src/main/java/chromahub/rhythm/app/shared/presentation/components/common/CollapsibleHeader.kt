@@ -529,6 +529,7 @@ fun FixedHeaderScreen(
     showBackButton: Boolean = false,
     onBackClick: () -> Unit = {},
     actions: @Composable () -> Unit = {},
+    screenModifier: Modifier = Modifier,
     containerColor: Color = Color.Transparent,
     content: @Composable (Modifier) -> Unit
 ) {
@@ -553,6 +554,7 @@ fun FixedHeaderScreen(
     )
 
     Scaffold(
+        modifier = screenModifier.fillMaxSize(),
         containerColor = containerColor,
         topBar = {
             Column {

@@ -16,6 +16,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -190,7 +191,8 @@ fun RhythmNavigation(
                         rootNavController.popBackStack()
                     },
                     appSettings = appSettings,
-                    navController = rootNavController
+                    navController = rootNavController,
+                    musicViewModel = musicViewModel
                 )
             }
         }
@@ -783,7 +785,19 @@ private fun RhythmGuardWarningHost(
                 modifier = Modifier
                     .align(if (isBubbleOnLeft) Alignment.CenterStart else Alignment.CenterEnd)
                     .offset(x = rawDragXDp.dp, y = bubbleOffsetYDp.dp)
-                    .pointerInput(Unit) {
+                    .pointerInput(timeoutReason, timeoutUntilMs, timeoutStartedAtMs) {
+                        detectTapGestures(onTap = {
+                            RhythmGuardTimeoutActivity.start(
+                                context = context,
+                                reason = timeoutReason.ifBlank {
+                                    context.getString(R.string.settings_rhythm_guard_timeout_activity_default_reason)
+                                },
+                                timeoutUntilMs = timeoutUntilMs,
+                                timeoutStartedAtMs = timeoutStartedAtMs
+                            )
+                        })
+                    }
+                    .pointerInput(isBubbleOnLeft) {
                         detectDragGestures(
                             onDragEnd = {
                                 if (isBubbleOnLeft && rawDragXDp > 80f) {

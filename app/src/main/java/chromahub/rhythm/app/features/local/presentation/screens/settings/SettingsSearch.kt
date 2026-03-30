@@ -119,6 +119,8 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import chromahub.rhythm.app.R
+import chromahub.rhythm.app.shared.presentation.components.Material3SettingsGroup
+import chromahub.rhythm.app.shared.presentation.components.Material3SettingsItem
 import chromahub.rhythm.app.shared.presentation.components.icons.RhythmIcons
 import chromahub.rhythm.app.util.HapticUtils
 
@@ -287,8 +289,8 @@ fun buildSettingsSearchIndex(context: Context): List<SearchableSettingItem> {
             description = context.getString(R.string.settings_system_volume_desc),
             keywords = listOf("volume", "system volume", "audio", "sound", "media volume"),
             icon = RhythmIcons.Player.VolumeUp,
-            route = null,
-            parentScreen = context.getString(R.string.settings_section_audio_lyrics),
+            route = SettingsRoutes.QUEUE_PLAYBACK,
+            parentScreen = context.getString(R.string.settings_section_queue_playback),
             settingKey = "useSystemVolume"
         ))
         add(SearchableSettingItem(
@@ -297,8 +299,8 @@ fun buildSettingsSearchIndex(context: Context): List<SearchableSettingItem> {
             description = context.getString(R.string.settings_stop_playback_on_zero_volume_desc),
             keywords = listOf("zero volume", "pause", "mute", "stop playback", "volume"),
             icon = Icons.Default.Stop,
-            route = null,
-            parentScreen = context.getString(R.string.settings_section_audio_lyrics),
+            route = SettingsRoutes.QUEUE_PLAYBACK,
+            parentScreen = context.getString(R.string.settings_section_queue_playback),
             settingKey = "stopPlaybackOnZeroVolume"
         ))
         add(SearchableSettingItem(
@@ -307,8 +309,8 @@ fun buildSettingsSearchIndex(context: Context): List<SearchableSettingItem> {
             description = context.getString(R.string.settings_resume_on_device_reconnect_desc),
             keywords = listOf("resume", "device", "reconnect", "bluetooth", "headphones", "audio device", "playback"),
             icon = RhythmIcons.Devices.Bluetooth,
-            route = null,
-            parentScreen = context.getString(R.string.settings_section_audio_lyrics),
+            route = SettingsRoutes.QUEUE_PLAYBACK,
+            parentScreen = context.getString(R.string.settings_section_queue_playback),
             settingKey = "resumeOnDeviceReconnect"
         ))
         add(SearchableSettingItem(
@@ -399,14 +401,14 @@ fun buildSettingsSearchIndex(context: Context): List<SearchableSettingItem> {
             settingKey = "enableRatingSystem"
         ))
         add(SearchableSettingItem(
-            id = "group_by_album_artist",
-            title = context.getString(R.string.settings_group_by_album_artist),
-            description = context.getString(R.string.settings_group_by_album_artist_desc),
-            keywords = listOf("group", "album artist", "collaboration", "albums", "artist grouping"),
-            icon = Icons.Default.Person,
+            id = "library_tab_order",
+            title = context.getString(R.string.settings_library_tab_order),
+            description = context.getString(R.string.settings_library_tab_order_desc),
+            keywords = listOf("library", "tab", "order", "reorder", "visibility", "hide tab", "show tab"),
+            icon = Icons.Default.Reorder,
             route = SettingsRoutes.LIBRARY_SETTINGS,
             parentScreen = context.getString(R.string.settings_library_settings),
-            settingKey = "groupByAlbumArtist"
+            settingKey = "libraryTabOrder"
         ))
         
         // Notifications & Services Section
@@ -1004,7 +1006,8 @@ fun buildSettingsSearchIndex(context: Context): List<SearchableSettingItem> {
             keywords = listOf("auto queue", "add", "automatic", "playlist"),
             icon = RhythmIcons.Queue,
             route = SettingsRoutes.QUEUE_PLAYBACK,
-            parentScreen = "Queue & Playback"
+            parentScreen = "Queue & Playback",
+            settingKey = "autoAddToQueue"
         ))
         add(SearchableSettingItem(
             id = "queue_clear_on_new",
@@ -1013,7 +1016,18 @@ fun buildSettingsSearchIndex(context: Context): List<SearchableSettingItem> {
             keywords = listOf("clear queue", "new song", "replace", "reset"),
             icon = RhythmIcons.Delete,
             route = SettingsRoutes.QUEUE_PLAYBACK,
-            parentScreen = "Queue & Playback"
+            parentScreen = "Queue & Playback",
+            settingKey = "clearQueueOnNewSong"
+        ))
+        add(SearchableSettingItem(
+            id = "shuffle_engine",
+            title = context.getString(R.string.settings_use_exoplayer_shuffle),
+            description = context.getString(R.string.settings_use_exoplayer_shuffle_desc),
+            keywords = listOf("shuffle engine", "exoplayer shuffle", "shuffle timeline", "shuffle mode", "shuffle algorithm"),
+            icon = RhythmIcons.Shuffle,
+            route = SettingsRoutes.QUEUE_PLAYBACK,
+            parentScreen = "Queue & Playback",
+            settingKey = "shuffleUsesExoplayer"
         ))
         add(SearchableSettingItem(
             id = "queue_hide_played",
@@ -1032,7 +1046,8 @@ fun buildSettingsSearchIndex(context: Context): List<SearchableSettingItem> {
             keywords = listOf("queue dialog", "ask", "prompt", "action", "replace queue"),
             icon = RhythmIcons.Queue,
             route = SettingsRoutes.QUEUE_PLAYBACK,
-            parentScreen = "Queue & Playback"
+            parentScreen = "Queue & Playback",
+            settingKey = "showQueueDialog"
         ))
         add(SearchableSettingItem(
             id = "queue_repeat_persistence",
@@ -1041,7 +1056,8 @@ fun buildSettingsSearchIndex(context: Context): List<SearchableSettingItem> {
             keywords = listOf("repeat", "remember", "save", "persistence", "loop"),
             icon = RhythmIcons.Repeat,
             route = SettingsRoutes.QUEUE_PLAYBACK,
-            parentScreen = "Queue & Playback"
+            parentScreen = "Queue & Playback",
+            settingKey = "repeatModePersistence"
         ))
         add(SearchableSettingItem(
             id = "queue_shuffle_persistence",
@@ -1050,7 +1066,8 @@ fun buildSettingsSearchIndex(context: Context): List<SearchableSettingItem> {
             keywords = listOf("shuffle", "remember", "save", "persistence", "random"),
             icon = RhythmIcons.Shuffle,
             route = SettingsRoutes.QUEUE_PLAYBACK,
-            parentScreen = "Queue & Playback"
+            parentScreen = "Queue & Playback",
+            settingKey = "shuffleModePersistence"
         ))
         add(SearchableSettingItem(
             id = "queue_stop_on_close",
@@ -1059,7 +1076,8 @@ fun buildSettingsSearchIndex(context: Context): List<SearchableSettingItem> {
             keywords = listOf("stop", "playback", "close", "exit", "quit"),
             icon = Icons.Default.Stop,
             route = SettingsRoutes.QUEUE_PLAYBACK,
-            parentScreen = "Queue & Playback"
+            parentScreen = "Queue & Playback",
+            settingKey = "stopPlaybackOnAppClose"
         ))
         add(SearchableSettingItem(
             id = "sleep_timer",
@@ -1077,7 +1095,8 @@ fun buildSettingsSearchIndex(context: Context): List<SearchableSettingItem> {
             keywords = listOf("hours", "time", "format", "duration", "display"),
             icon = Icons.Default.AccessTime,
             route = SettingsRoutes.QUEUE_PLAYBACK,
-            parentScreen = "Queue & Playback"
+            parentScreen = "Queue & Playback",
+            settingKey = "useHoursInTimeFormat"
         ))
         add(SearchableSettingItem(
             id = "gapless_playback",
@@ -1138,6 +1157,16 @@ fun buildSettingsSearchIndex(context: Context): List<SearchableSettingItem> {
             route = SettingsRoutes.QUEUE_PLAYBACK,
             parentScreen = "Queue & Playback",
             settingKey = "playlistClickBehavior"
+        ))
+        add(SearchableSettingItem(
+            id = "list_queue_action_dialog",
+            title = context.getString(R.string.settings_list_queue_action_dialog),
+            description = context.getString(R.string.settings_list_queue_action_dialog_desc),
+            keywords = listOf("queue", "play all", "section", "replace", "play next", "add to end", "behavior", "rule"),
+            icon = Icons.Default.QueueMusic,
+            route = SettingsRoutes.QUEUE_PLAYBACK,
+            parentScreen = "Queue & Playback",
+            settingKey = "listQueueActionBehavior"
         ))
         
         // ======================== EXPERIMENTAL FEATURES SCREEN ========================
@@ -1594,45 +1623,34 @@ fun SettingsSearchResults(
             val groupedResults = results.groupBy { it.parentScreen }
             
             groupedResults.forEach { (screenName, items) ->
-                item(key = "header_$screenName") {
+                item(key = "group_$screenName") {
                     Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = screenName,
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
-                    )
-                }
-                
-                item(key = "card_$screenName") {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(18.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-                        ),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                    ) {
-                        Column {
-                            items.forEachIndexed { index, item ->
-                                SearchResultRow(
-                                    item = item,
-                                    onClick = {
-                                        HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
-                                        onResultClick(item)
-                                    }
+
+                    val materialItems = items.map { setting ->
+                        Material3SettingsItem(
+                            icon = setting.icon,
+                            title = { Text(setting.title) },
+                            description = { Text(setting.description) },
+                            trailingContent = {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                                    contentDescription = context.getString(R.string.cd_navigate),
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
-                                if (index < items.lastIndex) {
-                                    HorizontalDivider(
-                                        modifier = Modifier.padding(horizontal = 20.dp),
-                                        thickness = 1.dp,
-                                        color = MaterialTheme.colorScheme.surfaceContainerHighest
-                                    )
-                                }
+                            },
+                            onClick = {
+                                HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
+                                onResultClick(setting)
                             }
-                        }
+                        )
                     }
+
+                    Material3SettingsGroup(
+                        title = screenName,
+                        items = materialItems,
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer
+                    )
                 }
             }
             
@@ -1641,95 +1659,3 @@ fun SettingsSearchResults(
     }
 }
 
-@Composable
-private fun SearchResultRow(
-    item: SearchableSettingItem,
-    onClick: () -> Unit
-) {
-    val context = LocalContext.current
-    val hapticFeedback = LocalHapticFeedback.current
-    var isPressed by remember { mutableStateOf(false) }
-    
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.98f else 1f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium
-        ),
-        label = "scale"
-    )
-    
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = {
-                    isPressed = true
-                    onClick()
-                }
-            )
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-            }
-            .padding(horizontal = 18.dp, vertical = 16.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Surface(
-            modifier = Modifier.size(40.dp),
-            shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHighest,
-            tonalElevation = 0.dp
-        ) {
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier.fillMaxSize()
-            ) {
-                Icon(
-                    imageVector = item.icon,
-                    contentDescription = item.title,
-                    modifier = Modifier.size(24.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-        
-        Spacer(modifier = Modifier.width(16.dp))
-        
-        Column(
-            modifier = Modifier.weight(1f)
-        ) {
-            Text(
-                text = item.title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = item.description,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2
-            )
-            if (item.route != null) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "in ${item.parentScreen}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
-                    fontWeight = FontWeight.Medium
-                )
-            }
-        }
-        
-        Icon(
-            imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
-            contentDescription = "Navigate",
-            modifier = Modifier.size(16.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}

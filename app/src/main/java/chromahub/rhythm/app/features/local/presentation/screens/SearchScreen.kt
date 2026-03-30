@@ -1,6 +1,7 @@
 package chromahub.rhythm.app.features.local.presentation.screens
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -39,6 +40,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.draw.shadow
@@ -372,6 +374,29 @@ fun SearchScreen(
         label = "contentOffset"
     )
 
+    val handleSearchBack: () -> Unit = {
+        when {
+            showAllSongsPage -> {
+                showAllSongsPage = false
+            }
+            searchQuery.isNotEmpty() || showFilterOptions || isSearchActive -> {
+                searchQuery = ""
+                showFilterOptions = false
+                showAllSongsPage = false
+                isSearchActive = false
+                focusManager.clearFocus()
+                keyboardController?.hide()
+            }
+            else -> onBack()
+        }
+    }
+
+    BackHandler(
+        enabled = showAllSongsPage || searchQuery.isNotEmpty() || showFilterOptions || isSearchActive
+    ) {
+        handleSearchBack()
+    }
+
     Scaffold(
         bottomBar = {}
     ) { paddingValues ->
@@ -407,7 +432,7 @@ fun SearchScreen(
                     IconButton(
                         onClick = {
                             HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
-                            onBack()
+                            handleSearchBack()
                         },
                         colors = IconButtonDefaults.iconButtonColors(
                             containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f),
@@ -840,7 +865,7 @@ fun SearchScreen(
             onPlayAll = { songs -> 
                 // Play all songs from the album with proper sorting
                 if (songs.isNotEmpty()) {
-                    viewModel.playQueue(songs)
+                    viewModel.playQueueWithUserRule(songs, sourceLabel = "Search Album")
                 } else {
                     onAlbumClick(selectedAlbum!!)
                 }
@@ -1147,9 +1172,10 @@ fun SearchResults(
 
                     Column(
                         modifier = Modifier.padding(horizontal = 4.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        songs.take(5).forEach { song ->
+                        val visibleSongs = songs.take(5)
+                        visibleSongs.forEachIndexed { index, song ->
                             SearchSongItem(
                                 song = song,
                                 onClick = { onSongClick(song) },
@@ -1157,7 +1183,9 @@ fun SearchResults(
                                     onSongMoreClick(song)
                                 },
                                 onAddToPlaylist = { onAddSongToPlaylist(song) },
-                                haptics = haptics
+                                haptics = haptics,
+                                index = index,
+                                totalCount = visibleSongs.size
                             )
                         }
                     }
@@ -1633,7 +1661,9 @@ fun SearchSongItem(
     onClick: () -> Unit,
     onMoreClick: () -> Unit = {},
     onAddToPlaylist: (Song) -> Unit = {},
-    haptics: androidx.compose.ui.hapticfeedback.HapticFeedback // Add haptics parameter
+    haptics: androidx.compose.ui.hapticfeedback.HapticFeedback,
+    index: Int = 0,
+    totalCount: Int = 1
 ) {
     val context = LocalContext.current
     
@@ -1646,7 +1676,7 @@ fun SearchSongItem(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        shape = RoundedCornerShape(12.dp),
+        shape = groupedSongItemShape(index, totalCount),
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
@@ -1708,6 +1738,25 @@ fun SearchSongItem(
                 )
             }
         }
+    }
+}
+
+private fun groupedSongItemShape(index: Int, totalCount: Int): RoundedCornerShape {
+    return when {
+        totalCount <= 1 -> RoundedCornerShape(24.dp)
+        index == 0 -> RoundedCornerShape(
+            topStart = 24.dp,
+            topEnd = 24.dp,
+            bottomStart = 6.dp,
+            bottomEnd = 6.dp
+        )
+        index == totalCount - 1 -> RoundedCornerShape(
+            topStart = 6.dp,
+            topEnd = 6.dp,
+            bottomStart = 24.dp,
+            bottomEnd = 24.dp
+        )
+        else -> RoundedCornerShape(6.dp)
     }
 }
 
@@ -2930,52 +2979,70 @@ fun AllSongsPage(
     val miniPlayerBottomPadding = LocalMiniPlayerPadding.current.calculateBottomPadding()
     val contentBottomPadding = (miniPlayerBottomPadding + 20.dp).coerceAtLeast(96.dp)
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 4.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = {
-                HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
-                onBack()
-            }) {
-                Icon(RhythmIcons.Back, contentDescription = "Back")
+    Card(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = {
+                    HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
+                    onBack()
+                }) {
+                    Icon(RhythmIcons.Back, contentDescription = "Back")
+                }
+                Text(
+                    text = context.getString(R.string.search_all_songs, songs.size),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(start = 8.dp)
+                )
             }
-            Text(
-                text = context.getString(R.string.search_all_songs, songs.size),
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(start = 8.dp)
-            )
-        }
 
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(
-                start = 16.dp,
-                end = 16.dp,
-                top = 16.dp,
-                bottom = contentBottomPadding
-            ),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            items(
-                items = songs,
-                key = { "song_${it.id}_${it.uri}" },
-                contentType = { "song" }
-            ) { song ->
-                AnimateIn(modifier = Modifier.animateItem()) {
-                    SearchSongItem(
-                        song = song,
-                        onClick = { onSongClick(song) },
-                        onMoreClick = {
-                            onSongMoreClick(song)
-                        },
-                        onAddToPlaylist = { onAddSongToPlaylist(song) },
-                        haptics = haptics // Pass haptics to SearchSongItem
-                    )
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f),
+                thickness = 1.dp
+            )
+
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    start = 12.dp,
+                    end = 12.dp,
+                    top = 12.dp,
+                    bottom = contentBottomPadding
+                ),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                itemsIndexed(
+                    items = songs,
+                    key = { _, song -> "song_${song.id}_${song.uri}" },
+                    contentType = { _, _ -> "song" }
+                ) { index, song ->
+                    AnimateIn(modifier = Modifier.animateItem()) {
+                        SearchSongItem(
+                            song = song,
+                            onClick = { onSongClick(song) },
+                            onMoreClick = {
+                                onSongMoreClick(song)
+                            },
+                            onAddToPlaylist = { onAddSongToPlaylist(song) },
+                            haptics = haptics,
+                            index = index,
+                            totalCount = 1
+                        )
+                    }
                 }
             }
         }

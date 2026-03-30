@@ -173,9 +173,8 @@ private fun RhythmGuardTimeoutScreen(
         onExitTimeout()
     }
 
-    BackHandler {
-        onExitTimeout()
-    }
+    // Prevent bypassing the timeout gate via system back.
+    BackHandler(enabled = true) {}
 
     // Responsive sizing
     val isTablet = false // For timeout activity, assume phone layout
@@ -263,6 +262,14 @@ private fun RhythmGuardTimeoutScreen(
                     textAlign = TextAlign.Start,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 32.dp)
+                )
+
+                Text(
+                    text = context.getString(R.string.settings_rhythm_guard_timeout_activity_comic_desc),
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.Start,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.9f),
+                    modifier = Modifier.padding(bottom = 20.dp)
                 )
 
                 // Circular progress with countdown
