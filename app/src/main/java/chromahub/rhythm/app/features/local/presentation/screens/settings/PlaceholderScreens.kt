@@ -17595,3 +17595,98 @@ fun PlaceholderSettingsScreen() {
 
 
 
+
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+fun ImmersiveModeSettingsScreen(onBackClick: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val appSettings = chromahub.rhythm.app.shared.data.model.AppSettings.getInstance(context)
+
+    val immersiveScope by appSettings.immersiveScope.collectAsState()
+    val immersiveBehaviour by appSettings.immersiveBehaviour.collectAsState()
+
+    chromahub.rhythm.app.shared.presentation.components.common.CollapsibleHeaderScreen(
+        title = "Immersive Mode",
+        showBackButton = true,
+        onBackClick = onBackClick
+    ) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(bottom = 16.dp, top = 16.dp)
+        ) {
+            item {
+                Spacer(modifier = Modifier.height(16.dp))
+                // Scope
+                SettingsSectionHeader(title = "Fullscreen mode")
+
+                ScopeOption(
+                    title = "Off",
+                    selected = immersiveScope == chromahub.rhythm.app.shared.data.model.ImmersiveScope.OFF,
+                    onClick = { appSettings.setImmersiveScope(chromahub.rhythm.app.shared.data.model.ImmersiveScope.OFF) }
+                )
+                ScopeOption(
+                    title = "Player screen only",
+                    selected = immersiveScope == chromahub.rhythm.app.shared.data.model.ImmersiveScope.PLAYER_ONLY,
+                    onClick = { appSettings.setImmersiveScope(chromahub.rhythm.app.shared.data.model.ImmersiveScope.PLAYER_ONLY) }
+                )
+                ScopeOption(
+                    title = "Entire app",
+                    selected = immersiveScope == chromahub.rhythm.app.shared.data.model.ImmersiveScope.WHOLE_APP,
+                    onClick = { appSettings.setImmersiveScope(chromahub.rhythm.app.shared.data.model.ImmersiveScope.WHOLE_APP) }
+                )
+
+                if (immersiveScope != chromahub.rhythm.app.shared.data.model.ImmersiveScope.OFF) {
+                    Spacer(modifier = Modifier.height(24.dp))
+                    SettingsSectionHeader(title = "Bar behaviour")
+
+                    ScopeOption(
+                        title = "Auto-hide after swipe",
+                        selected = immersiveBehaviour == chromahub.rhythm.app.shared.data.model.ImmersiveBehaviour.STICKY,
+                        onClick = { appSettings.setImmersiveBehaviour(chromahub.rhythm.app.shared.data.model.ImmersiveBehaviour.STICKY) }
+                    )
+                    ScopeOption(
+                        title = "Stay visible after swipe",
+                        selected = immersiveBehaviour == chromahub.rhythm.app.shared.data.model.ImmersiveBehaviour.NON_STICKY,
+                        onClick = { appSettings.setImmersiveBehaviour(chromahub.rhythm.app.shared.data.model.ImmersiveBehaviour.NON_STICKY) }
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "Swipe from the top or bottom edge to temporarily show system bars.",
+                        style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                        color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsSectionHeader(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.titleSmall.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
+    )
+}
+
+@Composable
+private fun ScopeOption(title: String, selected: Boolean, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+    ) {
+        androidx.compose.material3.RadioButton(
+            selected = selected,
+            onClick = null
+        )
+        Spacer(modifier = Modifier.width(16.dp))
+        Text(text = title, style = androidx.compose.material3.MaterialTheme.typography.bodyLarge)
+    }
+}

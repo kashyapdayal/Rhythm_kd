@@ -1,6 +1,10 @@
 <resources>
     <string name="app_name">Rhythm</string>
     
+    <!-- Attribution tags (referenced by AndroidManifest.xml) -->
+    <string name="attribution_media_playback">Media Playback</string>
+    <string name="attribution_usb_audio">USB Audio</string>
+
     <!-- Common Labels -->
     <string name="home">Home</string>
     <string name="library">Library</string>

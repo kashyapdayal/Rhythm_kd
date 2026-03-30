@@ -15,6 +15,9 @@ import com.google.gson.reflect.TypeToken
 import chromahub.rhythm.app.worker.BackupWorker
 import chromahub.rhythm.app.worker.UpdateNotificationWorker
 import chromahub.rhythm.app.BuildConfig
+import chromahub.rhythm.app.shared.data.model.ImmersiveScope
+import chromahub.rhythm.app.shared.data.model.ImmersiveBehaviour
+import chromahub.rhythm.app.shared.data.model.ImmersiveConfig
 import java.util.Date // Import Date for timestamp
 import java.util.concurrent.TimeUnit
 
@@ -254,7 +257,11 @@ class AppSettings private constructor(context: Context) {
         
         // Haptic Feedback
         private const val KEY_HAPTIC_FEEDBACK_ENABLED = "haptic_feedback_enabled"
-        
+
+        // Immersive Mode
+        private const val KEY_IMMERSIVE_SCOPE = "immersive_scope"
+        private const val KEY_IMMERSIVE_BEHAVIOUR = "immersive_behaviour"
+
         // Notification Settings
     private const val KEY_USE_CUSTOM_NOTIFICATION = "use_custom_notification"
     
@@ -1189,7 +1196,18 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
     // Haptic Feedback Settings
     private val _hapticFeedbackEnabled = MutableStateFlow(prefs.getBoolean(KEY_HAPTIC_FEEDBACK_ENABLED, true))
     val hapticFeedbackEnabled: StateFlow<Boolean> = _hapticFeedbackEnabled.asStateFlow()
-    
+
+    // Immersive Mode
+    private val _immersiveScope = MutableStateFlow(
+        ImmersiveScope.valueOf(prefs.getString(KEY_IMMERSIVE_SCOPE, ImmersiveScope.OFF.name) ?: ImmersiveScope.OFF.name)
+    )
+    val immersiveScope: StateFlow<ImmersiveScope> = _immersiveScope.asStateFlow()
+
+    private val _immersiveBehaviour = MutableStateFlow(
+        ImmersiveBehaviour.valueOf(prefs.getString(KEY_IMMERSIVE_BEHAVIOUR, ImmersiveBehaviour.STICKY.name) ?: ImmersiveBehaviour.STICKY.name)
+    )
+    val immersiveBehaviour: StateFlow<ImmersiveBehaviour> = _immersiveBehaviour.asStateFlow()
+
     // Notification Settings
     private val _useCustomNotification = MutableStateFlow(prefs.getBoolean(KEY_USE_CUSTOM_NOTIFICATION, false))
     val useCustomNotification: StateFlow<Boolean> = _useCustomNotification.asStateFlow()
@@ -2389,7 +2407,18 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
         prefs.edit().putBoolean(KEY_HAPTIC_FEEDBACK_ENABLED, enabled).apply()
         _hapticFeedbackEnabled.value = enabled
     }
-    
+
+    // Immersive Mode Methods
+    fun setImmersiveScope(scope: ImmersiveScope) {
+        prefs.edit().putString(KEY_IMMERSIVE_SCOPE, scope.name).apply()
+        _immersiveScope.value = scope
+    }
+
+    fun setImmersiveBehaviour(behaviour: ImmersiveBehaviour) {
+        prefs.edit().putString(KEY_IMMERSIVE_BEHAVIOUR, behaviour.name).apply()
+        _immersiveBehaviour.value = behaviour
+    }
+
     // Notification Settings Methods
     fun setUseCustomNotification(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_USE_CUSTOM_NOTIFICATION, enabled).apply()
