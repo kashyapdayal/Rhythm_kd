@@ -303,6 +303,7 @@ class AppSettings private constructor(context: Context) {
         private const val KEY_SYNC_SPEED_AND_PITCH = "sync_speed_and_pitch"
         private const val KEY_USE_HOURS_IN_TIME_FORMAT = "use_hours_in_time_format"
         private const val KEY_STOP_PLAYBACK_ON_APP_CLOSE = "stop_playback_on_app_close"
+        private const val KEY_STOP_PLAYBACK_ON_ZERO_VOLUME = "stop_playback_on_zero_volume"
         private const val KEY_QUEUE_PERSISTENCE_ENABLED = "queue_persistence_enabled" // Enable/disable queue persistence
         private const val KEY_SAVED_QUEUE = "saved_queue" // Queue persistence - list of song IDs
         private const val KEY_SAVED_QUEUE_INDEX = "saved_queue_index" // Current position in queue
@@ -770,6 +771,9 @@ class AppSettings private constructor(context: Context) {
     // Stop Playback on App Close
     private val _stopPlaybackOnAppClose = MutableStateFlow(prefs.getBoolean(KEY_STOP_PLAYBACK_ON_APP_CLOSE, false))
     val stopPlaybackOnAppClose: StateFlow<Boolean> = _stopPlaybackOnAppClose.asStateFlow()
+
+    private val _stopPlaybackOnZeroVolume = MutableStateFlow(prefs.getBoolean(KEY_STOP_PLAYBACK_ON_ZERO_VOLUME, false))
+    val stopPlaybackOnZeroVolume: StateFlow<Boolean> = _stopPlaybackOnZeroVolume.asStateFlow()
     
     // Queue Persistence
     private val _queuePersistenceEnabled = MutableStateFlow(prefs.getBoolean(KEY_QUEUE_PERSISTENCE_ENABLED, true))
@@ -1721,6 +1725,12 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
     fun setStopPlaybackOnAppClose(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_STOP_PLAYBACK_ON_APP_CLOSE, enabled).apply()
         _stopPlaybackOnAppClose.value = enabled
+    }
+    
+    // Stop Playback on Zero Volume Methods
+    fun setStopPlaybackOnZeroVolume(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_STOP_PLAYBACK_ON_ZERO_VOLUME, enabled).apply()
+        _stopPlaybackOnZeroVolume.value = enabled
     }
     
     // Queue Persistence Methods

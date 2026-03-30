@@ -722,15 +722,15 @@ fun LibraryScreen(
                 showBatchEditSheet = false
                 multiSelectionState.clearSelection()
             },
-            onSave = { artist, album, genre, year, artworkUri, removeArtwork ->
+            onSave = { artist, album, genre, year ->
                 musicViewModel.batchEditMetadata(
                     songs = selectedSongs,
                     artist = artist,
                     album = album,
                     genre = genre,
                     year = year,
-                    artworkUri = artworkUri,
-                    removeArtwork = removeArtwork,
+                    artworkUri = null,
+                    removeArtwork = false,
                     onProgress = { _, _ -> },
                     onComplete = { successCount, failCount ->
                         showBatchEditSheet = false

@@ -108,13 +108,16 @@ class SiphonUsbAudioSink(
     }
 
     /**
-     * Bug 1 FIX: Claim the USB AudioStreaming interface and select the correct alternate setting.
-     * 
+     * Claim the USB AudioStreaming interface and select the correct alternate setting.
+     *
      * Steps:
      * 1. Find AudioStreaming interface (USB Audio Class = 0x01, Subclass = 0x02)
-     * 2. Claim the interface with force-disconnect
+     * 2. Claim the interface with force-disconnect (retries up to 3 times)
      * 3. Select appropriate alternate setting based on sample rate
-     * 4. Return true if successful
+     * 4. Return interface ID if successful, -1 on failure
+     *
+     * FIX: Added retry loop because the kernel ALSA driver may still be releasing
+     * the interface even after OutputRouter's eviction sequence.
      */
     private fun tryClaimUsbInterface(format: SiphonAudioFormat): Int {
         try {
@@ -124,38 +127,44 @@ class SiphonUsbAudioSink(
                 val iface = usbDevice.getInterface(i)
                 if (iface.interfaceClass == USB_CLASS_AUDIO && iface.interfaceSubclass == USB_SUBCLASS_AUDIO_STREAMING) {
                     audioStreamingInterface = iface
-                    Log.d(TAG, "Found AudioStreaming interface at index $i")
+                    Log.d(TAG, "Found AudioStreaming interface at index $i (id=${iface.id}, endpoints=${iface.endpointCount})")
                     break
                 }
             }
 
             if (audioStreamingInterface == null) {
-                Log.w(TAG, "No USB AudioStreaming interface found")
+                Log.w(TAG, "No USB AudioStreaming interface found on device (${usbDevice.interfaceCount} interfaces)")
                 return -1
             }
 
-            // Claim the interface (true = force-disconnect from Android audio system)
-            if (!usbConnection.claimInterface(audioStreamingInterface, true)) {
-                Log.w(TAG, "Failed to claim AudioStreaming interface")
+            // Claim the interface with retry (true = force-disconnect from Android audio system)
+            var claimed = false
+            for (attempt in 1..3) {
+                claimed = usbConnection.claimInterface(audioStreamingInterface, true)
+                if (claimed) {
+                    Log.d(TAG, "Claimed AudioStreaming interface on attempt $attempt")
+                    break
+                }
+                Log.w(TAG, "claimInterface failed on attempt $attempt/3 — retrying in 200ms")
+                Thread.sleep(200)
+            }
+            if (!claimed) {
+                Log.e(TAG, "Failed to claim AudioStreaming interface after 3 attempts")
                 return -1
             }
-            Log.d(TAG, "Successfully claimed AudioStreaming interface")
 
-            // Select alternate setting based on sample rate to get correct packet size
-            // Note: Android USB API doesn't support explicit alternate setting selection
-            // The alternate setting is negotiated based on the interface configuration
-            // For simplicity, just set the interface and let the driver handle it
+            // Set the interface (selects alt setting)
             if (!usbConnection.setInterface(audioStreamingInterface)) {
-                Log.w(TAG, "Failed to set AudioStreaming interface")
-                return -1
+                Log.w(TAG, "setInterface failed — may not affect native-side alt setting selection")
+                // Don't return -1 here — native code handles alt setting via libusb
             }
-            Log.d(TAG, "Set AudioStreaming interface for sample rate ${format.sampleRate}Hz")
+            Log.d(TAG, "AudioStreaming interface configured for ${format.sampleRate}Hz/${format.bitDepth}bit")
 
-            // Bug 7 FIX: Allow AudioFlinger (ALSA) to tear down gracefully before pumping isochronous data
+            // Allow AudioFlinger (ALSA) teardown to complete before native isochronous init
             Thread.sleep(50)
 
-            Log.i(TAG, "USB Host path ACTIVE — AudioFlinger fully bypassed | fd=${usbConnection.fileDescriptor}")
-            return audioStreamingInterface.id // Returning ID for cpp bindings
+            Log.i(TAG, "USB Host path ACTIVE — AudioFlinger bypassed | fd=${usbConnection.fileDescriptor}")
+            return audioStreamingInterface.id
         } catch (e: Exception) {
             Log.e(TAG, "Exception while claiming USB interface: ${e.message}", e)
             return -1

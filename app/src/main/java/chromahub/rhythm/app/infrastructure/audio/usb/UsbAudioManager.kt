@@ -100,9 +100,13 @@ class UsbAudioManager(
         chromahub.rhythm.app.infrastructure.audio.UsbAudioReceiver.processPendingEvents()
         
         orchestrator.onEnumerationComplete = { device, caps ->
-            Log.d(TAG, "Enumeration complete — triggering OutputRouter")
+            Log.i(TAG, "Enumeration complete for ${device.productName} — triggering OutputRouter")
             outputRouter?.onUsbDeviceAttached(device, caps)
                 ?: Log.e(TAG, "outputRouter is null in UsbAudioManager!")
+        }
+
+        orchestrator.onEnumerationFailed = { device, reason ->
+            Log.e(TAG, "Enumeration FAILED for ${device.productName}: $reason")
         }
 
         Log.d(TAG, "USB monitoring started")

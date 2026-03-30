@@ -46,6 +46,9 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import android.media.AudioManager
+import android.media.AudioAttributes
+import android.media.AudioDeviceInfo
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
@@ -81,6 +84,9 @@ class MediaPlaybackService : MediaLibraryService(),
     
     // Debounce custom layout updates to prevent flickering
     private var updateLayoutJob: Job? = null
+
+    // Shutdown hook for cleaning up on ungraceful process death
+    private var shutdownHook: Thread? = null
     
     // Rhythm player engine (dual-player crossfade) and transition controller
     private lateinit var rhythmPlayerEngine: RhythmPlayerEngine
@@ -286,6 +292,10 @@ class MediaPlaybackService : MediaLibraryService(),
         const val EXTRA_TIMER_ACTIVE = "timer_active"
         const val EXTRA_REMAINING_TIME = "remaining_time"
         
+        // Shuffle state broadcast
+        const val ACTION_SHUFFLE_STATE_CHANGED = "chromahub.rhythm.app.action.SHUFFLE_STATE_CHANGED"
+        const val EXTRA_SHUFFLE_ENABLED = "shuffle_enabled"
+        
         // Audio session ID
         const val ACTION_GET_AUDIO_SESSION_ID = "chromahub.rhythm.app.action.GET_AUDIO_SESSION_ID"
         const val BROADCAST_AUDIO_SESSION_ID = "chromahub.rhythm.app.broadcast.AUDIO_SESSION_ID"
@@ -358,12 +368,14 @@ class MediaPlaybackService : MediaLibraryService(),
         this.siphonSessionManager = sessionManager
         
         // FIX 8: Zombie state recovery hook for ungraceful process death
-        Runtime.getRuntime().addShutdownHook(Thread {
+        shutdownHook = Thread {
             if (::siphonManager.isInitialized) {
                 Log.w(TAG, "Process dying — executing Siphon shutdown hook")
                 siphonManager.markSiphonActive(false)
             }
-        })
+        }.also {
+            Runtime.getRuntime().addShutdownHook(it)
+        }
         
         // FIX 5: Register receivers with guarded flags to prevent duplicates
         val filter = IntentFilter("chromahub.rhythm.app.action.FAVORITE_CHANGED")
@@ -2475,13 +2487,25 @@ class MediaPlaybackService : MediaLibraryService(),
     override fun onDestroy() {
         Log.d(TAG, "Service onDestroy — cleaning up all resources")
 
+        shutdownHook?.let { hook ->
+            try {
+                Runtime.getRuntime().removeShutdownHook(hook)
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to remove shutdown hook", e)
+            }
+            shutdownHook = null
+        }
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            val mediaAttributes = android.media.AudioAttributes.Builder()
-                .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
-                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
+            val mediaAttributes = AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
                 .build()
-            clearUsbPreferredMixerAttributes(audioManager, mediaAttributes)
+            val usbDevice = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).firstOrNull { it.type == AudioDeviceInfo.TYPE_USB_DEVICE }
+            if (usbDevice != null) {
+                audioManager.clearPreferredMixerAttributes(mediaAttributes, usbDevice)
+            }
         }
 
         isServicePlayerInitialized.set(false)

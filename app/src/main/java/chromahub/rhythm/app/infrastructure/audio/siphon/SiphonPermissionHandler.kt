@@ -18,9 +18,6 @@ class SiphonPermissionHandler(
             "chromahub.rhythm.app.USB_PERMISSION"
     }
     
-    // CRITICAL FIX: USB permission is currently never requested.
-    // This class MUST request permission before any connection attempt.
-    
     private var callback: ((Boolean) -> Unit)? = null
     
     private val permissionReceiver = object : BroadcastReceiver() {
@@ -38,7 +35,6 @@ class SiphonPermissionHandler(
     
     fun requestPermission(device: UsbDevice, callback: (Boolean) -> Unit) {
         this.callback = callback
-        // Register receiver
         val filter = IntentFilter(ACTION_USB_PERMISSION)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             context.registerReceiver(permissionReceiver, filter, 
@@ -47,13 +43,11 @@ class SiphonPermissionHandler(
             context.registerReceiver(permissionReceiver, filter)
         }
         
-        // Check if already have permission
         if (usbManager.hasPermission(device)) {
             callback(true)
             return
         }
         
-        // Request permission — THIS IS WHAT WAS MISSING
         val permissionIntent = PendingIntent.getBroadcast(
             context, 0,
             Intent(ACTION_USB_PERMISSION).apply {

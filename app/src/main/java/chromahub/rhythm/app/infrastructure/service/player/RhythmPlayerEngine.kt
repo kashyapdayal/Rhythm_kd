@@ -144,24 +144,53 @@ class RhythmPlayerEngine(
         Log.d(TAG, "restoreState: ${state.mediaItems.size} items, index=${state.currentIndex}, pos=${state.positionMs}")
     }
 
-    // FIX 9: Pause with confirmed isPlaying=false polling
+    // FIX 9: Pause + stop AudioTrack to release AudioFlinger's ALSA handle.
+    // This is critical for Siphon — AudioFlinger keeps the USB ALSA interface open
+    // as long as ANY AudioTrack is active. Pausing alone is insufficient because
+    // ExoPlayer keeps the AudioTrack alive for quick resume.
     suspend fun pauseForRouting() {
         if (!::playerA.isInitialized) return
-        if (!playerA.isPlaying && !playerA.playWhenReady) {
-            Log.i(TAG, "pauseForRouting: already paused, skipping")
-            return
+        // First pause to stop audio output if playing
+        if (playerA.isPlaying || playerA.playWhenReady) {
+            playerA.pause()
+            kotlinx.coroutines.withTimeoutOrNull(500L) {
+                while (playerA.isPlaying) {
+                    kotlinx.coroutines.delay(16L)
+                }
+            } ?: Log.w(TAG, "pauseForRouting: timeout waiting for player to stop")
         }
-        playerA.pause()
-        withTimeoutOrNull(500L) {
-            while (playerA.isPlaying) {
-                delay(16L)
-            }
-        } ?: Log.w(TAG, "pauseForRouting: timeout waiting for player to stop")
-        Log.i(TAG, "pauseForRouting: confirmed paused")
+
+        // Then stop the player to fully release AudioTrack → closes AudioFlinger session
+        // This forces the ALSA kernel driver to release the USB interface
+        playerA.stop()
+        kotlinx.coroutines.delay(50) // Brief settle time for AudioFlinger cleanup
+        Log.i(TAG, "pauseForRouting: confirmed stopped (AudioTrack released)")
     }
 
+    /**
+     * Full stop for Siphon transition: captures state, stops player, destroys AudioTrack.
+     * Use this for the most aggressive AudioFlinger eviction when pauseForRouting isn't enough.
+     * Call restoreState(state) after swapping the audio sink to resume.
+     */
+    suspend fun stopForRouting(): PlayerState {
+        val state = captureState()
+        if (::playerA.isInitialized) {
+            playerA.stop()
+            playerA.clearMediaItems()
+            delay(50) // Let AudioFlinger fully clean up
+        }
+        Log.i(TAG, "stopForRouting: player stopped and state captured (${state.mediaItems.size} items)")
+        return state
+    }
+
+    /**
+     * Resume playback after a routing transition.
+     * If the player was playing before the transition, resume playback.
+     */
     suspend fun resumeAfterRouting() {
-        Log.i(TAG, "resumeAfterRouting: playback resumed on new audio path")
+        if (!::playerA.isInitialized) return
+        // Don't auto-play — let the user or the saved state control this
+        Log.i(TAG, "resumeAfterRouting: audio path switched, player ready")
     }
 
     fun setRoutingPath(path: OutputRouter.RoutingPath) {

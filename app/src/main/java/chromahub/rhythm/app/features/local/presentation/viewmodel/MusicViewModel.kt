@@ -2963,8 +2963,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                             bitrate = null,
                             sampleRate = null,
                             channels = null,
-                            codec = null,
-                            discNumber = 1
+                            codec = null
                         )
                         isExternalSong = true
                         Log.d(TAG, "Created external song from mediaItem: ${song.title}")
@@ -3235,11 +3234,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun compareByDiscThenTrack(a: Song, b: Song): Int {
-        val discA = if (a.discNumber > 0) a.discNumber else 1
-        val discB = if (b.discNumber > 0) b.discNumber else 1
-
         return when {
-            discA != discB -> discA.compareTo(discB)
             a.trackNumber > 0 && b.trackNumber > 0 -> a.trackNumber.compareTo(b.trackNumber)
             a.trackNumber > 0 -> -1
             b.trackNumber > 0 -> 1
