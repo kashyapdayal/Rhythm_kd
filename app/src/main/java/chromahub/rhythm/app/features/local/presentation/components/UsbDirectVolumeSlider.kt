@@ -7,10 +7,14 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.VolumeDown
-import androidx.compose.material.icons.rounded.VolumeUp
+import androidx.compose.material.icons.automirrored.rounded.VolumeDown
+import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import chromahub.rhythm.app.util.HapticUtils
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -64,7 +68,7 @@ fun UsbDirectVolumeSlider(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Icon(
-                    imageVector        = Icons.Rounded.VolumeDown,
+                    imageVector        = Icons.AutoMirrored.Rounded.VolumeDown,
                     contentDescription = "Volume down",
                     tint               = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier           = Modifier.size(18.dp)
@@ -88,7 +92,7 @@ fun UsbDirectVolumeSlider(
                 )
 
                 Icon(
-                    imageVector        = Icons.Rounded.VolumeUp,
+                    imageVector        = Icons.AutoMirrored.Rounded.VolumeUp,
                     contentDescription = "Volume up",
                     tint               = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier           = Modifier.size(18.dp)

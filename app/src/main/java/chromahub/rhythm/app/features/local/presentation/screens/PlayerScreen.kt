@@ -2450,7 +2450,7 @@ fun PlayerScreen(
                                     HapticFeedbackType.LongPress
                                 )
                                 onSeek(
-                                    (currentTimeMs + 10000).coerceAtMost(totalTimeMs.toLong())
+                                    (currentTimeMs + 10000).coerceAtMost(totalTimeMs)
                                         .toFloat() / totalTimeMs
                                 )
                             },
