@@ -1,0 +1,56 @@
+Reusing configuration cache.
+> Task :app:generateGithubDebugAssets UP-TO-DATE
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preGithubDebugBuild UP-TO-DATE
+> Task :app:generateGithubDebugResValues UP-TO-DATE
+> Task :app:generateGithubDebugBuildConfig UP-TO-DATE
+> Task :app:createGithubDebugCompatibleScreenManifests UP-TO-DATE
+> Task :app:javaPreCompileGithubDebug UP-TO-DATE
+> Task :app:generateGithubDebugResources UP-TO-DATE
+> Task :app:mapGithubDebugSourceSetPaths UP-TO-DATE
+> Task :app:l8DexDesugarLibGithubDebug UP-TO-DATE
+> Task :app:desugarGithubDebugFileDependencies UP-TO-DATE
+> Task :app:packageGithubDebugResources UP-TO-DATE
+> Task :app:mergeGithubDebugAssets UP-TO-DATE
+> Task :app:mergeGithubDebugJniLibFolders UP-TO-DATE
+> Task :app:processGithubDebugNavigationResources UP-TO-DATE
+> Task :app:compressGithubDebugAssets UP-TO-DATE
+> Task :app:validateSigningGithubDebug UP-TO-DATE
+> Task :app:extractDeepLinksGithubDebug UP-TO-DATE
+> Task :app:writeGithubDebugAppMetadata UP-TO-DATE
+> Task :app:compileGithubDebugNavigationResources UP-TO-DATE
+> Task :app:writeGithubDebugSigningConfigVersions UP-TO-DATE
+> Task :app:parseGithubDebugLocalResources UP-TO-DATE
+> Task :app:checkGithubDebugDuplicateClasses UP-TO-DATE
+> Task :app:mergeLibDexGithubDebug UP-TO-DATE
+> Task :app:configureCMakeDebug[x86]
+> Task :app:configureCMakeDebug[x86_64]
+> Task :app:checkGithubDebugAarMetadata UP-TO-DATE
+> Task :app:processGithubDebugMainManifest UP-TO-DATE
+> Task :app:mergeGithubDebugResources UP-TO-DATE
+> Task :app:mergeExtDexGithubDebug UP-TO-DATE
+> Task :app:processGithubDebugManifest UP-TO-DATE
+> Task :app:configureCMakeDebug[arm64-v8a]
+> Task :app:configureCMakeDebug[armeabi-v7a]
+> Task :app:processGithubDebugManifestForPackage UP-TO-DATE
+> Task :app:kspGithubDebugKotlin UP-TO-DATE
+> Task :app:processGithubDebugResources UP-TO-DATE
+> Task :app:buildCMakeDebug[arm64-v8a]
+> Task :app:buildCMakeDebug[x86_64]
+> Task :app:buildCMakeDebug[armeabi-v7a]
+> Task :app:buildCMakeDebug[x86]
+> Task :app:mergeGithubDebugNativeLibs UP-TO-DATE
+> Task :app:stripGithubDebugDebugSymbols UP-TO-DATE
+> Task :app:compileGithubDebugKotlin UP-TO-DATE
+> Task :app:processGithubDebugJavaRes UP-TO-DATE
+> Task :app:compileGithubDebugJavaWithJavac UP-TO-DATE
+> Task :app:dexBuilderGithubDebug UP-TO-DATE
+> Task :app:mergeGithubDebugJavaResource UP-TO-DATE
+> Task :app:mergeProjectDexGithubDebug UP-TO-DATE
+> Task :app:mergeGithubDebugGlobalSynthetics UP-TO-DATE
+> Task :app:packageGithubDebug UP-TO-DATE
+> Task :app:createGithubDebugApkListingFileRedirect UP-TO-DATE
+
+BUILD SUCCESSFUL in 1s
+48 actionable tasks: 8 executed, 40 up-to-date
+Configuration cache entry reused.

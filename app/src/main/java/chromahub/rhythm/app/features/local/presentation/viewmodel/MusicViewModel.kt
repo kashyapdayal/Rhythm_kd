@@ -76,7 +76,9 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import androidx.activity.result.IntentSenderRequest
+import androidx.annotation.OptIn
 
+@OptIn(UnstableApi::class)
 class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     companion object {
