@@ -158,11 +158,15 @@ fun PermissionHandler(
             } else {
                 currentOnboardingStep = OnboardingStep.COMPLETE
                 onSetIsInitializingApp(true) // Start app initialization
-                val intent = Intent(context, chromahub.rhythm.app.infrastructure.service.MediaPlaybackService::class.java)
-                intent.action = chromahub.rhythm.app.infrastructure.service.MediaPlaybackService.ACTION_INIT_SERVICE
-                // Media3's MediaLibraryService handles foreground state automatically in onCreate()
-                context.startService(intent)
-                delay(1000) // Give service time to initialize
+                try {
+                    val intent = Intent(context, chromahub.rhythm.app.infrastructure.service.MediaPlaybackService::class.java)
+                    intent.action = chromahub.rhythm.app.infrastructure.service.MediaPlaybackService.ACTION_INIT_SERVICE
+                    // Must use startForegroundService to avoid BackgroundServiceStartNotAllowedException on Android 12+
+                    ContextCompat.startForegroundService(context, intent)
+                    delay(1000) // Give service time to initialize
+                } catch (_: Exception) {
+                    // Fallback: service will be started when the activity is fully foregrounded
+                }
                 onSetIsInitializingApp(false) // End app initialization
             }
             onSetIsLoading(false) // Always set loading to false after evaluation
