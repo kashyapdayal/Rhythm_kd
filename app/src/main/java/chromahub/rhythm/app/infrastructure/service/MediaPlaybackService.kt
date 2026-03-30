@@ -207,10 +207,13 @@ class MediaPlaybackService : MediaLibraryService(),
     
     // Fix 7: Attribution-context AudioManager for playback-related calls
     private val playbackAudioManager: android.media.AudioManager by lazy {
-        createAttributionContext("playback")
-            .getSystemService(android.media.AudioManager::class.java)
+        val context = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            createAttributionContext("playback")
+        } else {
+            this
+        }
+        context.getSystemService(android.media.AudioManager::class.java)
     }
-    
     // Discord Rich Presence manager
     private lateinit var discordRichPresenceManager: chromahub.rhythm.app.utils.DiscordRichPresenceManager
     
