@@ -322,13 +322,6 @@ fun SettingsScreen(
                 title = context.getString(R.string.settings_section_queue_playback),
                 items = buildList {
                     add(SettingItem(Icons.Default.QueueMusic, context.getString(R.string.settings_queue_playback_title), context.getString(R.string.settings_queue_playback_desc), onClick = { onNavigateTo(SettingsRoutes.QUEUE_PLAYBACK) }))
-                    add(SettingItem(
-                        Icons.Default.GraphicEq,
-                        "USB Direct (DAC Mode)",
-                        "Bypass Android audio system for bit-perfect output using Siphon Engine",
-                        toggleState = bitPerfectMode,
-                        onToggleChange = { appSettings.setBitPerfectMode(it) }
-                    ))
                     if (appMode == "LOCAL") {
                         add(SettingItem(Icons.Default.AccessTime, context.getString(R.string.sleep_timer), context.getString(R.string.sleep_timer_set_control), onClick = { onNavigateTo(SettingsRoutes.SLEEP_TIMER) }))
                     }
@@ -422,7 +415,6 @@ fun SettingsScreen(
         ).filterNotNull() // Filter out null groups (for streaming mode)
 
         val lazyListState = scrollState ?: rememberSaveable(
-            key = "settings_scroll_state",
             saver = LazyListStateSaver
         ) {
             LazyListState()
@@ -975,7 +967,6 @@ fun SettingsScreenWrapper(
 
     // Hoist the main settings scroll state to persist across navigation
     val mainSettingsScrollState = rememberSaveable(
-        key = "main_settings_scroll_state",
         saver = LazyListStateSaver
     ) {
         LazyListState()

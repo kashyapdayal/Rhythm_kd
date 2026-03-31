@@ -558,7 +558,6 @@ fun NotificationsSettingsScreen(onBackClick: () -> Unit) {
         )
 
         val lazyListState = rememberSaveable(
-            key = "notifications_settings_scroll_state",
             saver = LazyListStateSaver
         ) {
             androidx.compose.foundation.lazy.LazyListState()
@@ -666,6 +665,11 @@ fun QueuePlaybackSettingsScreen(onBackClick: () -> Unit) {
 
     val audioQualityDataStore = remember { chromahub.rhythm.app.shared.data.model.AudioQualityDataStore(context) }
     val usbExclusiveModeEnabled by audioQualityDataStore.usbExclusiveModeEnabled.collectAsState(initial = false)
+    val dacConnected by audioQualityDataStore.usbDeviceConnected.collectAsState(initial = false)
+    val dacName by audioQualityDataStore.usbDeviceName.collectAsState(initial = "")
+    val dacMaxSampleRate by audioQualityDataStore.usbDeviceMaxSampleRate.collectAsState(initial = 48000)
+    val dacHiResCapable by audioQualityDataStore.usbDeviceHiResCapable.collectAsState(initial = false)
+    
     val coroutineScope = rememberCoroutineScope()
 
     var showPlaylistBehaviorDialog by remember { mutableStateOf(false) }
@@ -1055,13 +1059,15 @@ fun QueuePlaybackSettingsScreen(onBackClick: () -> Unit) {
 
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        Row(
+                                                Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(vertical = 8.dp)
                                 .clickable {
                                     coroutineScope.launch {
-                                        audioQualityDataStore.setUsbExclusiveMode(!usbExclusiveModeEnabled)
+                                        val newState = !usbExclusiveModeEnabled
+                                        audioQualityDataStore.setUsbExclusiveMode(newState)
+                                        appSettings.setBitPerfectMode(newState)
                                     }
                                 },
                             verticalAlignment = Alignment.CenterVertically
@@ -1090,9 +1096,38 @@ fun QueuePlaybackSettingsScreen(onBackClick: () -> Unit) {
                                 onCheckedChange = { isChecked ->
                                     coroutineScope.launch {
                                         audioQualityDataStore.setUsbExclusiveMode(isChecked)
+                                        appSettings.setBitPerfectMode(isChecked)
                                     }
                                 }
                             )
+                        }
+
+                        if (usbExclusiveModeEnabled && dacConnected) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(16.dp),
+                                    verticalAlignment = Alignment.Top
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Info,
+                                        contentDescription = "Info",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(top = 2.dp, end = 12.dp).size(20.dp)
+                                    )
+                                    Column {
+                                        Text("USB DAC Connected", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text("Name: ", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text("Max Sample Rate: \ Hz", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text("Status: ", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -2072,7 +2107,7 @@ fun PlaylistsSettingsScreen(onBackClick: () -> Unit) {
         }
     ) { modifier ->
         val lazyListState = rememberSaveable(
-            key = "playlists_settings_scroll_state",
+            
             saver = LazyListStateSaver
         ) {
             androidx.compose.foundation.lazy.LazyListState()
@@ -2618,7 +2653,7 @@ fun MediaScanSettingsScreen(onBackClick: () -> Unit) {
         onBackClick = onBackClick
     ) { modifier ->
         val lazyListState = rememberSaveable(
-            key = "media_scan_settings_scroll_state",
+            
             saver = LazyListStateSaver
         ) {
             androidx.compose.foundation.lazy.LazyListState()
@@ -3359,7 +3394,7 @@ fun ArtistSeparatorsSettingsScreen(onBackClick: () -> Unit) {
         )
 
         val lazyListState = rememberSaveable(
-            key = "artist_separators_scroll_state",
+            
             saver = LazyListStateSaver
         ) {
             androidx.compose.foundation.lazy.LazyListState()
@@ -3997,7 +4032,7 @@ fun AboutScreen(
         onBackClick = onBackClick
     ) { modifier ->
         val lazyListState = rememberSaveable(
-            key = "about_screen_scroll_state",
+            
             saver = LazyListStateSaver
         ) {
             androidx.compose.foundation.lazy.LazyListState()
@@ -4663,7 +4698,7 @@ fun AboutScreen(
                                 modifier = Modifier.padding(vertical = 6.dp)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Rounded.Chat,
+                                    imageVector = Icons.AutoMirrored.Filled.Chat,
                                     contentDescription = "Discord",
                                     modifier = Modifier.size(18.dp)
                                 )
@@ -4695,7 +4730,7 @@ fun AboutScreen(
                                 modifier = Modifier.padding(vertical = 6.dp)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Rounded.Send,
+                                    imageVector = Icons.AutoMirrored.Filled.Send,
                                     contentDescription = "Telegram",
                                     modifier = Modifier.size(18.dp)
                                 )
@@ -5040,7 +5075,7 @@ fun UpdatesSettingsScreen(onBackClick: () -> Unit) {
 //        }
     ) { modifier ->
         val lazyListState = rememberSaveable(
-            key = "updates_settings_scroll_state",
+            
             saver = LazyListStateSaver
         ) {
             androidx.compose.foundation.lazy.LazyListState()
@@ -10655,6 +10690,16 @@ fun PlayerCustomizationSettingsScreen(onBackClick: () -> Unit) {
                                 toggleState = playerShowAudioQualityBadges,
                                 onToggleChange = { appSettings.setPlayerShowAudioQualityBadges(it) }
                             )
+                        ),
+                        toMaterial3SettingsItem(
+                            context = context,
+                            hapticFeedback = haptics,
+                            item = SettingItem(
+                                icon = Icons.Default.Fullscreen,
+                                title = "Immersive Mode",
+                                description = "Configure status bar hide behaviour",
+                                onClick = { showImmersiveModeBottomSheet = true }
+                            )
                         )
                     ),
                     containerColor = MaterialTheme.colorScheme.surfaceContainer
@@ -11310,7 +11355,8 @@ fun PlayerCustomizationSettingsScreen(onBackClick: () -> Unit) {
             },
             shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
             containerColor = MaterialTheme.colorScheme.surfaceContainer,
-            modifier = Modifier.wrapContentHeight().fillMaxWidth()
+            modifier = Modifier.wrapContentHeight().fillMaxWidth(),
+            windowInsets = androidx.compose.material3.BottomSheetDefaults.windowInsets
         ) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp),
@@ -15742,7 +15788,7 @@ fun HomeScreenCustomizationSettingsScreen(onBackClick: () -> Unit) {
         }
     ) { modifier ->
         val lazyListState = rememberSaveable(
-            key = "home_screen_settings_scroll_state",
+            
             saver = LazyListStateSaver
         ) {
             androidx.compose.foundation.lazy.LazyListState()
@@ -15756,7 +15802,7 @@ fun HomeScreenCustomizationSettingsScreen(onBackClick: () -> Unit) {
                 .padding(horizontal = 24.dp)
         ) {
             // ==================== HEADER CUSTOMIZATION ====================
-            item(key = "header_customization_header", contentType = "section_header") {
+            item(contentType = "section_header") {
                 Spacer(modifier = Modifier.height(24.dp))
                 Text(
                     text = context.getString(R.string.settings_header_customization),
@@ -15767,7 +15813,7 @@ fun HomeScreenCustomizationSettingsScreen(onBackClick: () -> Unit) {
             }
             
             // Consolidated Header Settings Card
-            item(key = "header_settings_card", contentType = "settings_card") {
+            item(contentType = "settings_card") {
                 val collapseBehavior by appSettings.headerCollapseBehavior.collectAsState()
                 val displayMode by appSettings.homeHeaderDisplayMode.collectAsState()
                 val visibilityMode by appSettings.homeAppIconVisibility.collectAsState()
@@ -15874,7 +15920,7 @@ fun HomeScreenCustomizationSettingsScreen(onBackClick: () -> Unit) {
             }
 
             // ==================== GREETING SETTINGS ====================
-            item(key = "greeting_settings_header", contentType = "section_header") {
+            item(contentType = "section_header") {
                 Spacer(modifier = Modifier.height(24.dp))
                 Text(
                     text = "Greeting",
@@ -15884,7 +15930,7 @@ fun HomeScreenCustomizationSettingsScreen(onBackClick: () -> Unit) {
                 )
             }
 
-            item(key = "greeting_toggle_card", contentType = "settings_card") {
+            item(contentType = "settings_card") {
                 Material3SettingsGroup(
                     items = listOf(
                         toMaterial3SettingsItem(
@@ -15904,7 +15950,7 @@ fun HomeScreenCustomizationSettingsScreen(onBackClick: () -> Unit) {
             }
 
             // ==================== SECTION ORDER & VISIBILITY ====================
-            item(key = "section_order_header", contentType = "section_header") {
+            item(contentType = "section_header") {
                 Spacer(modifier = Modifier.height(24.dp))
                 Text(
                     text = context.getString(R.string.settings_section_order_visibility),
@@ -15914,7 +15960,7 @@ fun HomeScreenCustomizationSettingsScreen(onBackClick: () -> Unit) {
                 )
             }
 
-            item(key = "section_order_button", contentType = "action_button") {
+            item(contentType = "action_button") {
                 Material3SettingsGroup(
                     items = listOf(
                         toMaterial3SettingsItem(
@@ -15936,7 +15982,7 @@ fun HomeScreenCustomizationSettingsScreen(onBackClick: () -> Unit) {
             }
 
             // ==================== WIDGET ITEM COUNTS ====================
-            item(key = "widget_counts_settings", contentType = "slider_group") {
+            item(contentType = "slider_group") {
                 val widgetCountItems = buildList {
                     if (showRecentlyPlayed) {
                         add(
@@ -16150,7 +16196,7 @@ fun HomeScreenCustomizationSettingsScreen(onBackClick: () -> Unit) {
             }
 
             // ==================== DISCOVER CAROUSEL SETTINGS ====================
-            item(key = "discover_carousel_settings", contentType = "settings_card") {
+            item(contentType = "settings_card") {
                 AnimatedVisibility(visible = showDiscoverCarousel) {
                     Column {
                         Spacer(modifier = Modifier.height(24.dp))
@@ -16370,7 +16416,7 @@ fun HomeScreenCustomizationSettingsScreen(onBackClick: () -> Unit) {
             }
 
             // Quick Tips Card
-            item(key = "tips_card", contentType = "tips") {
+            item(contentType = "tips") {
                 Spacer(modifier = Modifier.height(24.dp))
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -17428,7 +17474,7 @@ fun ExpressiveShapesSettingsScreen(onBackClick: () -> Unit) {
                     contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp)
                 ) {
                     groupedShapes.forEach { (category, shapes) ->
-                        item(key = "category_$category", span = { GridItemSpan(2) }) {
+                        item(span = { GridItemSpan(2) }) {
                             Text(
                                 text = category,
                                 style = MaterialTheme.typography.labelLarge,
@@ -17812,3 +17858,5 @@ private fun ScopeOption(title: String, selected: Boolean, onClick: () -> Unit) {
         Text(text = title, style = androidx.compose.material3.MaterialTheme.typography.bodyLarge)
     }
 }
+
+

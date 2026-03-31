@@ -3179,6 +3179,7 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
     ): Boolean {
         return try {
             Log.d("AppSettings", "Attempting to restore from backup...")
+            @Suppress("UNCHECKED_CAST")
             val backupData = Gson().fromJson(backupJson, Map::class.java) as? Map<String, Any?> ?: return false
             val preferences = (backupData["preferences"] as? Map<*, *>)
                 ?.mapNotNull { (key, value) ->

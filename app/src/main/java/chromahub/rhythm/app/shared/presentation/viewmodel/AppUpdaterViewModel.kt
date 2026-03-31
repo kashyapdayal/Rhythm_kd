@@ -717,19 +717,20 @@ class AppUpdaterViewModel(application: Application) : AndroidViewModel(applicati
             _error.value = null
             
             // If it's not an APK file, open in browser
-            if (latestVersion?.apkAssetName.isNullOrEmpty()) {
+            if (latestVersion.apkAssetName.isEmpty()) {
                 openInBrowser(downloadUrl)
                 return@launch
             }
-            
+
             // Check if we have an active download
             if (_isDownloading.value) {
                 Log.d(TAG, "Download already in progress")
                 return@launch
             }
-            
+
             // Start or resume download
-            downloadApkInApp(downloadUrl, latestVersion?.apkAssetName ?: "rhythm-update.apk", expectedSize = latestVersion?.apkSize ?: 0)
+            val assetName = if (latestVersion.apkAssetName.isNotEmpty()) latestVersion.apkAssetName else "rhythm-update.apk"
+            downloadApkInApp(downloadUrl, assetName, expectedSize = latestVersion.apkSize)
         }
     }
     
@@ -927,7 +928,7 @@ class AppUpdaterViewModel(application: Application) : AndroidViewModel(applicati
                         
                         try {
                             // Get content length and resume info
-                            val contentLength = response.body?.contentLength() ?: -1L
+                            val contentLength = response.body.contentLength()
                             val totalLength = if (response.code == 206) {
                                 val range = response.header("Content-Range")
                                 range?.substringAfter("/")?.toLongOrNull() ?: contentLength
@@ -956,8 +957,8 @@ class AppUpdaterViewModel(application: Application) : AndroidViewModel(applicati
                             val outputStream = FileOutputStream(file, existingLength > 0)
                             
                             // Get input stream
-                            val inputStream = response.body?.byteStream()
-                            
+                            val inputStream = response.body.byteStream()
+
                             if (inputStream == null) {
                                 viewModelScope.launch {
                                     _isDownloading.value = false

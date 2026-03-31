@@ -118,8 +118,8 @@ class RhythmApplication : Application() {
         // You can add a broadcast or event here to notify components
     }
     
+    @Suppress("DEPRECATION")
     override fun onTrimMemory(level: Int) {
-        @Suppress("DEPRECATION")
         super.onTrimMemory(level)
         
         val levelName = when (level) {
