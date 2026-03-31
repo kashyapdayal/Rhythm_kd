@@ -664,6 +664,10 @@ fun QueuePlaybackSettingsScreen(onBackClick: () -> Unit) {
     val audioRoutingMode by appSettings.audioRoutingMode.collectAsState()
     val bitPerfectMode by appSettings.bitPerfectMode.collectAsState()
 
+    val audioQualityDataStore = remember { chromahub.rhythm.app.shared.data.model.AudioQualityDataStore(context) }
+    val usbExclusiveModeEnabled by audioQualityDataStore.usbExclusiveModeEnabled.collectAsState(initial = false)
+    val coroutineScope = rememberCoroutineScope()
+
     var showPlaylistBehaviorDialog by remember { mutableStateOf(false) }
     var showListQueueBehaviorDialog by remember { mutableStateOf(false) }
     var showQueueDialogSettingDialog by remember { mutableStateOf(false) }
@@ -1004,10 +1008,10 @@ fun QueuePlaybackSettingsScreen(onBackClick: () -> Unit) {
                         Spacer(modifier = Modifier.height(16.dp))
 
                         ExpressiveButtonGroup(
-                            items = listOf(context.getString(R.string.settings_audio_routing_default), context.getString(R.string.settings_audio_routing_app), context.getString(R.string.settings_audio_routing_system)),
+                            items = listOf(context.getString(R.string.settings_audio_routing_default), context.getString(R.string.settings_audio_routing_hardware), context.getString(R.string.settings_audio_routing_system)),
                             selectedIndex = when (audioRoutingMode) {
                                 "default" -> 0
-                                "app" -> 1
+                                "hardware" -> 1
                                 "system" -> 2
                                 else -> 0
                             },
@@ -1019,13 +1023,13 @@ fun QueuePlaybackSettingsScreen(onBackClick: () -> Unit) {
                                         restartDialogMessage = "Audio routing changed to Default. Restart the app to apply the changes."
                                     }
                                     1 -> {
-                                        appSettings.setAudioRoutingMode("app")
-                                        // App routing enables high-resolution mode for direct DAC output
+                                        appSettings.setAudioRoutingMode("hardware")
+                                        // Hardware routing enables high-resolution mode for direct DAC output
                                         if (!appSettings.bitPerfectMode.value) {
                                             appSettings.setBitPerfectMode(true)
                                         }
                                         showRestartDialog = true
-                                        restartDialogMessage = "Audio routing changed to App mode. Restart the app to apply the changes."
+                                        restartDialogMessage = "Audio routing changed to Hardware mode. Restart the app to apply the changes."
                                     }
                                     2 -> {
                                         appSettings.setAudioRoutingMode("system")
@@ -1041,13 +1045,55 @@ fun QueuePlaybackSettingsScreen(onBackClick: () -> Unit) {
 
                         Text(
                             text = when (audioRoutingMode) {
-                                "app" -> context.getString(R.string.settings_audio_routing_app_desc)
+                                "hardware" -> context.getString(R.string.settings_audio_routing_hardware_desc)
                                 "system" -> context.getString(R.string.settings_audio_routing_system_desc)
                                 else -> context.getString(R.string.settings_audio_routing_default_desc)
                             },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp)
+                                .clickable {
+                                    coroutineScope.launch {
+                                        audioQualityDataStore.setUsbExclusiveMode(!usbExclusiveModeEnabled)
+                                    }
+                                },
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Usb,
+                                contentDescription = null,
+                                modifier = Modifier.size(24.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "USB Exclusive Mode",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "Direct hardware access - Bit-Perfect",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = usbExclusiveModeEnabled,
+                                onCheckedChange = { isChecked ->
+                                    coroutineScope.launch {
+                                        audioQualityDataStore.setUsbExclusiveMode(isChecked)
+                                    }
+                                }
+                            )
+                        }
                     }
                 }
             }
