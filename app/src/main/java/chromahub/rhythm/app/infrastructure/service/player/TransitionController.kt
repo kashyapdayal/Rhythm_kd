@@ -1,4 +1,3 @@
-// [SIPHON_CUSTOM_ENGINE]
 package chromahub.rhythm.app.infrastructure.service.player
 
 import android.util.Log
@@ -169,10 +168,9 @@ class TransitionController(
             engine.prepareNext(nextMediaItem)
 
             // Check if crossfade is globally enabled
-            // Also enforce Path A: disable crossfade if Bit-Perfect mode is active
-            val isCrossfadeEnabled = appSettings.crossfade.value && !appSettings.bitPerfectMode.value
+            val isCrossfadeEnabled = appSettings.crossfade.value
             if (!isCrossfadeEnabled) {
-                Log.d(TAG, "Crossfade disabled (or Bit-Perfect mode active). Using default gap.")
+                Log.d(TAG, "Crossfade globally disabled. Using default gap.")
                 engine.setPauseAtEndOfMediaItems(false)
                 return@launch
             }

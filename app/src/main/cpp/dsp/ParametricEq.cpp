@@ -1,4 +1,3 @@
-// [SIPHON_CUSTOM_ENGINE]
 #include "ParametricEq.h"
 #ifndef _USE_MATH_DEFINES
 #define _USE_MATH_DEFINES

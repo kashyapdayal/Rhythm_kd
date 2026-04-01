@@ -1,4 +1,3 @@
-// [SIPHON_CUSTOM_ENGINE]
 cmake_minimum_required(VERSION 3.22.1)
 
 project("rhythm_audio")
@@ -42,10 +41,6 @@ add_library(
     siphon_dsp_pipeline.cpp
     siphon_volume_controller.cpp
     siphon_resampler.cpp
-    jni_bridge.cpp
-    format_validator.cpp
-    wav_parser.cpp
-    flac_parser.cpp
 )
 
 target_compile_features(siphon_engine PRIVATE cxx_std_17)
@@ -87,26 +82,9 @@ target_link_libraries(usb-1.0 log)
 # Ensure siphon_engine can find <libusb.h>
 include_directories(${LIBUSB_ROOT}/libusb)
 
-include(FetchContent)
-set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
-set(BUILD_PROGRAMS OFF CACHE BOOL "" FORCE)
-set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(BUILD_DOCS OFF CACHE BOOL "" FORCE)
-set(WITH_OGG OFF CACHE BOOL "" FORCE)
-set(INSTALL_MANPAGES OFF CACHE BOOL "" FORCE)
-FetchContent_Declare(
-  FLAC
-  GIT_REPOSITORY https://github.com/xiph/flac.git
-  GIT_TAG        1.4.3
-)
-FetchContent_MakeAvailable(FLAC)
-
-target_include_directories(siphon_engine PRIVATE ${flac_SOURCE_DIR}/include)
-
 target_link_libraries(
     siphon_engine
     ${log-lib}
     ${android-lib}
     usb-1.0
-    FLAC
 )

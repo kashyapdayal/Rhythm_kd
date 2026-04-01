@@ -1,4 +1,3 @@
-// [SIPHON_CUSTOM_ENGINE]
 package chromahub.rhythm.app.infrastructure.service.player
 
 import android.content.Context

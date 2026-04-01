@@ -1,4 +1,3 @@
-// [SIPHON_CUSTOM_ENGINE]
 #include <algorithm>
 #include <cstddef>
 #include <vector>

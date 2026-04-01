@@ -1,4 +1,3 @@
-// [SIPHON_CUSTOM_ENGINE]
 #include <atomic>
 #include <cmath>
 #include <random>

@@ -1,4 +1,3 @@
-// [SIPHON_CUSTOM_ENGINE]
 #include "NativePlayer.h"
 #include <android/log.h>
 #include <unistd.h>
