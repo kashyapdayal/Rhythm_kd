@@ -558,7 +558,6 @@ fun NotificationsSettingsScreen(onBackClick: () -> Unit) {
         )
 
         val lazyListState = rememberSaveable(
-            key = "notifications_settings_scroll_state",
             saver = LazyListStateSaver
         ) {
             androidx.compose.foundation.lazy.LazyListState()
@@ -666,6 +665,11 @@ fun QueuePlaybackSettingsScreen(onBackClick: () -> Unit) {
 
     val audioQualityDataStore = remember { chromahub.rhythm.app.shared.data.model.AudioQualityDataStore(context) }
     val usbExclusiveModeEnabled by audioQualityDataStore.usbExclusiveModeEnabled.collectAsState(initial = false)
+    val dacConnected by audioQualityDataStore.usbDeviceConnected.collectAsState(initial = false)
+    val dacName by audioQualityDataStore.usbDeviceName.collectAsState(initial = "")
+    val dacMaxSampleRate by audioQualityDataStore.usbDeviceMaxSampleRate.collectAsState(initial = 48000)
+    val dacHiResCapable by audioQualityDataStore.usbDeviceHiResCapable.collectAsState(initial = false)
+
     val coroutineScope = rememberCoroutineScope()
 
     var showPlaylistBehaviorDialog by remember { mutableStateOf(false) }
@@ -791,11 +795,12 @@ fun QueuePlaybackSettingsScreen(onBackClick: () -> Unit) {
                     SettingItem(
                         RhythmIcons.Tune,
                         context.getString(R.string.settings_crossfade),
-                        context.getString(R.string.settings_crossfade_desc),
-                        toggleState = crossfadeEnabled,
+                        if (bitPerfectMode) "Disabled while Bit-Perfect USB mode is active" else context.getString(R.string.settings_crossfade_desc),
+                        toggleState = if (bitPerfectMode) false else crossfadeEnabled,
                         onToggleChange = { appSettings.setCrossfade(it) },
                         // Pass the crossfade duration as extra data for rendering
-                        data = if (crossfadeEnabled) crossfadeDuration else null
+                        data = if (crossfadeEnabled && !bitPerfectMode) crossfadeDuration else null,
+                        enabled = !bitPerfectMode
                     ),
                     SettingItem(
                         RhythmIcons.Repeat,
@@ -1061,7 +1066,9 @@ fun QueuePlaybackSettingsScreen(onBackClick: () -> Unit) {
                                 .padding(vertical = 8.dp)
                                 .clickable {
                                     coroutineScope.launch {
-                                        audioQualityDataStore.setUsbExclusiveMode(!usbExclusiveModeEnabled)
+                                        val newState = !usbExclusiveModeEnabled
+                                        audioQualityDataStore.setUsbExclusiveMode(newState)
+                                        appSettings.setBitPerfectMode(newState)
                                     }
                                 },
                             verticalAlignment = Alignment.CenterVertically
@@ -1090,9 +1097,40 @@ fun QueuePlaybackSettingsScreen(onBackClick: () -> Unit) {
                                 onCheckedChange = { isChecked ->
                                     coroutineScope.launch {
                                         audioQualityDataStore.setUsbExclusiveMode(isChecked)
+                                        appSettings.setBitPerfectMode(isChecked)
                                     }
                                 }
                             )
+                        }
+
+                        AnimatedVisibility(visible = usbExclusiveModeEnabled && dacConnected) {
+                            Column {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(16.dp),
+                                        verticalAlignment = Alignment.Top
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Info,
+                                            contentDescription = "Info",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(top = 2.dp, end = 12.dp).size(20.dp)
+                                        )
+                                        Column {
+                                            Text("USB DAC Connected", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Text("Name: $dacName", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            Text("Max Sample Rate: ${dacMaxSampleRate} Hz", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            Text("Status: ${if (dacHiResCapable) "Hi-Res Audio Supported" else "Standard Audio"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -3768,7 +3806,7 @@ fun ArtistSeparatorsSettingsScreen(onBackClick: () -> Unit) {
                             colors = ButtonDefaults.outlinedButtonColors(
                                 contentColor = MaterialTheme.colorScheme.primary
                             ),
-                            border = ButtonDefaults.outlinedButtonBorder.copy(
+                            border = ButtonDefaults.outlinedButtonBorder(enabled = true).copy(
                                 width = 1.5.dp
                             )
                         ) {
@@ -10655,6 +10693,26 @@ fun PlayerCustomizationSettingsScreen(onBackClick: () -> Unit) {
                                 toggleState = playerShowAudioQualityBadges,
                                 onToggleChange = { appSettings.setPlayerShowAudioQualityBadges(it) }
                             )
+                        ),
+                        toMaterial3SettingsItem(
+                            context = context,
+                            hapticFeedback = haptics,
+                            item = SettingItem(
+                                icon = Icons.Default.Fullscreen,
+                                title = "Immersive Mode",
+                                description = "Configure status bar hide behaviour",
+                                onClick = { showImmersiveModeBottomSheet = true }
+                            )
+                        ),
+                        toMaterial3SettingsItem(
+                            context = context,
+                            hapticFeedback = haptics,
+                            item = SettingItem(
+                                icon = Icons.Default.Fullscreen,
+                                title = "Immersive Mode",
+                                description = "Configure status bar hide behaviour",
+                                onClick = { showImmersiveModeBottomSheet = true }
+                            )
                         )
                     ),
                     containerColor = MaterialTheme.colorScheme.surfaceContainer
@@ -11310,11 +11368,11 @@ fun PlayerCustomizationSettingsScreen(onBackClick: () -> Unit) {
             },
             shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
             containerColor = MaterialTheme.colorScheme.surfaceContainer,
-            modifier = Modifier.wrapContentHeight().fillMaxWidth()
+            modifier = Modifier.fillMaxHeight(0.85f).fillMaxWidth()
         ) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp),
-                contentPadding = PaddingValues(bottom = 24.dp + androidx.compose.foundation.layout.WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding())
+                contentPadding = PaddingValues(bottom = 24.dp)
             ) {
                 item {
                     Text(
