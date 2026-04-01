@@ -403,6 +403,30 @@ fun LibraryScreen(
             Toast.makeText(context, "Permission denied. Changes saved to library only.", Toast.LENGTH_LONG).show()
         }
     }
+
+    val deleteSongLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        musicViewModel.onPendingDeleteResult(result.resultCode == android.app.Activity.RESULT_OK)
+    }
+
+    LaunchedEffect(Unit) {
+        launch {
+            musicViewModel.deleteConfirmationLauncher.collect { request ->
+                try {
+                    deleteSongLauncher.launch(request)
+                } catch (e: Exception) {
+                    Toast.makeText(context, "Failed to launch delete request", Toast.LENGTH_SHORT).show()
+                    musicViewModel.onPendingDeleteResult(false)
+                }
+            }
+        }
+        launch {
+            musicViewModel.errorMessage.collect { message ->
+                Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
     
     // Import/Export related state
     var operationProgressText by remember { mutableStateOf("") }

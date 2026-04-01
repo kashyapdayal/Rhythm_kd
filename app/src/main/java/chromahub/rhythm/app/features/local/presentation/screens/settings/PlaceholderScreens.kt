@@ -687,7 +687,6 @@ fun NotificationsSettingsScreen(onBackClick: () -> Unit) {
         )
 
         val lazyListState = rememberSaveable(
-            key = "notifications_settings_scroll_state",
             saver = LazyListStateSaver
         ) {
             androidx.compose.foundation.lazy.LazyListState()
@@ -941,11 +940,12 @@ fun QueuePlaybackSettingsScreen(onBackClick: () -> Unit) {
                     SettingItem(
                         RhythmIcons.Tune,
                         context.getString(R.string.settings_crossfade),
-                        context.getString(R.string.settings_crossfade_desc),
-                        toggleState = crossfadeEnabled,
+                        if (bitPerfectMode) "Disabled while Bit-Perfect USB mode is active" else context.getString(R.string.settings_crossfade_desc),
+                        toggleState = if (bitPerfectMode) false else crossfadeEnabled,
                         onToggleChange = { appSettings.setCrossfade(it) },
                         // Pass the crossfade duration as extra data for rendering
-                        data = if (crossfadeEnabled) crossfadeDuration else null
+                        data = if (crossfadeEnabled && !bitPerfectMode) crossfadeDuration else null,
+                        enabled = !bitPerfectMode
                     ),
                     SettingItem(
                         RhythmIcons.Repeat,
@@ -3777,7 +3777,7 @@ fun ArtistSeparatorsSettingsScreen(onBackClick: () -> Unit) {
                             colors = ButtonDefaults.outlinedButtonColors(
                                 contentColor = MaterialTheme.colorScheme.primary
                             ),
-                            border = ButtonDefaults.outlinedButtonBorder.copy(
+                            border = ButtonDefaults.outlinedButtonBorder(enabled = true).copy(
                                 width = 1.5.dp
                             )
                         ) {
@@ -10699,6 +10699,26 @@ fun PlayerCustomizationSettingsScreen(onBackClick: () -> Unit) {
                                 toggleState = playerShowAudioQualityBadges,
                                 onToggleChange = { appSettings.setPlayerShowAudioQualityBadges(it) }
                             )
+                        ),
+                        toMaterial3SettingsItem(
+                            context = context,
+                            hapticFeedback = haptics,
+                            item = SettingItem(
+                                icon = Icons.Default.Fullscreen,
+                                title = "Immersive Mode",
+                                description = "Configure status bar hide behaviour",
+                                onClick = { showImmersiveModeBottomSheet = true }
+                            )
+                        ),
+                        toMaterial3SettingsItem(
+                            context = context,
+                            hapticFeedback = haptics,
+                            item = SettingItem(
+                                icon = Icons.Default.Fullscreen,
+                                title = "Immersive Mode",
+                                description = "Configure status bar hide behaviour",
+                                onClick = { showImmersiveModeBottomSheet = true }
+                            )
                         )
                     ),
                     containerColor = MaterialTheme.colorScheme.surfaceContainer
@@ -11311,6 +11331,80 @@ fun PlayerCustomizationSettingsScreen(onBackClick: () -> Unit) {
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
+            }
+        }
+    }
+
+    if (showImmersiveModeBottomSheet) {
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        val immersiveScope by appSettings.immersiveScope.collectAsState()
+        val immersiveBehaviour by appSettings.immersiveBehaviour.collectAsState()
+
+        ModalBottomSheet(
+            onDismissRequest = { showImmersiveModeBottomSheet = false },
+            sheetState = sheetState,
+            dragHandle = {
+                BottomSheetDefaults.DragHandle(color = MaterialTheme.colorScheme.primary)
+            },
+            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+            modifier = Modifier.fillMaxHeight(0.85f).fillMaxWidth()
+        ) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp),
+                contentPadding = PaddingValues(bottom = 24.dp)
+            ) {
+                item {
+                    Text(
+                        text = "Immersive Mode",
+                        style = MaterialTheme.typography.displayMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(vertical = 16.dp)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    SettingsSectionHeader(title = "Fullscreen mode")
+                    ScopeOption(
+                        title = "Off",
+                        selected = immersiveScope == chromahub.rhythm.app.shared.data.model.ImmersiveScope.OFF,
+                        onClick = { appSettings.setImmersiveScope(chromahub.rhythm.app.shared.data.model.ImmersiveScope.OFF) }
+                    )
+                    ScopeOption(
+                        title = "Player screen only",
+                        selected = immersiveScope == chromahub.rhythm.app.shared.data.model.ImmersiveScope.PLAYER_ONLY,
+                        onClick = { appSettings.setImmersiveScope(chromahub.rhythm.app.shared.data.model.ImmersiveScope.PLAYER_ONLY) }
+                    )
+                    ScopeOption(
+                        title = "Entire app",
+                        selected = immersiveScope == chromahub.rhythm.app.shared.data.model.ImmersiveScope.WHOLE_APP,
+                        onClick = { appSettings.setImmersiveScope(chromahub.rhythm.app.shared.data.model.ImmersiveScope.WHOLE_APP) }
+                    )
+
+                    if (immersiveScope != chromahub.rhythm.app.shared.data.model.ImmersiveScope.OFF) {
+                        Spacer(modifier = Modifier.height(24.dp))
+                        SettingsSectionHeader(title = "Bar behaviour")
+
+                        ScopeOption(
+                            title = "Auto-hide after swipe",
+                            selected = immersiveBehaviour == chromahub.rhythm.app.shared.data.model.ImmersiveBehaviour.STICKY,
+                            onClick = { appSettings.setImmersiveBehaviour(chromahub.rhythm.app.shared.data.model.ImmersiveBehaviour.STICKY) }
+                        )
+                        ScopeOption(
+                            title = "Stay visible after swipe",
+                            selected = immersiveBehaviour == chromahub.rhythm.app.shared.data.model.ImmersiveBehaviour.NON_STICKY,
+                            onClick = { appSettings.setImmersiveBehaviour(chromahub.rhythm.app.shared.data.model.ImmersiveBehaviour.NON_STICKY) }
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "Swipe from the top or bottom edge to temporarily show system bars.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                        )
+                    }
+                }
             }
         }
     }

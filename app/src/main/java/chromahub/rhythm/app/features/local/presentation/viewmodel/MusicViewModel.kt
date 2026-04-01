@@ -5792,6 +5792,74 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         Log.d(TAG, "Populated Most Played playlist with ${topSongs.size} songs.")
     }
 
+    // Delete Song feature (PROMPT 1)
+    private val _deleteConfirmationLauncher = MutableSharedFlow<IntentSenderRequest>()
+    val deleteConfirmationLauncher = _deleteConfirmationLauncher.asSharedFlow()
+
+    private val _errorMessage = MutableSharedFlow<String>()
+    val errorMessage = _errorMessage.asSharedFlow()
+    
+    var pendingDeleteSong: Song? = null
+        private set
+
+    fun requestDeleteSong(song: Song) = viewModelScope.launch {
+        pendingDeleteSong = song
+        when (val result = deleteSongUseCase(song)) {
+            is chromahub.rhythm.app.features.local.domain.usecase.DeleteResult.RequiresPermission -> {
+                _deleteConfirmationLauncher.emit(IntentSenderRequest.Builder(result.intentSender).build())
+            }
+            is chromahub.rhythm.app.features.local.domain.usecase.DeleteResult.Success -> {
+                Log.d(TAG, "Song successfully deleted: ${song.title}")
+                pendingDeleteSong?.let { onDeleteConfirmed(it) }
+                pendingDeleteSong = null
+            }
+            is chromahub.rhythm.app.features.local.domain.usecase.DeleteResult.Error -> {
+                _errorMessage.emit(result.message)
+                pendingDeleteSong = null
+            }
+        }
+    }
+
+    fun onPendingDeleteResult(success: Boolean) {
+        if (success) {
+            pendingDeleteSong?.let { onDeleteConfirmed(it) }
+        }
+        pendingDeleteSong = null
+    }
+
+    fun onDeleteConfirmed(song: Song) {
+        viewModelScope.launch {
+            try {
+                // Ensure physical file is deleted from MediaStore. 
+                // On Android 10 (API 29), calling this again after permission granted deletes it.
+                // On Android 11+ (API 30+), createDeleteRequest already deleted it, but this is safe to call again.
+                val uri = android.content.ContentUris.withAppendedId(
+                    android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                    song.id.toLong()
+                )
+                getApplication<android.app.Application>().contentResolver.delete(uri, null, null)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed deleting physical file via MediaStore", e)
+            }
+            repository.removeSong(song.id)
+            Log.d(TAG, "Song successfully removed from repository: ${song.title}")
+        }
+    }
+
+    // Custom Playlist Covers (PROMPT 2)
+    fun updatePlaylistCover(playlistId: String, newUri: android.net.Uri?) {     
+        viewModelScope.launch {
+            val updated = _playlists.value.map { playlist ->
+                if (playlist.id == playlistId) {
+                    val finalUri = newUri?.let { playlistCoverManager.saveCustomCover(playlistId, it) }
+                    playlist.copy(artworkUri = finalUri)
+                } else playlist
+            }
+            _playlists.value = updated
+            savePlaylists()
+        }
+    }
+
     // New functions for playlist management
     fun createPlaylist(name: String) {
         viewModelScope.launch {
