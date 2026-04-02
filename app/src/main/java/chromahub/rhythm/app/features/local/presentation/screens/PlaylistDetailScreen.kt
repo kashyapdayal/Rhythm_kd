@@ -1,6 +1,8 @@
 package chromahub.rhythm.app.features.local.presentation.screens
 
 import android.content.Context
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -185,7 +187,8 @@ fun PlaylistDetailScreen(
     onToggleFavorite: (Song) -> Unit = {},
     onGoToAlbum: (Song) -> Unit = {},
     onGoToArtist: (Song) -> Unit = {},
-    onShare: (Song) -> Unit = {}
+    onShare: (Song) -> Unit = {},
+    onUpdateCover: (Uri) -> Unit = {}
 ) {
     // Screen size detection for responsive UI
     val configuration = LocalConfiguration.current
@@ -232,6 +235,10 @@ fun PlaylistDetailScreen(
     val haptics = LocalHapticFeedback.current
     val context = LocalContext.current
     val appSettings = remember { chromahub.rhythm.app.shared.data.model.AppSettings.getInstance(context) }
+    
+    val coverPickerLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.GetContent()) { uri ->
+        uri?.let { onUpdateCover(it) }
+    }
     val playlistClickBehavior by appSettings.playlistClickBehavior.collectAsState(initial = "ask")
     val useHoursFormat by appSettings.useHoursInTimeFormat.collectAsState()
     
@@ -777,6 +784,47 @@ fun PlaylistDetailScreen(
                 ) {
                     // Reorder songs option
                     if (isDefault || (onReorderSongs != null && playlist.songs.isNotEmpty())) {
+                        
+                        // Set custom cover option
+                        Surface(
+                            color = MaterialTheme.colorScheme.surface,
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 2.dp)
+                        ) {
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        "Set cover",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                },
+                                leadingIcon = {
+                                    Surface(
+                                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
+                                        shape = CircleShape,
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Image,
+                                            contentDescription = null,
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .padding(6.dp)
+                                        )
+                                    }
+                                },
+                                onClick = {
+                                    HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
+                                    showMenu = false
+                                    coverPickerLauncher.launch("image/*")
+                                }
+                            )
+                        }
+
                         Surface(
                             color = MaterialTheme.colorScheme.surface,
                             shape = RoundedCornerShape(16.dp),

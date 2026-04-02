@@ -115,7 +115,7 @@ fun SleepTimerBottomSheetNew(
     
     // Action options
     val actionOptions = listOf(
-        Triple(SleepAction.FADE_OUT, "Fade Out", Icons.Rounded.VolumeDown),
+        Triple(SleepAction.FADE_OUT, "Fade Out", Icons.Filled.VolumeDown),
         Triple(SleepAction.PAUSE, "Pause", Icons.Rounded.Pause),
         Triple(SleepAction.STOP, "Stop", Icons.Rounded.Stop)
     )
@@ -299,7 +299,7 @@ fun SleepTimerBottomSheetNew(
                                     colors = ButtonDefaults.outlinedButtonColors(
                                         contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                                     ),
-                                    border = ButtonDefaults.outlinedButtonBorder.copy(
+                                    border = ButtonDefaults.outlinedButtonBorder(true).copy(
                                         brush = androidx.compose.foundation.BorderStroke(
                                             1.dp, 
                                             MaterialTheme.colorScheme.onPrimaryContainer

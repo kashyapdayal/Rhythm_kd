@@ -64,9 +64,9 @@ import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PhotoSizeSelectLarge
 import androidx.compose.material.icons.filled.PlayCircleFilled
-import androidx.compose.material.icons.filled.PlaylistAddCheckCircle
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Public
-import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Reorder
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.RoundedCorner
@@ -338,7 +338,7 @@ fun buildSettingsSearchIndex(context: Context): List<SearchableSettingItem> {
             title = context.getString(R.string.settings_queue_playback_title),
             description = context.getString(R.string.settings_queue_playback_desc),
             keywords = listOf("queue", "playback", "shuffle", "repeat", "auto queue", "playlist"),
-            icon = Icons.Default.QueueMusic,
+            icon = Icons.AutoMirrored.Filled.QueueMusic,
             route = SettingsRoutes.QUEUE_PLAYBACK,
             parentScreen = context.getString(R.string.settings_section_queue_playback)
         ))
@@ -377,7 +377,7 @@ fun buildSettingsSearchIndex(context: Context): List<SearchableSettingItem> {
             title = context.getString(R.string.settings_playlists_title),
             description = context.getString(R.string.settings_playlists_desc),
             keywords = listOf("playlist", "m3u", "import", "export", "manage", "collection"),
-            icon = Icons.Default.PlaylistAddCheckCircle,
+            icon = Icons.AutoMirrored.Filled.PlaylistAdd,
             route = SettingsRoutes.PLAYLISTS,
             parentScreen = context.getString(R.string.settings_section_library_content)
         ))
@@ -1153,7 +1153,7 @@ fun buildSettingsSearchIndex(context: Context): List<SearchableSettingItem> {
             title = context.getString(R.string.settings_playlist_action_dialog),
             description = context.getString(R.string.settings_playlist_action_dialog_desc),
             keywords = listOf("playlist", "action", "dialog", "click", "behavior", "load", "play"),
-            icon = Icons.Default.QueueMusic,
+            icon = Icons.AutoMirrored.Filled.QueueMusic,
             route = SettingsRoutes.QUEUE_PLAYBACK,
             parentScreen = "Queue & Playback",
             settingKey = "playlistClickBehavior"
@@ -1163,7 +1163,7 @@ fun buildSettingsSearchIndex(context: Context): List<SearchableSettingItem> {
             title = context.getString(R.string.settings_list_queue_action_dialog),
             description = context.getString(R.string.settings_list_queue_action_dialog_desc),
             keywords = listOf("queue", "play all", "section", "replace", "play next", "add to end", "behavior", "rule"),
-            icon = Icons.Default.QueueMusic,
+            icon = Icons.AutoMirrored.Filled.QueueMusic,
             route = SettingsRoutes.QUEUE_PLAYBACK,
             parentScreen = "Queue & Playback",
             settingKey = "listQueueActionBehavior"
@@ -1419,7 +1419,7 @@ fun buildSettingsSearchIndex(context: Context): List<SearchableSettingItem> {
             title = context.getString(R.string.settings_shape_playlist_art),
             description = context.getString(R.string.settings_shape_playlist_art_desc),
             keywords = listOf("playlist", "artwork", "shape", "cover", "collection"),
-            icon = Icons.Default.PlaylistAddCheckCircle,
+            icon = Icons.AutoMirrored.Filled.PlaylistAdd,
             route = SettingsRoutes.EXPRESSIVE_SHAPES,
             parentScreen = "Shapes",
             settingKey = "expressiveShapePlaylistArt"

@@ -127,6 +127,7 @@ fun SongInfoBottomSheet(
     onDismiss: () -> Unit,
     appSettings: AppSettings,
     onEditSong: ((title: String, artist: String, album: String, genre: String, year: Int, trackNumber: Int, artworkUri: Uri?, removeArtwork: Boolean) -> Unit)? = null,
+    onDeleteSong: (() -> Unit)? = null,
     onShowLyricsEditor: (() -> Unit)? = null,
     sheetState: SheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 ) {
@@ -233,7 +234,7 @@ fun SongInfoBottomSheet(
     
     // Load rhythm stats and rating
     LaunchedEffect(song.id) {
-        song?.let { currentSong ->
+        song.let { currentSong ->
             // Load playback stats
             songPlaybackStats = withContext(Dispatchers.IO) {
                 chromahub.rhythm.app.shared.data.repository.PlaybackStatsRepository.getInstance(context).getSongPlaybackStats(
@@ -289,7 +290,7 @@ fun SongInfoBottomSheet(
                 Button(
                     onClick = {
                         isLoadingBlacklist = true
-                        song?.let { songToBlock ->
+                        song.let { songToBlock ->
                             if (isBlacklisted) {
                                 appSettings.removeFromBlacklist(songToBlock.id)
                             } else {
@@ -799,7 +800,32 @@ fun SongInfoBottomSheet(
                                     Text("Edit")
                                 }
                             }
-                            
+
+                            // Delete Song
+                            onDeleteSong?.let {
+                                ExpressiveFilledTonalButton(
+                                    onClick = {
+                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        it()
+                                        onDismiss()
+                                    },
+                                    shape = ExpressiveShapes.Medium,
+                                    colors = ButtonDefaults.filledTonalButtonColors(
+                                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                                        contentColor = MaterialTheme.colorScheme.onErrorContainer
+                                    ),
+                                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Delete,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Delete")
+                                }
+                            }
+
                             // Block Song
                             ExpressiveFilledTonalButton(
                                 onClick = {

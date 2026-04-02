@@ -113,6 +113,26 @@ class RhythmPlayerEngine(
     // FIX 2: OutputRouter reference for isRoutingChangePending() check in NOISY receiver
     var outputRouter: OutputRouter? = null
 
+    val audioRoutingManager by lazy { chromahub.rhythm.app.infrastructure.audio.AudioRoutingManager(context, this) }
+
+    @UnstableApi
+    fun reconfigurePipeline(mode: chromahub.rhythm.app.infrastructure.audio.AudioOutputMode, activeUsbDevice: android.hardware.usb.UsbDevice?) {
+        // 1. RESTART LOGIC - Stop & release old pipelines entirely to flush state
+        if (::playerA.isInitialized) {
+            playerA.stop()
+            playerA.release()
+        }
+        if (::playerB.isInitialized) {
+            playerB.stop()
+            playerB.release()
+        }
+        
+        // Force state rebuild
+        isReleased = false
+        lastInitTime = 0L 
+        initialize()
+    }
+
     // FIX 7: Callback invoked when ExoPlayer assigns a non-zero audioSessionId
     var onAudioSessionIdAvailable: ((Int) -> Unit)? = null
 
@@ -453,18 +473,32 @@ class RhythmPlayerEngine(
         }
     }
 
+    // Pending audio sink to use during next player rebuild
+    private var pendingAudioSink: androidx.media3.exoplayer.audio.AudioSink? = null
+
     fun swapAudioSink(newSink: androidx.media3.exoplayer.audio.AudioSink) {
-        if (!::playerA.isInitialized) return
+        if (!::playerA.isInitialized) {
+            Log.w(TAG, "swapAudioSink: playerA not initialized, storing sink for later")
+            pendingAudioSink = newSink
+            return
+        }
         if (playerA.playbackState == Player.STATE_BUFFERING) {
             Log.w(TAG, "swapAudioSink: called during BUFFERING... ignoring request to prevent format flip")
             return
         }
-        Log.d(TAG, "swapAudioSink → triggering re-initialization to swap sink safely")
+        Log.d(TAG, "swapAudioSink → triggering re-initialization with new sink")
         val state = captureState()
+        
+        // Store the new sink so buildPlayer() can use it
+        pendingAudioSink = newSink
+        
         // Override debounce temporarily to ensure rebuild
         lastInitTime = 0L 
         initialize()
         restoreState(state)
+        
+        // Clear pending sink after successful swap
+        pendingAudioSink = null
     }
 
     fun getAudioSessionId(): Int = if (::playerA.isInitialized) playerA.audioSessionId else 0
@@ -479,7 +513,7 @@ class RhythmPlayerEngine(
     
     private var initJob: Job? = null
     private val initMutex = Mutex()
-    private val directBitEngine by lazy { DirectBitEngine(context) }
+    private val directBitEngine by lazy { DirectBitEngine(context, audioRoutingManager.activeUsbDevice) }
     private var currentSampleRate = 44100
     private var currentBitDepth = 16
     private var currentChannels = 2
@@ -489,8 +523,7 @@ class RhythmPlayerEngine(
         initJob = scope.launch {
             delay(500)
             initMutex.withLock {
-                directBitEngine.release()
-                directBitEngine.initialize(device, currentSampleRate, currentBitDepth, currentChannels)
+                reconfigurePipeline(audioRoutingManager.currentMode, device)
             }
         }
     }
@@ -613,45 +646,96 @@ class RhythmPlayerEngine(
             playerBReplayGain = replayGain
         }
 
-        val renderersFactory = if (siphonPath != null) {
-            Log.i(TAG, "Using SiphonUsbAudioSink for True USB Bypass")
-            val siphonSink = chromahub.rhythm.app.infrastructure.audio.siphon.SiphonUsbAudioSink(
-                context = context,
-                usbConnection = siphonPath!!.connection,
-                usbDevice = siphonPath!!.device,
-                deviceCapabilities = siphonPath!!.capabilities,
-                initialRoutingMode = chromahub.rhythm.app.infrastructure.audio.siphon.SiphonRoutingMode.SOFTWARE
-            )
-            
-            object : DefaultRenderersFactory(context) {
-                override fun buildAudioRenderers(
-                    context: Context,
-                    extensionRendererMode: Int,
-                    mediaCodecSelector: androidx.media3.exoplayer.mediacodec.MediaCodecSelector,
-                    enableDecoderFallback: Boolean,
-                    audioSink: androidx.media3.exoplayer.audio.AudioSink,
-                    eventHandler: android.os.Handler,
-                    eventListener: androidx.media3.exoplayer.audio.AudioRendererEventListener,
-                    out: java.util.ArrayList<androidx.media3.exoplayer.Renderer>
-                ) {
-                    super.buildAudioRenderers(
-                        context,
-                        extensionRendererMode,
-                        mediaCodecSelector,
-                        enableDecoderFallback,
-                        siphonSink,
-                        eventHandler,
-                        eventListener,
-                        out
-                    )
+        // Priority: pendingAudioSink > siphonPath > default
+        val customSink = pendingAudioSink
+        
+        val renderersFactory = when {
+            customSink != null -> {
+                Log.i(TAG, "Using pendingAudioSink: ${customSink::class.simpleName}")
+                object : DefaultRenderersFactory(context) {
+                    override fun buildAudioRenderers(
+                        context: Context,
+                        extensionRendererMode: Int,
+                        mediaCodecSelector: androidx.media3.exoplayer.mediacodec.MediaCodecSelector,
+                        enableDecoderFallback: Boolean,
+                        audioSink: androidx.media3.exoplayer.audio.AudioSink,
+                        eventHandler: android.os.Handler,
+                        eventListener: androidx.media3.exoplayer.audio.AudioRendererEventListener,
+                        out: java.util.ArrayList<androidx.media3.exoplayer.Renderer>
+                    ) {
+                        super.buildAudioRenderers(
+                            context,
+                            extensionRendererMode,
+                            mediaCodecSelector,
+                            enableDecoderFallback,
+                            customSink,
+                            eventHandler,
+                            eventListener,
+                            out
+                        )
+                    }
+                }.apply {
+                    setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
                 }
             }
-        } else {
-            // FIX 11: Float output keeps 24/32-bit files as float32 (lossless)
-            Log.d(TAG, "Using DefaultRenderersFactory with float output")
-            DefaultRenderersFactory(context).apply {
-                setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
-                setEnableAudioFloatOutput(true)
+            siphonPath != null -> {
+                Log.i(TAG, "Using SiphonUsbAudioSink for True USB Bypass")
+                val siphonSink = chromahub.rhythm.app.infrastructure.audio.siphon.SiphonUsbAudioSink(
+                    context = context,
+                    usbConnection = siphonPath!!.connection,
+                    usbDevice = siphonPath!!.device,
+                    deviceCapabilities = siphonPath!!.capabilities,
+                    initialRoutingMode = chromahub.rhythm.app.infrastructure.audio.siphon.SiphonRoutingMode.SOFTWARE
+                )
+                
+                object : DefaultRenderersFactory(context) {
+                    override fun buildAudioRenderers(
+                        context: Context,
+                        extensionRendererMode: Int,
+                        mediaCodecSelector: androidx.media3.exoplayer.mediacodec.MediaCodecSelector,
+                        enableDecoderFallback: Boolean,
+                        audioSink: androidx.media3.exoplayer.audio.AudioSink,
+                        eventHandler: android.os.Handler,
+                        eventListener: androidx.media3.exoplayer.audio.AudioRendererEventListener,
+                        out: java.util.ArrayList<androidx.media3.exoplayer.Renderer>
+                    ) {
+                        super.buildAudioRenderers(
+                            context,
+                            extensionRendererMode,
+                            mediaCodecSelector,
+                            enableDecoderFallback,
+                            siphonSink,
+                            eventHandler,
+                            eventListener,
+                            out
+                        )
+                    }
+                }
+            }
+            else -> {
+                Log.d(TAG, "Using RoutingManager-aware DefaultRenderersFactory")
+                object : DefaultRenderersFactory(context) {
+                    override fun buildAudioSink(
+                        context: Context,
+                        enableFloatOutput: Boolean,
+                        enableAudioTrackPlaybackParams: Boolean
+                    ): androidx.media3.exoplayer.audio.AudioSink? {
+                        return when (audioRoutingManager.currentMode) {
+                            chromahub.rhythm.app.infrastructure.audio.AudioOutputMode.HIRES_HARDWARE -> {
+                                chromahub.rhythm.app.engine.DirectBitEngine(context, audioRoutingManager.activeUsbDevice)
+                            }
+                            chromahub.rhythm.app.infrastructure.audio.AudioOutputMode.HIRES_SOFTWARE -> {
+                                androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context)
+                                    .setEnableAudioTrackPlaybackParams(true) 
+                                    .build()
+                            }
+                            else -> super.buildAudioSink(context, enableFloatOutput, enableAudioTrackPlaybackParams)
+                        }
+                    }
+                }.apply {
+                    setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
+                    setEnableAudioFloatOutput(true)
+                }
             }
         }
 

@@ -4736,7 +4736,18 @@ class MusicRepository(context: Context) {
 
             Log.d(TAG, "Found ${albumSongs.size} songs for album: ${album.title}")
 
-            return@withContext albumSongs.map { it as PlayableItem }
+            return@withContext albumSongs.map { song ->
+                object : PlayableItem {
+                    override val id = song.id
+                    override val title = song.title
+                    override val artist = song.artist
+                    override val album = song.album
+                    override val duration = song.duration
+                    override val artworkUri = song.artworkUri?.toString()
+                    override val sourceType = chromahub.rhythm.app.core.domain.model.SourceType.LOCAL
+                    override fun getPlaybackUri() = song.uri.toString()
+                }
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error getting songs for album $albumId", e)
             emptyList()

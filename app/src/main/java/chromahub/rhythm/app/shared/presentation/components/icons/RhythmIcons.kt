@@ -69,7 +69,7 @@ import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.rounded.Info // Added Info icon
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
-import androidx.compose.material.icons.filled.PlaylistPlay // New import for PlaylistPlay filled icon
+import androidx.compose.material.icons.automirrored.filled.PlaylistPlay // New import for PlaylistPlay filled icon
 import androidx.compose.material.icons.automirrored.rounded.Chat // For Telegram support group
 import androidx.compose.material.icons.rounded.PushPin // Added PushPin import
 import androidx.compose.material.icons.outlined.PushPin // Added PushPin outlined import

@@ -520,6 +520,7 @@ fun LibraryScreen(
             song = displaySong!!,
             onDismiss = { showSongInfoSheet = false },
             appSettings = appSettings,
+            onDeleteSong = { musicViewModel.requestDeleteSong(displaySong!!) },
             onEditSong = { title, artist, album, genre, year, trackNumber, artworkUri, removeArtwork ->
                 // Use the ViewModel's new metadata saving function with callbacks
                 musicViewModel.saveMetadataChanges(

@@ -2429,6 +2429,13 @@
     <string name="settings_audio_routing_app_desc">Rhythm handles audio directly with high-resolution mode and requests exclusive USB bit-perfect routing on supported devices. Restart required.</string>
     <string name="settings_audio_routing_system_desc">Uses Android system audio routing. Audio may be resampled to 48 kHz by the OS mixer.</string>
     <string name="settings_audio_routing_default_desc">Android decides how to route audio. Resampling depends on system settings.</string>
+    
+    <!-- New Hardware/Software Routing Options -->
+    <string name="settings_audio_routing_hardware">Hardware (Bit-perfect USB)</string>
+    <string name="settings_audio_routing_software">Software (Android USB)</string>
+    <string name="settings_audio_routing_hardware_desc">Direct USB DAC playback bypassing Android processing</string>
+    <string name="settings_audio_routing_software_desc">High-quality playback using Android audio system</string>
+    <string name="settings_audio_routing_select">Select how audio is routed to your USB DAC</string>
 
     <!-- Library Storage -->
     <string name="settings_library_storage">Library Storage</string>
@@ -2760,6 +2767,29 @@
     <string name="settings_bit_perfect_mode">High-Resolution Audio Mode</string>
     <string name="settings_bit_perfect_mode_desc_dac">Preserve native sample rate and bit depth via DAC/USB. Restart required.</string>
     <string name="settings_bit_perfect_mode_desc_native">Preserve native sample rate and bit depth, no resampling. Restart required.</string>
+    
+    <!-- Hi-Res Audio Mode Settings -->
+    <string name="settings_hi_res_audio_mode">High-Resolution Audio Mode</string>
+    <string name="settings_hi_res_audio_mode_desc">Enable USB exclusive playback with native sample rates. Restart required.</string>
+    <string name="settings_hi_res_restart_title">Restart Required</string>
+    <string name="settings_hi_res_restart_message">High-Resolution Audio Mode has been changed. Please restart the app to apply the new audio settings.</string>
+    <string name="settings_hi_res_restart_now">Restart Now</string>
+    <string name="settings_hi_res_restart_later">Later</string>
+    
+    <!-- Volume Control Mode -->
+    <string name="settings_volume_control">Volume Control</string>
+    <string name="settings_volume_hardware">Hardware</string>
+    <string name="settings_volume_software">Software</string>
+    <string name="settings_volume_hardware_desc">Direct USB DAC hardware volume control (bit-perfect)</string>
+    <string name="settings_volume_software_desc">Software volume with dithering (standard Android path)</string>
+    
+    <!-- USB DAC Info -->
+    <string name="settings_usb_dac_info">USB DAC</string>
+    <string name="settings_usb_dac_connected">Connected</string>
+    <string name="settings_usb_dac_disconnected">No USB DAC connected</string>
+    <string name="settings_usb_dac_max_sample_rate">Max Sample Rate</string>
+    <string name="settings_usb_dac_hi_res_supported">Hi-Res Supported</string>
+    <string name="settings_usb_dac_hi_res_not_supported">Hi-Res Not Supported</string>
     <string name="settings_song_ratings">Song Ratings</string>
     <string name="settings_song_ratings_desc">Rate songs with stars to improve stats and sorting</string>
     <!-- Gestures Search Strings -->
@@ -2906,6 +2936,21 @@
     <string name="settings_player_quality_badges">Audio Quality Badges</string>
     <string name="settings_player_quality_badges_desc">Display codec and bitrate information</string>
 
+    <!-- Immersive Mode Settings -->
+    <string name="settings_immersive_mode">Immersive Mode</string>
+    <string name="settings_fullscreen_mode">Fullscreen Mode</string>
+    <string name="settings_bar_behaviour">Bar Behaviour</string>
+    <string name="immersive_scope_off">Off</string>
+    <string name="immersive_scope_off_desc">System bars always visible</string>
+    <string name="immersive_scope_player_only">Player screen only</string>
+    <string name="immersive_scope_player_only_desc">Hide bars only in Now Playing screen</string>
+    <string name="immersive_scope_whole_app">Entire app</string>
+    <string name="immersive_scope_whole_app_desc">Hide bars throughout the entire app</string>
+    <string name="immersive_behaviour_sticky">Auto-hide after swipe</string>
+    <string name="immersive_behaviour_sticky_desc">Bars reappear on swipe, then hide automatically</string>
+    <string name="immersive_behaviour_non_sticky">Stay visible after swipe</string>
+    <string name="immersive_behaviour_non_sticky_desc">Bars stay visible after swipe gesture</string>
+
     <!-- MiniPlayer Customization Search Strings -->
     <string name="settings_miniplayer_show_progress">Show Progress</string>
     <string name="settings_miniplayer_show_progress_desc">Display progress indicator in mini player</string>
@@ -3009,4 +3054,7 @@
     <string name="theme_mode">Theme Mode</string>
     <string name="theme_mode_desc">Choose your preferred theme</string>
     <string name="ui_apply">Apply</string>
+    <string name="attribution_media_playback">Media Playback</string>
+    <string name="attribution_usb_audio">USB Audio Output</string>
 </resources>
+

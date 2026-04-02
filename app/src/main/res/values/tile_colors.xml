@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Quick Settings Tile Colors -->
+    <!-- Play state: Material Blue 500 -->
+    <color name="tile_play">#2196F3</color>
+    <!-- Pause state: Spotify Green -->
+    <color name="tile_pause">#1DB954</color>
+    <!-- Unavailable state: Material Grey 500 -->
+    <color name="tile_unavailable">#9E9E9E</color>
+    <!-- Skip flash state: Material Amber 500 -->
+    <color name="tile_skip_flash">#FFC107</color>
+</resources>

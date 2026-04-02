@@ -25,9 +25,9 @@ abstract class RhythmDatabase : RoomDatabase() {
 
         // Migration from version 1 to 2: Add artist and song-artist tables
         val MIGRATION_1_2 = object : Migration(1, 2) {
-            override fun migrate(database: SupportSQLiteDatabase) {
+            override fun migrate(db: SupportSQLiteDatabase) {
                 // Create artists table
-                database.execSQL("""
+                db.execSQL("""
                     CREATE TABLE IF NOT EXISTS `artists` (
                         `id` TEXT NOT NULL, 
                         `name` TEXT NOT NULL, 
@@ -40,7 +40,7 @@ abstract class RhythmDatabase : RoomDatabase() {
                 """)
 
                 // Create song_artists table
-                database.execSQL("""
+                db.execSQL("""
                     CREATE TABLE IF NOT EXISTS `song_artists` (
                         `songId` TEXT NOT NULL, 
                         `artistName` TEXT NOT NULL, 
@@ -53,14 +53,14 @@ abstract class RhythmDatabase : RoomDatabase() {
 
         // Migration from version 2 to 3: No schema changes, just version bump
         val MIGRATION_2_3 = object : Migration(2, 3) {
-            override fun migrate(database: SupportSQLiteDatabase) {
+            override fun migrate(db: SupportSQLiteDatabase) {
                 // No schema changes needed, just ensure tables exist
             }
         }
 
         // Migration from version 3 to 4: Switch from destructive to proper migrations
         val MIGRATION_3_4 = object : Migration(3, 4) {
-            override fun migrate(database: SupportSQLiteDatabase) {
+            override fun migrate(db: SupportSQLiteDatabase) {
                 // No schema changes, just preserve existing data
             }
         }
@@ -71,7 +71,7 @@ abstract class RhythmDatabase : RoomDatabase() {
                     context.applicationContext,
                     RhythmDatabase::class.java,
                     "rhythm_database"
-                ).fallbackToDestructiveMigration()
+                ).fallbackToDestructiveMigration(true)
                     .build()
                     .also { INSTANCE = it }
             }

@@ -142,19 +142,15 @@ class ExternalPlaybackActivity : ComponentActivity() {
             // Extract metadata and play as external file
             val song = MediaUtils.extractMetadataFromUri(this@ExternalPlaybackActivity, uri)
             
-            Log.d(TAG, "Extracted song: title=${song?.title}, artist=${song?.artist}, uri=${song?.uri}")
+            Log.d(TAG, "Extracted song: title=${song.title}, artist=${song.artist}, uri=${song.uri}")
             
             withContext(Dispatchers.Main) {
-                if (song != null) {
-                    Log.d(TAG, "Calling playExternalAudioFile")
-                    musicViewModel.playExternalAudioFile(song)
-                    
-                    // Small delay to let playback start, then check state
-                    delay(500)
-                    Log.d(TAG, "After playback start - isPlaying=${musicViewModel.isPlaying.value}, currentSong=${musicViewModel.currentSong.value?.title}")
-                } else {
-                    Log.e(TAG, "Failed to extract metadata from URI")
-                }
+                Log.d(TAG, "Calling playExternalAudioFile")
+                musicViewModel.playExternalAudioFile(song)
+                
+                // Small delay to let playback start, then check state
+                delay(500)
+                Log.d(TAG, "After playback start - isPlaying=${musicViewModel.isPlaying.value}, currentSong=${musicViewModel.currentSong.value?.title}")
             }
         }
     }

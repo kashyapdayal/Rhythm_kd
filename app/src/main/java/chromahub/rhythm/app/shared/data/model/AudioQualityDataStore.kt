@@ -32,6 +32,11 @@ class AudioQualityDataStore(private val context: Context) {
         
         val BIT_PERFECT_MODE = booleanPreferencesKey("bit_perfect_mode")
         val AUDIO_ROUTING_MODE = stringPreferencesKey("audio_routing_mode") // "default", "app", "system", "hardware"
+        
+        // High-Resolution Audio Mode (master switch)
+        val HI_RES_AUDIO_MODE = booleanPreferencesKey("hi_res_audio_mode")
+        // Volume control mode: "hardware" (UAC2 control transfer) or "software" (float multiply + dither)
+        val VOLUME_CONTROL_MODE = stringPreferencesKey("volume_control_mode")
 
         // USB device state (written by service-owned UsbAudioManager, read by UI)
         val USB_DEVICE_CONNECTED = booleanPreferencesKey("usb_device_connected")
@@ -84,7 +89,15 @@ class AudioQualityDataStore(private val context: Context) {
         .map { preferences -> preferences[BIT_PERFECT_MODE] ?: false }
 
     val audioRoutingMode: Flow<String> = context.audioQualityDataStore.data
-        .map { preferences -> preferences[AUDIO_ROUTING_MODE] ?: "hardware" }
+        .map { preferences -> preferences[AUDIO_ROUTING_MODE] ?: "software" }
+    
+    // High-Resolution Audio Mode (master switch) - when OFF, USB routing is disabled
+    val hiResAudioMode: Flow<Boolean> = context.audioQualityDataStore.data
+        .map { preferences -> preferences[HI_RES_AUDIO_MODE] ?: false }
+    
+    // Volume control mode: "hardware" or "software"
+    val volumeControlMode: Flow<String> = context.audioQualityDataStore.data
+        .map { preferences -> preferences[VOLUME_CONTROL_MODE] ?: "hardware" }
 
     // USB device state (read-only for UI; written by service)
     val usbDeviceConnected: Flow<Boolean> = context.audioQualityDataStore.data
@@ -189,6 +202,18 @@ class AudioQualityDataStore(private val context: Context) {
     suspend fun setAudioRoutingMode(mode: String) {
         context.audioQualityDataStore.edit { preferences ->
             preferences[AUDIO_ROUTING_MODE] = mode
+        }
+    }
+    
+    suspend fun setHiResAudioMode(enabled: Boolean) {
+        context.audioQualityDataStore.edit { preferences ->
+            preferences[HI_RES_AUDIO_MODE] = enabled
+        }
+    }
+    
+    suspend fun setVolumeControlMode(mode: String) {
+        context.audioQualityDataStore.edit { preferences ->
+            preferences[VOLUME_CONTROL_MODE] = mode
         }
     }
 

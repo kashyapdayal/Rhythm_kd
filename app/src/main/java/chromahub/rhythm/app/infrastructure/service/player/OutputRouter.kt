@@ -162,8 +162,15 @@ class OutputRouter(
     private fun observeRoutingChanges() {
         scope.launch {
             siphonManager.state.collect { siphonState ->
-                val desiredPath = when (siphonState) {
-                    is SiphonState.Connected -> RoutingPath.Siphon(
+                // Check Hi-Res Audio Mode master switch
+                val hiResEnabled = audioQualityDataStore.hiResAudioMode.first()
+                val volumeMode = audioQualityDataStore.volumeControlMode.first()
+                
+                val desiredPath = when {
+                    // Hi-Res OFF or Software volume mode → always use Standard path
+                    !hiResEnabled || volumeMode != "hardware" -> RoutingPath.Standard
+                    // Hi-Res ON + Hardware mode + USB connected → use Siphon
+                    siphonState is SiphonState.Connected -> RoutingPath.Siphon(
                         siphonState.device,
                         siphonState.connection,
                         siphonState.capabilities
@@ -287,6 +294,21 @@ class OutputRouter(
         caps: chromahub.rhythm.app.infrastructure.audio.siphon.SiphonDeviceCapabilities
     ) {
         val startTime = System.currentTimeMillis()
+        
+        // Check Hi-Res Audio Mode master switch first
+        val hiResEnabled = audioQualityDataStore.hiResAudioMode.first()
+        if (!hiResEnabled) {
+            Log.d(TAG, "executeSwitchToSiphon: Hi-Res Audio Mode OFF — USB routing disabled")
+            return
+        }
+        
+        // Check volume control mode - only proceed with Siphon if hardware mode
+        val volumeMode = audioQualityDataStore.volumeControlMode.first()
+        if (volumeMode != "hardware") {
+            Log.d(TAG, "executeSwitchToSiphon: Software volume mode — using standard AudioTrack")
+            return
+        }
+        
         val exclusiveEnabled = audioQualityDataStore.usbExclusiveModeEnabled.first()
         if (!exclusiveEnabled) {
             Log.d(TAG, "executeSwitchToSiphon: Exclusive Mode OFF — aborting")

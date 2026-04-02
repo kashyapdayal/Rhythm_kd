@@ -31,7 +31,9 @@ class StreamingMusicRepositoryImpl : StreamingMusicRepository {
         // TODO: Implement authentication with streaming services
         return false
     }
-    
+
+    override suspend fun removeSong(songId: String): Boolean = false
+
     override suspend fun logout() {
         // TODO: Implement logout
     }

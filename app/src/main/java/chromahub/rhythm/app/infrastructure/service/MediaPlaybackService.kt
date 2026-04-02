@@ -54,7 +54,7 @@ import chromahub.rhythm.app.shared.data.model.Playlist
 @OptIn(UnstableApi::class)
 class MediaPlaybackService : MediaLibraryService(), Player.Listener {
     private var mediaSession: MediaLibrarySession? = null
-    private lateinit var player: ExoPlayer
+    private lateinit var player: Player
     private lateinit var customCommands: List<CommandButton>
 
     private var controller: MediaController? = null
@@ -96,12 +96,20 @@ class MediaPlaybackService : MediaLibraryService(), Player.Listener {
     // Player listener reference for proper cleanup
     private var playerListener: Player.Listener? = null
     
+    // Flag to track if player has been initialized
+    private var isPlayerInitialized: Boolean = false
+    
     // BroadcastReceiver to listen for favorite changes from ViewModel
     private val favoriteChangeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
                 "chromahub.rhythm.app.action.FAVORITE_CHANGED" -> {
                     Log.d(TAG, "Received favorite change notification from ViewModel")
+                    // Safety check: ensure player is initialized
+                    if (!isPlayerInitialized) {
+                        Log.w(TAG, "Player not initialized, skipping favorite change update")
+                        return
+                    }
                     // Update notification custom layout
                     scheduleCustomLayoutUpdate(250) // Longer delay for external changes
                     // Also update widget
@@ -148,6 +156,11 @@ class MediaPlaybackService : MediaLibraryService(), Player.Listener {
     
     // Status broadcaster for Tasker, KWGT, and other automation apps
     private lateinit var statusBroadcaster: chromahub.rhythm.app.utils.StatusBroadcaster
+    
+    // USB Audio Management - for USB DAC detection and exclusive mode
+    private lateinit var usbAudioManager: chromahub.rhythm.app.infrastructure.audio.usb.UsbAudioManager
+    private lateinit var audioQualityDataStore: chromahub.rhythm.app.shared.data.model.AudioQualityDataStore
+    private var siphonSessionManager: chromahub.rhythm.app.infrastructure.audio.siphon.SiphonSessionManager? = null
     
     // Custom notification provider for app-specific notifications
     private var customNotificationProvider: DefaultMediaNotificationProvider? = null
@@ -259,6 +272,9 @@ class MediaPlaybackService : MediaLibraryService(), Player.Listener {
         
         // Initialize status broadcaster for Tasker/KWGT
         statusBroadcaster = chromahub.rhythm.app.utils.StatusBroadcaster(applicationContext)
+        
+        // Initialize USB Audio Management (for USB DAC detection and permission handling)
+        initializeUsbAudioManagement()
 
         // Register BroadcastReceiver for favorite changes
         updateForegroundNotification("Rhythm Music", "Setting up components...")
@@ -368,6 +384,52 @@ class MediaPlaybackService : MediaLibraryService(), Player.Listener {
         }
     }
     
+    /**
+     * Initialize USB audio management for USB DAC detection and exclusive mode.
+     * This wires up:
+     * - AudioQualityDataStore: Persists USB device state for UI
+     * - UsbAudioManager: Manages USB DAC detection and permissions
+     * - SiphonSessionManager: Centralized USB DAC lifecycle gatekeeper
+     * - UsbAudioReceiver: BroadcastReceiver for USB events (via static references)
+     */
+    private fun initializeUsbAudioManagement() {
+        try {
+            // Initialize AudioQualityDataStore
+            audioQualityDataStore = chromahub.rhythm.app.shared.data.model.AudioQualityDataStore(applicationContext)
+            
+            // Initialize UsbAudioManager
+            usbAudioManager = chromahub.rhythm.app.infrastructure.audio.usb.UsbAudioManager(
+                applicationContext,
+                audioQualityDataStore
+            )
+            
+            // Initialize SiphonManager for exclusive USB mode
+            val siphonManager = chromahub.rhythm.app.infrastructure.audio.siphon.SiphonManager(applicationContext)
+            
+            // Initialize SiphonSessionManager (centralized USB lifecycle gatekeeper)
+            siphonSessionManager = chromahub.rhythm.app.infrastructure.audio.siphon.SiphonSessionManager(
+                applicationContext,
+                audioQualityDataStore,
+                usbAudioManager,
+                siphonManager
+            ).apply {
+                scope = serviceScope
+            }
+            
+            // Wire the static references for the manifest-registered BroadcastReceiver
+            // This is necessary because manifest-registered receivers create new instances
+            chromahub.rhythm.app.infrastructure.audio.UsbAudioReceiver.usbAudioManagerInstance = usbAudioManager
+            chromahub.rhythm.app.infrastructure.audio.UsbAudioReceiver.sessionManagerInstance = siphonSessionManager
+            
+            // Start USB monitoring (registers AudioDeviceCallback and processes pending events)
+            usbAudioManager.startMonitoring()
+            
+            Log.d(TAG, "USB audio management initialized successfully")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error initializing USB audio management", e)
+        }
+    }
+    
     private fun initializePlayer() {
         // Initialize RhythmPlayerEngine for crossfade support
         // Enable bit-perfect when explicitly set OR when audio routing mode is "app" (direct DAC output)
@@ -375,22 +437,25 @@ class MediaPlaybackService : MediaLibraryService(), Player.Listener {
         val bitPerfectEnabled = appSettings.bitPerfectMode.value || audioRoutingMode == "app"
         applyUsbExclusiveRoutingPreference()
         Log.d(TAG, "Initializing player with bit-perfect mode: $bitPerfectEnabled (routing: $audioRoutingMode)")
+        
+        // Create NativeAudioEngine if needed or pass null (handled by SiphonSessionManager)
+        val nativeEngine = chromahub.rhythm.app.infrastructure.audio.native.NativeAudioEngine()
+        
         rhythmPlayerEngine = RhythmPlayerEngine(
-            this, 
-            bitPerfectMode = bitPerfectEnabled,
-            bassBoostProcessor = rhythmBassBoostProcessor,
-            spatializationProcessor = rhythmSpatializationProcessor
+            this,
+            nativeAudioEngine = nativeEngine
         )
         rhythmPlayerEngine.initialize()
-        
+
         // The master player is exposed to MediaSession and used everywhere
-        player = rhythmPlayerEngine.masterPlayer as ExoPlayer
+        player = rhythmPlayerEngine.masterPlayer
+        isPlayerInitialized = true
         
         // Register player swap listener for crossfade transitions
         rhythmPlayerEngine.addPlayerSwapListener { newPlayer ->
             Log.d(TAG, "Player swapped during crossfade transition")
             val oldPlayer = player
-            player = newPlayer as ExoPlayer
+            player = newPlayer
             
             // Move the service-level player listener to the new player
             playerListener?.let { listener ->
@@ -417,10 +482,11 @@ class MediaPlaybackService : MediaLibraryService(), Player.Listener {
         // Store reference for proper cleanup in onDestroy
         playerListener = object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
-                if (playbackState == Player.STATE_READY && player.audioSessionId != 0) {
+                val sessionId = rhythmPlayerEngine.getAudioSessionId()
+                if (playbackState == Player.STATE_READY && sessionId != 0) {
                     // Reinitialize audio effects with valid session ID
                     val previouslyEnabled = equalizer?.enabled ?: false
-                    Log.d(TAG, "Player ready with session ID ${player.audioSessionId}, reinitializing effects (EQ was: $previouslyEnabled)")
+                    Log.d(TAG, "Player ready with session ID $sessionId, reinitializing effects (EQ was: $previouslyEnabled)")
                     initializeAudioEffects()
                     
                     // Force reload audio effects settings to fix cold boot issue
@@ -979,6 +1045,12 @@ class MediaPlaybackService : MediaLibraryService(), Player.Listener {
     }
     
     private fun applyPlayerSettings() {
+        // Safety check: ensure player is initialized before applying settings
+        if (!isPlayerInitialized) {
+            Log.w(TAG, "Cannot apply player settings: player not initialized yet")
+            return
+        }
+        
         applyUsbExclusiveRoutingPreference()
 
         player.apply {
@@ -1013,6 +1085,28 @@ class MediaPlaybackService : MediaLibraryService(), Player.Listener {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d(TAG, "Service started with command: ${intent?.action}")
+        
+        // Check if player is initialized for actions that require it
+        val playerRequiredActions = setOf(
+            ACTION_UPDATE_SETTINGS,
+            ACTION_PLAY_EXTERNAL_FILE,
+            ACTION_INIT_SERVICE,
+            ACTION_SET_BASS_BOOST,
+            ACTION_SET_VIRTUALIZER,
+            ACTION_APPLY_EQUALIZER_PRESET,
+            ACTION_PLAY_PAUSE,
+            ACTION_SKIP_NEXT,
+            ACTION_SKIP_PREVIOUS,
+            ACTION_TOGGLE_FAVORITE,
+            ACTION_MUTE,
+            ACTION_UNMUTE,
+            ACTION_TOGGLE_MUTE
+        )
+        
+        if (intent?.action in playerRequiredActions && !isPlayerInitialized) {
+            Log.w(TAG, "Player not initialized yet, cannot handle action: ${intent?.action}")
+            return super.onStartCommand(intent, flags, startId)
+        }
         
         when (intent?.action) {
             ACTION_UPDATE_SETTINGS -> {
@@ -1065,7 +1159,7 @@ class MediaPlaybackService : MediaLibraryService(), Player.Listener {
                 val strength = intent.getShortExtra("strength", 0)
                 Log.d(TAG, "Received intent to set bass boost - enabled: $enabled, strength: $strength")
                 
-                if (rhythmBassBoostProcessor == null && player.audioSessionId != 0) {
+                if (rhythmBassBoostProcessor == null && rhythmPlayerEngine.getAudioSessionId() != 0) {
                     Log.d(TAG, "Rhythm bass boost processor is null, attempting initialization")
                     initializeAudioEffects()
                 }
@@ -1078,7 +1172,7 @@ class MediaPlaybackService : MediaLibraryService(), Player.Listener {
                 val strength = intent.getShortExtra("strength", 0)
                 Log.d(TAG, "Received intent to set virtualizer - enabled: $enabled, strength: $strength")
                 
-                if (rhythmSpatializationProcessor == null && player.audioSessionId != 0) {
+                if (rhythmSpatializationProcessor == null && rhythmPlayerEngine.getAudioSessionId() != 0) {
                     Log.d(TAG, "Rhythm spatialization processor is null, attempting initialization")
                     initializeAudioEffects()
                 }
@@ -1093,7 +1187,7 @@ class MediaPlaybackService : MediaLibraryService(), Player.Listener {
                     if (equalizer == null) {
                         Log.e(TAG, "Cannot apply preset: equalizer is null")
                         // Try to initialize if session ID is available
-                        if (player.audioSessionId != 0) {
+                        if (rhythmPlayerEngine.getAudioSessionId() != 0) {
                             Log.d(TAG, "Attempting to initialize equalizer before applying preset")
                             initializeAudioEffects()
                             // Try applying again after initialization
@@ -1278,6 +1372,16 @@ class MediaPlaybackService : MediaLibraryService(), Player.Listener {
             unregisterReceiver(favoriteChangeReceiver)
         } catch (e: Exception) {
             Log.w(TAG, "Error unregistering favorite change receiver", e)
+        }
+        
+        // Stop USB audio monitoring and clear static references
+        try {
+            usbAudioManager.stopMonitoring()
+            chromahub.rhythm.app.infrastructure.audio.UsbAudioReceiver.usbAudioManagerInstance = null
+            chromahub.rhythm.app.infrastructure.audio.UsbAudioReceiver.sessionManagerInstance = null
+            Log.d(TAG, "USB audio management cleaned up")
+        } catch (e: Exception) {
+            Log.w(TAG, "Error cleaning up USB audio management", e)
         }
         
         // Cancel all coroutines and pending jobs
@@ -1569,6 +1673,13 @@ class MediaPlaybackService : MediaLibraryService(), Player.Listener {
     }
     
     private fun updateWidgetFromMediaItem(mediaItem: MediaItem?) {
+        // Safety check: ensure player is initialized
+        if (!isPlayerInitialized) {
+            Log.w(TAG, "Player not initialized, skipping widget update")
+            WidgetUpdater.updateWidget(this, null, false)
+            return
+        }
+        
         if (mediaItem != null) {
             val song = convertMediaItemToSong(mediaItem)
             if (song != null) {
@@ -1712,7 +1823,7 @@ class MediaPlaybackService : MediaLibraryService(), Player.Listener {
     // Audio Effects (Equalizer) functionality
     fun getAudioSessionId(): Int {
         return try {
-            player.audioSessionId
+            rhythmPlayerEngine.getAudioSessionId()
         } catch (e: Exception) {
             Log.e(TAG, "Error getting audio session ID", e)
             0
@@ -1728,7 +1839,7 @@ class MediaPlaybackService : MediaLibraryService(), Player.Listener {
         
         try {
             isInitializingAudioEffects = true
-            val audioSessionId = player.audioSessionId
+            val audioSessionId = rhythmPlayerEngine.getAudioSessionId()
             Log.d(TAG, "Initializing audio effects with session ID: $audioSessionId (previously initialized: $audioEffectsInitialized)")
             
             // Skip initialization if session ID is invalid
@@ -1868,7 +1979,7 @@ class MediaPlaybackService : MediaLibraryService(), Player.Listener {
         if (equalizer == null) {
             Log.w(TAG, "Attempting to enable equalizer but equalizer is null. Will reinitialize.")
             // Try to initialize if we have a valid session ID
-            if (player.audioSessionId != 0) {
+            if (rhythmPlayerEngine.getAudioSessionId() != 0) {
                 initializeAudioEffects()
             } else {
                 Log.e(TAG, "Cannot enable equalizer: invalid audio session ID")
@@ -1931,7 +2042,7 @@ class MediaPlaybackService : MediaLibraryService(), Player.Listener {
             appendLine("=== Audio Effects Diagnostics ===")
             appendLine("Audio effects initialized: $audioEffectsInitialized")
             appendLine("Currently initializing: $isInitializingAudioEffects")
-            appendLine("Audio session ID: ${player.audioSessionId}")
+            appendLine("Audio session ID: ${rhythmPlayerEngine.getAudioSessionId()}")
             appendLine("")
             appendLine("--- Equalizer ---")
             appendLine("Equalizer object: ${if (equalizer != null) "initialized" else "null"}")
@@ -2054,7 +2165,7 @@ class MediaPlaybackService : MediaLibraryService(), Player.Listener {
     fun setBassBoostEnabled(enabled: Boolean) {
         if (rhythmBassBoostProcessor == null) {
             Log.w(TAG, "Attempting to enable bass boost but Rhythm processor is null. Will reinitialize.")
-            if (player.audioSessionId != 0) {
+            if (rhythmPlayerEngine.getAudioSessionId() != 0) {
                 initializeAudioEffects()
             } else {
                 Log.e(TAG, "Cannot enable bass boost: invalid audio session ID")
@@ -2084,7 +2195,7 @@ class MediaPlaybackService : MediaLibraryService(), Player.Listener {
     }
     
     fun setVirtualizerEnabled(enabled: Boolean) {
-        if (rhythmSpatializationProcessor == null && player.audioSessionId != 0) {
+        if (rhythmSpatializationProcessor == null && rhythmPlayerEngine.getAudioSessionId() != 0) {
             Log.w(TAG, "Rhythm spatialization processor is null, attempting reinitialization")
             initializeAudioEffects()
         }

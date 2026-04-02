@@ -642,6 +642,8 @@ fun NotificationsSettingsScreen(onBackClick: () -> Unit) {
 fun QueuePlaybackSettingsScreen(onBackClick: () -> Unit) {
     val context = LocalContext.current
     val appSettings = AppSettings.getInstance(context)
+    val audioQualityDataStore = remember { chromahub.rhythm.app.shared.data.model.AudioQualityDataStore(context) }
+    val scope = rememberCoroutineScope()
     val hapticFeedback = LocalHapticFeedback.current
 
     val shuffleUsesExoplayer by appSettings.shuffleUsesExoplayer.collectAsState()
@@ -663,6 +665,14 @@ fun QueuePlaybackSettingsScreen(onBackClick: () -> Unit) {
     val stopPlaybackOnAppClose by appSettings.stopPlaybackOnAppClose.collectAsState()
     val audioRoutingMode by appSettings.audioRoutingMode.collectAsState()
     val bitPerfectMode by appSettings.bitPerfectMode.collectAsState()
+    
+    // Hi-Res Audio Mode settings from DataStore
+    val hiResAudioMode by audioQualityDataStore.hiResAudioMode.collectAsState(initial = false)
+    val volumeControlMode by audioQualityDataStore.volumeControlMode.collectAsState(initial = "hardware")
+    val usbDeviceConnected by audioQualityDataStore.usbDeviceConnected.collectAsState(initial = false)
+    val usbDeviceName by audioQualityDataStore.usbDeviceName.collectAsState(initial = "")
+    val usbDeviceMaxSampleRate by audioQualityDataStore.usbDeviceMaxSampleRate.collectAsState(initial = 48000)
+    val usbDeviceHiResCapable by audioQualityDataStore.usbDeviceHiResCapable.collectAsState(initial = false)
 
     var showPlaylistBehaviorDialog by remember { mutableStateOf(false) }
     var showListQueueBehaviorDialog by remember { mutableStateOf(false) }
@@ -803,17 +813,40 @@ fun QueuePlaybackSettingsScreen(onBackClick: () -> Unit) {
                     ),
                     SettingItem(
                         Icons.Default.HighQuality,
-                        context.getString(R.string.settings_bit_perfect_mode),
-                        if (audioRoutingMode == "app") context.getString(R.string.settings_bit_perfect_mode_desc_dac) else context.getString(R.string.settings_bit_perfect_mode_desc_native),
-                        toggleState = bitPerfectMode,
-                        onToggleChange = { 
-                            appSettings.setBitPerfectMode(it)
+                        context.getString(R.string.settings_hi_res_audio_mode),
+                        context.getString(R.string.settings_hi_res_audio_mode_desc),
+                        toggleState = hiResAudioMode,
+                        onToggleChange = { enabled ->
+                            scope.launch {
+                                audioQualityDataStore.setHiResAudioMode(enabled)
+                                // Also sync to AppSettings for backward compatibility
+                                appSettings.setBitPerfectMode(enabled)
+                            }
                             showRestartDialog = true
-                            restartDialogMessage = "High-resolution audio mode changed. Restart the app to apply the new audio settings."
+                            restartDialogMessage = context.getString(R.string.settings_hi_res_restart_message)
                         }
                     )
                 )
             ),
+            // USB DAC Info Card (only show when Hi-Res is enabled and DAC connected)
+            if (hiResAudioMode && usbDeviceConnected) SettingGroup(
+                title = context.getString(R.string.settings_usb_dac_info),
+                items = listOf(
+                    SettingItem(
+                        Icons.Default.Cable,
+                        usbDeviceName.ifEmpty { context.getString(R.string.settings_usb_dac_connected) },
+                        "${context.getString(R.string.settings_usb_dac_max_sample_rate)}: ${usbDeviceMaxSampleRate / 1000} kHz",
+                        enabled = false
+                    ),
+                    SettingItem(
+                        Icons.Default.HighQuality,
+                        if (usbDeviceHiResCapable) context.getString(R.string.settings_usb_dac_hi_res_supported) 
+                        else context.getString(R.string.settings_usb_dac_hi_res_not_supported),
+                        if (usbDeviceHiResCapable) "24-bit / 96 kHz+" else "16-bit / 48 kHz max",
+                        enabled = false
+                    )
+                )
+            ) else null,
             SettingGroup(
                 title = context.getString(R.string.settings_time_display),
                 items = listOf(
@@ -826,7 +859,7 @@ fun QueuePlaybackSettingsScreen(onBackClick: () -> Unit) {
                     )
                 )
             )
-        )
+        ).filterNotNull()
 
         LazyColumn(
             modifier = modifier
@@ -945,109 +978,170 @@ fun QueuePlaybackSettingsScreen(onBackClick: () -> Unit) {
                 )
             }
             
-            item(key = "audio_routing_section") {
-                Spacer(modifier = Modifier.height(24.dp))
-                Text(
-                    text = context.getString(R.string.settings_audio_routing),
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
-                )
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(20.dp)
+            // Audio Routing Section - Only show when Hi-Res mode is enabled
+            if (hiResAudioMode) {
+                item(key = "audio_routing_section") {
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Text(
+                        text = context.getString(R.string.settings_audio_routing),
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
+                    )
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                     ) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(20.dp)
                         ) {
-                            Surface(
-                                modifier = Modifier.size(40.dp),
-                                shape = RoundedCornerShape(34.dp),
-                                color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                tonalElevation = 0.dp
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Box(
-                                    contentAlignment = Alignment.Center,
-                                    modifier = Modifier.fillMaxSize()
+                                Surface(
+                                    modifier = Modifier.size(40.dp),
+                                    shape = RoundedCornerShape(34.dp),
+                                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                    tonalElevation = 0.dp
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Headphones,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(24.dp),
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    Box(
+                                        contentAlignment = Alignment.Center,
+                                        modifier = Modifier.fillMaxSize()
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Usb,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(24.dp),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                                Column {
+                                    Text(
+                                        text = context.getString(R.string.settings_dac_usb_audio),
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = context.getString(R.string.settings_audio_routing_select),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
                             }
-                            Column {
-                                Text(
-                                    text = context.getString(R.string.settings_dac_usb_audio),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Medium,
-                                    color = MaterialTheme.colorScheme.onSurface
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            // Hardware (Bit-perfect USB) option
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(
+                                        if (audioRoutingMode == "hardware") 
+                                            MaterialTheme.colorScheme.primaryContainer 
+                                        else 
+                                            MaterialTheme.colorScheme.surfaceContainerHighest
+                                    )
+                                    .clickable {
+                                        scope.launch {
+                                            audioQualityDataStore.setAudioRoutingMode("hardware")
+                                        }
+                                        appSettings.setAudioRoutingMode("hardware")
+                                        showRestartDialog = true
+                                        restartDialogMessage = "Audio routing changed to Hardware (Bit-perfect). Restart the app to apply the changes."
+                                    }
+                                    .padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = audioRoutingMode == "hardware",
+                                    onClick = null,
+                                    colors = RadioButtonDefaults.colors(
+                                        selectedColor = MaterialTheme.colorScheme.primary
+                                    )
                                 )
-                                Text(
-                                    text = context.getString(R.string.settings_dac_usb_audio_desc),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = context.getString(R.string.settings_audio_routing_hardware),
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        fontWeight = FontWeight.Medium,
+                                        color = if (audioRoutingMode == "hardware") 
+                                            MaterialTheme.colorScheme.onPrimaryContainer 
+                                        else 
+                                            MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = context.getString(R.string.settings_audio_routing_hardware_desc),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (audioRoutingMode == "hardware") 
+                                            MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f) 
+                                        else 
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            // Software (Android USB) option
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(
+                                        if (audioRoutingMode == "software") 
+                                            MaterialTheme.colorScheme.primaryContainer 
+                                        else 
+                                            MaterialTheme.colorScheme.surfaceContainerHighest
+                                    )
+                                    .clickable {
+                                        scope.launch {
+                                            audioQualityDataStore.setAudioRoutingMode("software")
+                                        }
+                                        appSettings.setAudioRoutingMode("software")
+                                        showRestartDialog = true
+                                        restartDialogMessage = "Audio routing changed to Software (Android). Restart the app to apply the changes."
+                                    }
+                                    .padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = audioRoutingMode == "software",
+                                    onClick = null,
+                                    colors = RadioButtonDefaults.colors(
+                                        selectedColor = MaterialTheme.colorScheme.primary
+                                    )
                                 )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = context.getString(R.string.settings_audio_routing_software),
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        fontWeight = FontWeight.Medium,
+                                        color = if (audioRoutingMode == "software") 
+                                            MaterialTheme.colorScheme.onPrimaryContainer 
+                                        else 
+                                            MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = context.getString(R.string.settings_audio_routing_software_desc),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (audioRoutingMode == "software") 
+                                            MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f) 
+                                        else 
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                         }
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        ExpressiveButtonGroup(
-                            items = listOf(context.getString(R.string.settings_audio_routing_default), context.getString(R.string.settings_audio_routing_app), context.getString(R.string.settings_audio_routing_system)),
-                            selectedIndex = when (audioRoutingMode) {
-                                "default" -> 0
-                                "app" -> 1
-                                "system" -> 2
-                                else -> 0
-                            },
-                            onItemClick = { index ->
-                                when (index) {
-                                    0 -> {
-                                        appSettings.setAudioRoutingMode("default")
-                                        showRestartDialog = true
-                                        restartDialogMessage = "Audio routing changed to Default. Restart the app to apply the changes."
-                                    }
-                                    1 -> {
-                                        appSettings.setAudioRoutingMode("app")
-                                        // App routing enables high-resolution mode for direct DAC output
-                                        if (!appSettings.bitPerfectMode.value) {
-                                            appSettings.setBitPerfectMode(true)
-                                        }
-                                        showRestartDialog = true
-                                        restartDialogMessage = "Audio routing changed to App mode. Restart the app to apply the changes."
-                                    }
-                                    2 -> {
-                                        appSettings.setAudioRoutingMode("system")
-                                        showRestartDialog = true
-                                        restartDialogMessage = "Audio routing changed to System. Restart the app to apply the changes."
-                                    }
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Text(
-                            text = when (audioRoutingMode) {
-                                "app" -> context.getString(R.string.settings_audio_routing_app_desc)
-                                "system" -> context.getString(R.string.settings_audio_routing_system_desc)
-                                else -> context.getString(R.string.settings_audio_routing_default_desc)
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
                     }
                 }
             }
@@ -1176,7 +1270,7 @@ fun QueuePlaybackSettingsScreen(onBackClick: () -> Unit) {
                                     modifier = Modifier.fillMaxSize()
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.Help,
+                                        imageVector = Icons.AutoMirrored.Filled.Help,
                                         contentDescription = null,
                                         tint = if (playlistClickBehavior == "ask")
                                             MaterialTheme.colorScheme.onPrimary
@@ -1484,7 +1578,7 @@ fun QueuePlaybackSettingsScreen(onBackClick: () -> Unit) {
                         "ask" to Triple(
                             context.getString(R.string.list_queue_behavior_ask_title),
                             context.getString(R.string.list_queue_behavior_ask_desc),
-                            Icons.Default.Help
+                            Icons.AutoMirrored.Filled.Help
                         ),
                         "play_next" to Triple(
                             context.getString(R.string.list_queue_behavior_play_next_title),
@@ -1711,7 +1805,7 @@ fun QueuePlaybackSettingsScreen(onBackClick: () -> Unit) {
                                     modifier = Modifier.fillMaxSize()
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.Help,
+                                        imageVector = Icons.AutoMirrored.Filled.Help,
                                         contentDescription = null,
                                         tint = if (showQueueDialog)
                                             MaterialTheme.colorScheme.onPrimary
@@ -1994,7 +2088,7 @@ fun PlaylistsSettingsScreen(onBackClick: () -> Unit) {
             items = if (userPlaylists.isNotEmpty()) {
                 userPlaylists.map { playlist ->
                     SettingItem(
-                        Icons.Default.QueueMusic,
+                        Icons.AutoMirrored.Filled.QueueMusic,
                         playlist.name,
                         "${playlist.songs.size} songs",
                         onClick = null, // No navigation
@@ -3722,7 +3816,7 @@ fun ArtistSeparatorsSettingsScreen(onBackClick: () -> Unit) {
                             colors = ButtonDefaults.outlinedButtonColors(
                                 contentColor = MaterialTheme.colorScheme.primary
                             ),
-                            border = ButtonDefaults.outlinedButtonBorder.copy(
+                            border = ButtonDefaults.outlinedButtonBorder(true).copy(
                                 width = 1.5.dp
                             )
                         ) {
@@ -4617,7 +4711,7 @@ fun AboutScreen(
                                 modifier = Modifier.padding(vertical = 6.dp)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Rounded.Chat,
+                                    imageVector = Icons.Filled.Chat,
                                     contentDescription = "Discord",
                                     modifier = Modifier.size(18.dp)
                                 )
@@ -4649,7 +4743,7 @@ fun AboutScreen(
                                 modifier = Modifier.padding(vertical = 6.dp)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Rounded.Send,
+                                    imageVector = Icons.AutoMirrored.Filled.Send,
                                     contentDescription = "Telegram",
                                     modifier = Modifier.size(18.dp)
                                 )
@@ -10511,6 +10605,8 @@ fun PlayerCustomizationSettingsScreen(onBackClick: () -> Unit) {
     val playerArtworkCornerRadius by appSettings.playerArtworkCornerRadius.collectAsState()
     val playerShowAudioQualityBadges by appSettings.playerShowAudioQualityBadges.collectAsState()
     val expressiveShapesEnabled by appSettings.expressiveShapesEnabled.collectAsState()
+    val immersiveScope by appSettings.immersiveScope.collectAsState()
+    val immersiveBehaviour by appSettings.immersiveBehaviour.collectAsState()
 
     // Progress bar settings
     val playerProgressStyle by appSettings.playerProgressStyle.collectAsState()
@@ -10522,6 +10618,8 @@ fun PlayerCustomizationSettingsScreen(onBackClick: () -> Unit) {
     var showCornerRadiusSheet by remember { mutableStateOf(false) }
     var showPlayerProgressStyleSheet by remember { mutableStateOf(false) }
     var showPlayerThumbStyleSheet by remember { mutableStateOf(false) }
+    var showImmersiveScopeSheet by remember { mutableStateOf(false) }
+    var showImmersiveBehaviourSheet by remember { mutableStateOf(false) }
 
     if (showLyricsSourceDialog) {
         LyricsSourceDialog(onDismiss = { showLyricsSourceDialog = false }, appSettings = appSettings, context = context, haptic = haptics)
@@ -10609,6 +10707,61 @@ fun PlayerCustomizationSettingsScreen(onBackClick: () -> Unit) {
                             )
                         )
                     ),
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
+            }
+
+            // Immersive Mode Section
+            item {
+                Spacer(modifier = Modifier.height(24.dp))
+                Text(
+                    text = context.getString(R.string.settings_immersive_mode),
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
+                )
+                
+                val immersiveScopeLabel = when (immersiveScope) {
+                    chromahub.rhythm.app.shared.data.model.ImmersiveScope.OFF -> context.getString(R.string.immersive_scope_off)
+                    chromahub.rhythm.app.shared.data.model.ImmersiveScope.PLAYER_ONLY -> context.getString(R.string.immersive_scope_player_only)
+                    chromahub.rhythm.app.shared.data.model.ImmersiveScope.WHOLE_APP -> context.getString(R.string.immersive_scope_whole_app)
+                }
+                
+                val immersiveBehaviourLabel = when (immersiveBehaviour) {
+                    chromahub.rhythm.app.shared.data.model.ImmersiveBehaviour.STICKY -> context.getString(R.string.immersive_behaviour_sticky)
+                    chromahub.rhythm.app.shared.data.model.ImmersiveBehaviour.NON_STICKY -> context.getString(R.string.immersive_behaviour_non_sticky)
+                }
+                
+                Material3SettingsGroup(
+                    items = buildList {
+                        add(
+                            toMaterial3SettingsItem(
+                                context = context,
+                                hapticFeedback = haptics,
+                                item = SettingItem(
+                                    icon = Icons.Default.Fullscreen,
+                                    title = context.getString(R.string.settings_fullscreen_mode),
+                                    description = immersiveScopeLabel,
+                                    onClick = { showImmersiveScopeSheet = true }
+                                )
+                            )
+                        )
+                        // Only show bar behaviour option if immersive mode is enabled
+                        if (immersiveScope != chromahub.rhythm.app.shared.data.model.ImmersiveScope.OFF) {
+                            add(
+                                toMaterial3SettingsItem(
+                                    context = context,
+                                    hapticFeedback = haptics,
+                                    item = SettingItem(
+                                        icon = Icons.Default.SwipeVertical,
+                                        title = context.getString(R.string.settings_bar_behaviour),
+                                        description = immersiveBehaviourLabel,
+                                        onClick = { showImmersiveBehaviourSheet = true }
+                                    )
+                                )
+                            )
+                        }
+                    },
                     containerColor = MaterialTheme.colorScheme.surfaceContainer
                 )
             }
@@ -11241,6 +11394,195 @@ fun PlayerCustomizationSettingsScreen(onBackClick: () -> Unit) {
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+        }
+    }
+
+    // Immersive Scope Bottom Sheet
+    if (showImmersiveScopeSheet) {
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+        ModalBottomSheet(
+            onDismissRequest = { showImmersiveScopeSheet = false },
+            sheetState = sheetState,
+            dragHandle = {
+                BottomSheetDefaults.DragHandle(color = MaterialTheme.colorScheme.primary)
+            },
+            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .padding(bottom = 24.dp)
+            ) {
+                Text(
+                    text = context.getString(R.string.settings_fullscreen_mode),
+                    style = MaterialTheme.typography.displayMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(vertical = 16.dp)
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                listOf(
+                    Triple(chromahub.rhythm.app.shared.data.model.ImmersiveScope.OFF, context.getString(R.string.immersive_scope_off), context.getString(R.string.immersive_scope_off_desc)),
+                    Triple(chromahub.rhythm.app.shared.data.model.ImmersiveScope.PLAYER_ONLY, context.getString(R.string.immersive_scope_player_only), context.getString(R.string.immersive_scope_player_only_desc)),
+                    Triple(chromahub.rhythm.app.shared.data.model.ImmersiveScope.WHOLE_APP, context.getString(R.string.immersive_scope_whole_app), context.getString(R.string.immersive_scope_whole_app_desc))
+                ).forEach { (scope, label, description) ->
+                    val isSelected = immersiveScope == scope
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isSelected)
+                                MaterialTheme.colorScheme.primaryContainer
+                            else
+                                MaterialTheme.colorScheme.surfaceContainerHigh
+                        ),
+                        onClick = {
+                            HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
+                            appSettings.setImmersiveScope(scope)
+                            showImmersiveScopeSheet = false
+                        }
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = label,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                    color = if (isSelected)
+                                        MaterialTheme.colorScheme.onPrimaryContainer
+                                    else
+                                        MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = description,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (isSelected)
+                                        MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                                    else
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            if (isSelected) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = "Selected",
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+        }
+    }
+
+    // Immersive Behaviour Bottom Sheet
+    if (showImmersiveBehaviourSheet) {
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+        ModalBottomSheet(
+            onDismissRequest = { showImmersiveBehaviourSheet = false },
+            sheetState = sheetState,
+            dragHandle = {
+                BottomSheetDefaults.DragHandle(color = MaterialTheme.colorScheme.primary)
+            },
+            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .padding(bottom = 24.dp)
+            ) {
+                Text(
+                    text = context.getString(R.string.settings_bar_behaviour),
+                    style = MaterialTheme.typography.displayMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(vertical = 16.dp)
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                listOf(
+                    Triple(chromahub.rhythm.app.shared.data.model.ImmersiveBehaviour.STICKY, context.getString(R.string.immersive_behaviour_sticky), context.getString(R.string.immersive_behaviour_sticky_desc)),
+                    Triple(chromahub.rhythm.app.shared.data.model.ImmersiveBehaviour.NON_STICKY, context.getString(R.string.immersive_behaviour_non_sticky), context.getString(R.string.immersive_behaviour_non_sticky_desc))
+                ).forEach { (behaviour, label, description) ->
+                    val isSelected = immersiveBehaviour == behaviour
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isSelected)
+                                MaterialTheme.colorScheme.primaryContainer
+                            else
+                                MaterialTheme.colorScheme.surfaceContainerHigh
+                        ),
+                        onClick = {
+                            HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
+                            appSettings.setImmersiveBehaviour(behaviour)
+                            showImmersiveBehaviourSheet = false
+                        }
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = label,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                    color = if (isSelected)
+                                        MaterialTheme.colorScheme.onPrimaryContainer
+                                    else
+                                        MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = description,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (isSelected)
+                                        MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                                    else
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            if (isSelected) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = "Selected",
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -12132,7 +12474,7 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
                 title = context.getString(R.string.settings_theme),
                 showBackButton = true,
                 onBackClick = onBackClick
-            ) { modifier ->
+    ) { modifier ->
         val settingGroups = listOf(
             SettingGroup(
                 title = context.getString(R.string.settings_display_mode),
@@ -17012,7 +17354,7 @@ fun ExpressiveShapesSettingsScreen(onBackClick: () -> Unit) {
                                         "ALBUM_ART" -> Icons.Default.Album
                                         "PLAYER_ART" -> Icons.Default.MusicNote
                                         "SONG_ART" -> Icons.Default.AudioFile
-                                        "PLAYLIST_ART" -> Icons.Default.QueueMusic
+                                        "PLAYLIST_ART" -> Icons.AutoMirrored.Filled.QueueMusic
                                         "ARTIST_ART" -> Icons.Default.Person
                                         "PLAYER_CONTROLS" -> Icons.Default.PlayCircle
                                         "MINI_PLAYER" -> Icons.Default.MusicNote

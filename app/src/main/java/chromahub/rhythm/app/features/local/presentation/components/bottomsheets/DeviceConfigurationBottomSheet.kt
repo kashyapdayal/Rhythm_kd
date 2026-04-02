@@ -114,6 +114,7 @@ import chromahub.rhythm.app.features.local.presentation.viewmodel.MusicViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+@Suppress("DEPRECATION")
 @Composable
 fun DeviceConfigurationBottomSheet(
     musicViewModel: MusicViewModel,
@@ -428,7 +429,7 @@ fun DeviceConfigurationBottomSheet(
                             DeviceCard(
                                 device = device,
                                 isActive = device.autoEQProfileName == currentAutoEQProfile && 
-                                    device.autoEQProfileName != null && currentAutoEQProfile.isNotEmpty(),
+                                    currentAutoEQProfile.isNotEmpty(),
                                 onSelect = {
                                     HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
                                     musicViewModel.setActiveAudioDevice(device)
@@ -1127,8 +1128,8 @@ private fun AddEditDeviceDialog(
             Button(
                 onClick = {
                     if (deviceName.isNotBlank()) {
-                        val device = if (isEditing) {
-                            existingDevice!!.copy(
+                        val device = if (isEditing && existingDevice != null) {
+                            existingDevice.copy(
                                 name = deviceName,
                                 brand = deviceBrand,
                                 type = selectedType

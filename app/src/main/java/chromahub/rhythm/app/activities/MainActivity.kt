@@ -161,8 +161,22 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        appSettings = AppSettings.getInstance(applicationContext) // Initialize AppSettings
-        
+        appSettings = AppSettings.getInstance(applicationContext)
+
+        // Handle immersive mode immediately
+        if (appSettings.immersiveScope.value == chromahub.rhythm.app.shared.data.model.ImmersiveScope.WHOLE_APP) {
+            androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
+            val windowInsetsController = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
+            windowInsetsController.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            
+            windowInsetsController.systemBarsBehavior = when (appSettings.immersiveBehaviour.value) {
+                chromahub.rhythm.app.shared.data.model.ImmersiveBehaviour.STICKY -> 
+                    androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                chromahub.rhythm.app.shared.data.model.ImmersiveBehaviour.NON_STICKY -> 
+                    androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
+            }
+        }
+
         // Initialize NetworkClient with AppSettings for dynamic API keys
         chromahub.rhythm.app.network.NetworkClient.initialize(appSettings)
 
@@ -209,6 +223,32 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
+                    // Observe immersive mode settings changes reactively
+                    val immersiveScope by appSettings.immersiveScope.collectAsState()
+                    val immersiveBehaviour by appSettings.immersiveBehaviour.collectAsState()
+                    
+                    // Apply immersive mode when WHOLE_APP is selected
+                    LaunchedEffect(immersiveScope, immersiveBehaviour) {
+                        val activity = this@MainActivity
+                        val windowInsetsController = androidx.core.view.WindowCompat.getInsetsController(activity.window, activity.window.decorView)
+                        
+                        if (immersiveScope == chromahub.rhythm.app.shared.data.model.ImmersiveScope.WHOLE_APP) {
+                            androidx.core.view.WindowCompat.setDecorFitsSystemWindows(activity.window, false)
+                            windowInsetsController.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                            
+                            windowInsetsController.systemBarsBehavior = when (immersiveBehaviour) {
+                                chromahub.rhythm.app.shared.data.model.ImmersiveBehaviour.STICKY -> 
+                                    androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                                chromahub.rhythm.app.shared.data.model.ImmersiveBehaviour.NON_STICKY -> 
+                                    androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
+                            }
+                        } else {
+                            // Restore system bars when immersive mode is OFF or PLAYER_ONLY
+                            androidx.core.view.WindowCompat.setDecorFitsSystemWindows(activity.window, true)
+                            windowInsetsController.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                        }
+                    }
+                    
                     FestiveOverlayFromSettings {
                         // Show splash screen first, then transition to the app
                         var showSplash by rememberSaveable { mutableStateOf(true) }
@@ -328,6 +368,28 @@ class MainActivity : ComponentActivity() {
             }
             
             when (intent.action) {
+                // Handle USB device attached intent (from manifest USB_DEVICE_ATTACHED)
+                android.hardware.usb.UsbManager.ACTION_USB_DEVICE_ATTACHED -> {
+                    val device: android.hardware.usb.UsbDevice? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        intent.getParcelableExtra(android.hardware.usb.UsbManager.EXTRA_DEVICE, android.hardware.usb.UsbDevice::class.java)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        intent.getParcelableExtra(android.hardware.usb.UsbManager.EXTRA_DEVICE)
+                    }
+                    
+                    if (device != null) {
+                        Log.d(TAG, "USB device attached via direct intent: ${device.productName}")
+                        // Get UsbAudioManager instance from the static receiver reference
+                        val usbAudioManager = chromahub.rhythm.app.infrastructure.audio.UsbAudioReceiver.usbAudioManagerInstance
+                        if (usbAudioManager != null) {
+                            usbAudioManager.handleDirectAttach(device)
+                        } else {
+                            Log.w(TAG, "UsbAudioManager not yet initialized, persisting attach event")
+                            chromahub.rhythm.app.infrastructure.audio.usb.UsbAudioManager.persistPendingAttach(this, device)
+                        }
+                    }
+                }
+                
                 Intent.ACTION_VIEW -> {
                     // Handle external audio file with validation
                     intent.data?.let { uri ->
@@ -579,6 +641,8 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    @Suppress("DEPRECATION")
+    @Deprecated("Deprecated in Java")
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<String>,

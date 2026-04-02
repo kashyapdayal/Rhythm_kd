@@ -137,6 +137,13 @@ android {
         }
     }
 
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
+    }
+
     // ABI splits: create smaller per-architecture APKs (reduces size by ~5–10 MB each)
     splits {
         abi {

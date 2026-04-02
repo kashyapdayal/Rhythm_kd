@@ -767,6 +767,36 @@ fun PlayerScreen(
         }
     }
 
+    // Handle immersive mode for PLAYER_ONLY scope
+    val immersiveScope by appSettingsInstance.immersiveScope.collectAsState()
+    val immersiveBehaviour by appSettingsInstance.immersiveBehaviour.collectAsState()
+    
+    DisposableEffect(immersiveScope, immersiveBehaviour) {
+        val activity = context as? android.app.Activity
+        if (activity != null && immersiveScope == chromahub.rhythm.app.shared.data.model.ImmersiveScope.PLAYER_ONLY) {
+            val windowInsetsController = androidx.core.view.WindowCompat.getInsetsController(activity.window, activity.window.decorView)
+            
+            androidx.core.view.WindowCompat.setDecorFitsSystemWindows(activity.window, false)
+            windowInsetsController.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            
+            windowInsetsController.systemBarsBehavior = when (immersiveBehaviour) {
+                chromahub.rhythm.app.shared.data.model.ImmersiveBehaviour.STICKY -> 
+                    androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                chromahub.rhythm.app.shared.data.model.ImmersiveBehaviour.NON_STICKY -> 
+                    androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
+            }
+        }
+        
+        onDispose {
+            // Restore system bars when leaving player screen (only if PLAYER_ONLY mode)
+            if (activity != null && immersiveScope == chromahub.rhythm.app.shared.data.model.ImmersiveScope.PLAYER_ONLY) {
+                val windowInsetsController = androidx.core.view.WindowCompat.getInsetsController(activity.window, activity.window.decorView)
+                androidx.core.view.WindowCompat.setDecorFitsSystemWindows(activity.window, true)
+                windowInsetsController.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            }
+        }
+    }
+
     val albumScale by animateFloatAsState(
         targetValue = if (showAlbumArt) {
             if (showLyricsView) 0.98f else 1f  // Slightly smaller when showing lyrics

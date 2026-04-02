@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    USB Device Filter for Audio Class Devices (UAC1/UAC2)
+    
+    This filter tells Android to:
+    1. Present "Open Rhythm to handle USB Audio?" dialog on DAC connect
+    2. Auto-launch Rhythm when user selects it as default USB audio handler
+    
+    USB Audio Class = 0x01
+    Audio Streaming Subclass = 0x02
+-->
+<resources>
+    <!-- Match ANY USB Audio Class device (most DACs) -->
+    <usb-device class="1" />
+    
+    <!-- Fallback: Match devices with Audio Streaming interface -->
+    <usb-device class="1" subclass="2" />
+    
+    <!-- 
+        Popular USB DACs by VID/PID (fallback for devices that don't properly 
+        report USB Audio Class at device level)
+    -->
+    
+    <!-- FiiO DACs -->
+    <usb-device vendor-id="10548" product-id="32" />      <!-- FiiO K3 -->
+    <usb-device vendor-id="10548" product-id="33" />      <!-- FiiO K5 Pro -->
+    <usb-device vendor-id="10548" product-id="38" />      <!-- FiiO BTR5 -->
+    <usb-device vendor-id="10548" product-id="48" />      <!-- FiiO KA3 -->
+    
+    <!-- Topping DACs -->
+    <usb-device vendor-id="13106" product-id="13152" />   <!-- Topping D10s -->
+    <usb-device vendor-id="13106" product-id="13153" />   <!-- Topping E30 -->
+    
+    <!-- iFi Audio -->
+    <usb-device vendor-id="5149" product-id="4164" />     <!-- iFi Zen DAC -->
+    
+    <!-- Schiit Audio -->
+    <usb-device vendor-id="10551" product-id="256" />     <!-- Schiit Modi -->
+    <usb-device vendor-id="10551" product-id="1" />       <!-- Schiit Fulla -->
+    
+    <!-- SMSL -->
+    <usb-device vendor-id="1452" product-id="33288" />    <!-- SMSL Sanskrit -->
+    
+    <!-- Shanling -->
+    <usb-device vendor-id="13074" product-id="13408" />   <!-- Shanling UA2 -->
+    
+    <!-- AudioQuest DragonFly -->
+    <usb-device vendor-id="5252" product-id="8196" />     <!-- DragonFly Red -->
+    <usb-device vendor-id="5252" product-id="8197" />     <!-- DragonFly Black -->
+    
+    <!-- CHORD Electronics -->
+    <usb-device vendor-id="1240" product-id="55170" />    <!-- Mojo -->
+    
+    <!-- Qudelix-5K -->
+    <usb-device vendor-id="13074" product-id="13360" />   <!-- Qudelix-5K (0x3302:0x3360) -->
+    
+    <!-- Generic USB Audio Dongles -->
+    <usb-device vendor-id="1130" product-id="20512" />    <!-- Apple USB-C to 3.5mm -->
+    <usb-device vendor-id="2227" product-id="32772" />    <!-- Generic USB Audio -->
+    <usb-device vendor-id="1046" product-id="46" />       <!-- Creative USB -->
+</resources>

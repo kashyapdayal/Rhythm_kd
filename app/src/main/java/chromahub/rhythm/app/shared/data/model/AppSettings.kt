@@ -314,6 +314,10 @@ class AppSettings private constructor(context: Context) {
         private const val KEY_SLEEP_TIMER_ACTIVE = "sleep_timer_active"
         private const val KEY_SLEEP_TIMER_REMAINING_SECONDS = "sleep_timer_remaining_seconds"
         private const val KEY_SLEEP_TIMER_ACTION = "sleep_timer_action"
+
+        // Immersive Mode
+        private const val KEY_IMMERSIVE_SCOPE = "immersive_scope"
+        private const val KEY_IMMERSIVE_BEHAVIOUR = "immersive_behaviour"
         
         // Media Scan Tracking
         private const val KEY_LAST_SCAN_TIMESTAMP = "last_scan_timestamp"
@@ -545,6 +549,12 @@ class AppSettings private constructor(context: Context) {
     private val _useSystemTheme = MutableStateFlow(prefs.getBoolean(KEY_USE_SYSTEM_THEME, true))
     val useSystemTheme: StateFlow<Boolean> = _useSystemTheme.asStateFlow()
     
+    private val _immersiveScope = MutableStateFlow(ImmersiveScope.valueOf(prefs.getString(KEY_IMMERSIVE_SCOPE, ImmersiveScope.OFF.name) ?: ImmersiveScope.OFF.name))
+    val immersiveScope: StateFlow<ImmersiveScope> = _immersiveScope.asStateFlow()
+    
+    private val _immersiveBehaviour = MutableStateFlow(ImmersiveBehaviour.valueOf(prefs.getString(KEY_IMMERSIVE_BEHAVIOUR, ImmersiveBehaviour.STICKY.name) ?: ImmersiveBehaviour.STICKY.name))
+    val immersiveBehaviour: StateFlow<ImmersiveBehaviour> = _immersiveBehaviour.asStateFlow()
+
     private val _darkMode = MutableStateFlow(prefs.getBoolean(KEY_DARK_MODE, true))
     val darkMode: StateFlow<Boolean> = _darkMode.asStateFlow()
     
@@ -1431,7 +1441,8 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
     }
     
     fun setAudioRoutingMode(mode: String) {
-        require(mode in listOf("default", "app", "system")) { "Invalid audio routing mode: $mode" }
+        // Support both old modes (default, app, system) and new modes (hardware, software)
+        require(mode in listOf("default", "app", "system", "hardware", "software")) { "Invalid audio routing mode: $mode" }
         prefs.edit().putString(KEY_AUDIO_ROUTING_MODE, mode).apply()
         _audioRoutingMode.value = mode
         Log.d("AppSettings", "Audio routing mode set to: $mode")
@@ -1483,6 +1494,16 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
     }
     
     // Theme Settings Methods
+    fun setImmersiveScope(scope: ImmersiveScope) {
+        prefs.edit().putString(KEY_IMMERSIVE_SCOPE, scope.name).apply()
+        _immersiveScope.value = scope
+    }
+
+    fun setImmersiveBehaviour(behaviour: ImmersiveBehaviour) {
+        prefs.edit().putString(KEY_IMMERSIVE_BEHAVIOUR, behaviour.name).apply()
+        _immersiveBehaviour.value = behaviour
+    }
+
     fun setUseSystemTheme(use: Boolean) {
         prefs.edit().putBoolean(KEY_USE_SYSTEM_THEME, use).apply()
         _useSystemTheme.value = use

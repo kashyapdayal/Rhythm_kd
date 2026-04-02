@@ -76,7 +76,7 @@ import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Public
-import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Reorder
 import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.Security
@@ -133,7 +133,7 @@ import androidx.compose.material.icons.filled.Interests
 import androidx.compose.material.icons.filled.LensBlur
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayCircleFilled
-import androidx.compose.material.icons.filled.PlaylistAddCheckCircle
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Widgets
@@ -320,7 +320,7 @@ fun SettingsScreen(
             SettingGroup(
                 title = context.getString(R.string.settings_section_queue_playback),
                 items = buildList {
-                    add(SettingItem(Icons.Default.QueueMusic, context.getString(R.string.settings_queue_playback_title), context.getString(R.string.settings_queue_playback_desc), onClick = { onNavigateTo(SettingsRoutes.QUEUE_PLAYBACK) }))
+                    add(SettingItem(Icons.AutoMirrored.Filled.QueueMusic, context.getString(R.string.settings_queue_playback_title), context.getString(R.string.settings_queue_playback_desc), onClick = { onNavigateTo(SettingsRoutes.QUEUE_PLAYBACK) }))
                     if (appMode == "LOCAL") {
                         add(SettingItem(Icons.Default.AccessTime, context.getString(R.string.sleep_timer), context.getString(R.string.sleep_timer_set_control), onClick = { onNavigateTo(SettingsRoutes.SLEEP_TIMER) }))
                     }
@@ -364,7 +364,7 @@ fun SettingsScreen(
                 items = listOf(
                     SettingItem(Icons.Default.Folder, context.getString(R.string.settings_media_scan_title), context.getString(R.string.settings_media_scan_desc), onClick = { onNavigateTo(SettingsRoutes.MEDIA_SCAN) }),
                     SettingItem(Icons.Default.Person, context.getString(R.string.settings_artist_parsing), context.getString(R.string.settings_artist_parsing_desc), onClick = { onNavigateTo(SettingsRoutes.ARTIST_SEPARATORS) }),
-                    SettingItem(Icons.Default.PlaylistAddCheckCircle, context.getString(R.string.settings_playlists_title), context.getString(R.string.settings_playlists_desc), onClick = { onNavigateTo(SettingsRoutes.PLAYLISTS) }),
+                    SettingItem(Icons.AutoMirrored.Filled.PlaylistAdd, context.getString(R.string.settings_playlists_title), context.getString(R.string.settings_playlists_desc), onClick = { onNavigateTo(SettingsRoutes.PLAYLISTS) }),
                     SettingItem(Icons.Default.LibraryMusic, context.getString(R.string.settings_library_settings), context.getString(R.string.settings_library_settings_desc), onClick = { onNavigateTo(SettingsRoutes.LIBRARY_SETTINGS) })
                 )
             ) else null,
@@ -1503,7 +1503,7 @@ fun SettingsTipsRow(
                 add(
                     SettingsTipData(
                         id = "queue_playback",
-                        icon = Icons.Default.QueueMusic,
+                        icon = Icons.AutoMirrored.Filled.QueueMusic,
                         title = "Queue Playback",
                         text = descs.random(random),
                         route = SettingsRoutes.QUEUE_PLAYBACK
