@@ -260,13 +260,13 @@ fun YTMusicSearchResponse.extractArtistImageUrl(): String? {
                     
                     if (thumbnail?.url?.isNotEmpty() == true) {
                         // Enhance image quality by modifying URL parameters if it's a YouTube image
-                        val enhancedUrl = if (thumbnail.url!!.contains("googleusercontent.com") || thumbnail.url!!.contains("ytimg.com")) {
+                        val enhancedUrl = if (thumbnail.url.contains("googleusercontent.com") || thumbnail.url.contains("ytimg.com")) {
                             // Remove size restrictions and request high quality
-                            thumbnail.url!!.replace("=w\\d+-h\\d+".toRegex(), "=w800-h800")
+                            thumbnail.url.replace("=w\\d+-h\\d+".toRegex(), "=w800-h800")
                                 .replace("=s\\d+".toRegex(), "=s800")
                                 .replace("-c-k-c0x00ffffff-no-rj", "-c-k-c0x00ffffff-no-rj-mo")
                         } else {
-                            thumbnail.url!!
+                            thumbnail.url
                         }
                         android.util.Log.d("YTMusicExtract", "Enhanced thumbnail URL: $enhancedUrl")
                         return enhancedUrl

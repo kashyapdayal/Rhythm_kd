@@ -1,6 +1,10 @@
 <resources>
     <string name="app_name">Rhythm</string>
     
+    <!-- Attribution tags (referenced by AndroidManifest.xml) -->
+    <string name="attribution_media_playback">Media Playback</string>
+    <string name="attribution_usb_audio">USB Audio</string>
+
     <!-- Common Labels -->
     <string name="home">Home</string>
     <string name="library">Library</string>
@@ -2422,11 +2426,11 @@
     <!-- Audio Routing -->
     <string name="settings_audio_routing">Audio Routing</string>
     <string name="settings_dac_usb_audio">DAC / USB Audio</string>
-    <string name="settings_dac_usb_audio_desc">How audio is routed when a DAC is connected. App mode requests exclusive USB bit-perfect routing on supported devices.</string>
+    <string name="settings_dac_usb_audio_desc">How audio is routed when a DAC is connected. Hardware mode requests exclusive USB bit-perfect routing on supported devices.</string>
     <string name="settings_audio_routing_default">Default</string>
-    <string name="settings_audio_routing_app">App</string>
+    <string name="settings_audio_routing_hardware">Hardware</string>
     <string name="settings_audio_routing_system">System</string>
-    <string name="settings_audio_routing_app_desc">Rhythm handles audio directly with high-resolution mode and requests exclusive USB bit-perfect routing on supported devices. Restart required.</string>
+    <string name="settings_audio_routing_hardware_desc">Rhythm handles audio directly with high-resolution mode and requests exclusive USB bit-perfect routing on supported devices. Restart required.</string>
     <string name="settings_audio_routing_system_desc">Uses Android system audio routing. Audio may be resampled to 48 kHz by the OS mixer.</string>
     <string name="settings_audio_routing_default_desc">Android decides how to route audio. Resampling depends on system settings.</string>
     

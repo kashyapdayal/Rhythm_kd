@@ -1,3 +1,5 @@
+@file:android.annotation.SuppressLint("RestrictedApi")
+
 package chromahub.rhythm.app.ui.theme
 
 import android.app.Activity

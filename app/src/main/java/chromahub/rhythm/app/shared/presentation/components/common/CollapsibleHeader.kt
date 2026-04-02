@@ -235,7 +235,7 @@ fun CollapsibleHeaderScreen(
                         }
                     },
                     scrollBehavior = scrollBehavior,
-                    colors = TopAppBarDefaults.largeTopAppBarColors(
+                    colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = containerColor,
                         scrolledContainerColor = containerColor
                     )
@@ -499,7 +499,7 @@ fun ArtistCollapsibleHeaderScreen(
                             }
                         },
                         scrollBehavior = scrollBehavior,
-                        colors = TopAppBarDefaults.largeTopAppBarColors(
+                        colors = TopAppBarDefaults.topAppBarColors(
                             containerColor = Color.Transparent,
                             scrolledContainerColor = containerColor
                         )

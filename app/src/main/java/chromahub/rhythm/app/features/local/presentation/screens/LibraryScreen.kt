@@ -34,6 +34,7 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.automirrored.rounded.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.rounded.*
+import androidx.compose.material.icons.automirrored.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
@@ -517,7 +518,7 @@ fun LibraryScreen(
         val displaySong = songs.find { it.id == selectedSong!!.id } ?: selectedSong
         
         SongInfoBottomSheet(
-            song = displaySong!!,
+            song = displaySong,
             onDismiss = { showSongInfoSheet = false },
             appSettings = appSettings,
             onDeleteSong = { musicViewModel.requestDeleteSong(displaySong!!) },
@@ -561,6 +562,9 @@ fun LibraryScreen(
                         }
                     }
                 )
+            },
+            onDeleteSong = {
+                musicViewModel.requestDeleteSong(displaySong!!)
             }
         )
     }
@@ -702,8 +706,8 @@ fun LibraryScreen(
                 }
             },
             onAddToBlacklist = {
-                // Add all selected songs to blacklist
-                selectedSongs.forEach { song ->
+                // Add first selected song to blacklist
+                selectedSongs.firstOrNull()?.let { song ->
                     appSettings.addToBlacklist(song.id)
                 }
             },
@@ -722,15 +726,15 @@ fun LibraryScreen(
                 showBatchEditSheet = false
                 multiSelectionState.clearSelection()
             },
-            onSave = { artist, album, genre, year, artworkUri, removeArtwork ->
+            onSave = { artist, album, genre, year ->
                 musicViewModel.batchEditMetadata(
                     songs = selectedSongs,
                     artist = artist,
                     album = album,
                     genre = genre,
                     year = year,
-                    artworkUri = artworkUri,
-                    removeArtwork = removeArtwork,
+                    artworkUri = null,
+                    removeArtwork = false,
                     onProgress = { _, _ -> },
                     onComplete = { successCount, failCount ->
                         showBatchEditSheet = false
@@ -1021,7 +1025,6 @@ fun LibraryScreen(
                                                         tint = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
                                                     )
                                                 }
-                                                else -> {}
                                             }
                                         },
                                         onClick = {
@@ -1186,7 +1189,7 @@ fun LibraryScreen(
                         }
                     }
                 },
-                colors = TopAppBarDefaults.largeTopAppBarColors(
+                colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Transparent,
                     scrolledContainerColor = Color.Transparent
                 ),
@@ -1499,6 +1502,7 @@ fun LibraryScreen(
                                 selectedSong = song
                                 showSongInfoSheet = true
                             },
+                            onDeleteSong = { song -> musicViewModel.requestDeleteSong(song) },
                             onAddToBlacklist = { song ->
                                 appSettings.addToBlacklist(song.id)
                             },
@@ -1851,6 +1855,7 @@ fun SingleCardSongsContent(
     onGoToAlbum: (Album) -> Unit = {},
     onShowSongInfo: (Song) -> Unit,
     onAddToBlacklist: (Song) -> Unit,
+    onDeleteSong: (Song) -> Unit = {},
     onPlayQueue: (List<Song>) -> Unit = { _ -> },
     onPlayQueueFromIndex: (List<Song>, Int) -> Unit = { _, _ -> }, // New parameter for playing from specific index
     onShuffleQueue: (List<Song>) -> Unit = { _ -> },
@@ -1919,24 +1924,24 @@ fun SingleCardSongsContent(
                 val formatInfo = AudioFormatDetector.detectFormat(context, song.uri, song)
                 
                 // Prefer Song's metadata when available (more reliable)
-                val bitrateKbps = if (song.bitrate != null && song.bitrate!! > 0) {
-                    song.bitrate!! / 1000
+                val bitrateKbps = if (song.bitrate != null && song.bitrate > 0) {
+                    song.bitrate / 1000
                 } else if (formatInfo.bitrateKbps > 0) {
                     formatInfo.bitrateKbps
                 } else {
                     0
                 }
                 
-                val sampleRateHz = if (song.sampleRate != null && song.sampleRate!! > 0) {
-                    song.sampleRate!!
+                val sampleRateHz = if (song.sampleRate != null && song.sampleRate > 0) {
+                    song.sampleRate
                 } else if (formatInfo.sampleRateHz > 0) {
                     formatInfo.sampleRateHz
                 } else {
                     0
                 }
                 
-                val channelCount = if (song.channels != null && song.channels!! > 0) {
-                    song.channels!!
+                val channelCount = if (song.channels != null && song.channels > 0) {
+                    song.channels
                 } else if (formatInfo.channelCount > 0) {
                     formatInfo.channelCount
                 } else {
@@ -2711,6 +2716,7 @@ fun SingleCardSongsContent(
                             },
                         onShowSongInfo = { onShowSongInfo(song) },
                         onAddToBlacklist = { onAddToBlacklist(song) },
+                        onDeleteSong = { onDeleteSong(song) },
                         currentSong = currentSong,
                         isPlaying = isPlaying,
                         haptics = haptics,
@@ -3523,6 +3529,7 @@ fun LibrarySongItem(
     onGoToAlbum: () -> Unit = {},
     onShowSongInfo: () -> Unit,
     onAddToBlacklist: () -> Unit, // Add blacklist callback
+    onDeleteSong: () -> Unit = {}, // Add delete song callback
     currentSong: Song? = null, // Add current song parameter
     isPlaying: Boolean = false, // Add playing state
     haptics: androidx.compose.ui.hapticfeedback.HapticFeedback,
@@ -4092,6 +4099,47 @@ fun LibrarySongItem(
                         }
                     )
                 }
+
+                // Delete from device
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                ) {
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                "Delete from device",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        },
+                        leadingIcon = {
+                            Surface(
+                                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.6f),
+                                shape = CircleShape,
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Delete,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(6.dp)
+                                )
+                            }
+                        },
+                        onClick = {
+                            HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
+                            showDropdown = false
+                            onDeleteSong()
+                        }
+                    )
+                }
             }
         },
         colors = ListItemDefaults.colors(
@@ -4119,6 +4167,7 @@ fun LibrarySongItemWrapper(
     onGoToAlbum: () -> Unit = {},
     onShowSongInfo: () -> Unit,
     onAddToBlacklist: () -> Unit,
+    onDeleteSong: () -> Unit = {},
     currentSong: Song? = null,
     isPlaying: Boolean = false,
     haptics: androidx.compose.ui.hapticfeedback.HapticFeedback,
@@ -4187,6 +4236,7 @@ fun LibrarySongItemWrapper(
             onGoToAlbum = onGoToAlbum,
             onShowSongInfo = onShowSongInfo,
             onAddToBlacklist = onAddToBlacklist,
+            onDeleteSong = onDeleteSong,
             currentSong = currentSong,
             isPlaying = isPlaying,
             haptics = haptics,

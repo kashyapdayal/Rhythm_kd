@@ -100,16 +100,8 @@ fun FestiveOverlayFromSettings(
     val showBottomSnow by appSettings.festiveShowBottomSnow.collectAsState()
     val showSnowfall by appSettings.festiveShowSnowfall.collectAsState()
     
-    // Safe parse of festive theme type with fallback to NONE if invalid
-    val themType = try {
-        FestiveThemeType.valueOf(festiveType)
-    } catch (e: Exception) {
-        // Fallback when stored preference is outdated or invalid (e.g., DIWALI removed)
-        FestiveThemeType.NONE
-    }
-    
     val config = FestiveConfig(
-        type = themType,
+        type = FestiveThemeType.valueOf(festiveType),
         intensity = festiveIntensity,
         enabled = festiveEnabled,
         autoDetect = festiveAutoDetect

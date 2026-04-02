@@ -1,3 +1,5 @@
+@file:android.annotation.SuppressLint("RestrictedApi")
+
 package chromahub.rhythm.app.util
 
 import android.graphics.Bitmap

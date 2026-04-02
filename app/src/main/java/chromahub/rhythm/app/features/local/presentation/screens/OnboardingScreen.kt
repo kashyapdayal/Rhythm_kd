@@ -4319,7 +4319,7 @@ private fun AudioPlaybackSettingsCard(
                 }
             ),
             Material3SettingsItem(
-                icon = RhythmIcons.Player.Stop,
+                icon = RhythmIcons.Player.VolumeOff,
                 title = { Text(context.getString(R.string.settings_stop_playback_on_zero_volume)) },
                 description = { Text(context.getString(R.string.settings_stop_playback_on_zero_volume_desc)) },
                 trailingContent = {
@@ -4532,7 +4532,7 @@ private fun LibraryFeatureCard(
         shape = RoundedCornerShape(12.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .then(if (onClick != null) Modifier.clickable { onClick?.invoke() } else Modifier)
+            .then(if (onClick != null) Modifier.clickable { onClick.invoke() } else Modifier)
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,

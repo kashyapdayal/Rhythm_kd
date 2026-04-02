@@ -225,7 +225,8 @@ fun SettingsScreen(
     val rhythmGuardMode by appSettings.rhythmGuardMode.collectAsState()
     val showSettingsSuggestions by appSettings.showSettingsSuggestions.collectAsState()
     val showKeyboardOnSearchOpen by appSettings.showKeyboardOnSearchOpen.collectAsState()
-    
+    val bitPerfectMode by appSettings.bitPerfectMode.collectAsState()
+
     var showDefaultScreenDialog by remember { mutableStateOf(false) }
     var showLanguageSwitcher by remember { mutableStateOf(false) }
     
@@ -338,7 +339,7 @@ fun SettingsScreen(
                         onToggleChange = { appSettings.setUseSystemVolume(it) }
                     ))
                     add(SettingItem(
-                        RhythmIcons.Player.Stop,
+                        RhythmIcons.Player.VolumeOff,
                         context.getString(R.string.settings_stop_playback_on_zero_volume),
                         context.getString(R.string.settings_stop_playback_on_zero_volume_desc),
                         toggleState = stopPlaybackOnZeroVolume,
@@ -414,7 +415,6 @@ fun SettingsScreen(
         ).filterNotNull() // Filter out null groups (for streaming mode)
 
         val lazyListState = scrollState ?: rememberSaveable(
-            key = "settings_scroll_state",
             saver = LazyListStateSaver
         ) {
             LazyListState()
@@ -967,7 +967,6 @@ fun SettingsScreenWrapper(
 
     // Hoist the main settings scroll state to persist across navigation
     val mainSettingsScrollState = rememberSaveable(
-        key = "main_settings_scroll_state",
         saver = LazyListStateSaver
     ) {
         LazyListState()

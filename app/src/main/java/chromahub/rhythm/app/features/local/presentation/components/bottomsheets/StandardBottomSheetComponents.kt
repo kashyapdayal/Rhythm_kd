@@ -17,7 +17,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 
 /**
@@ -43,19 +42,14 @@ fun StandardBottomSheetHeader(
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp, vertical = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Start
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.Start
-            ) {
+            Column {
                 Text(
                     text = title,
-                    modifier = Modifier.fillMaxWidth(),
                     style = MaterialTheme.typography.displayMedium,
                     fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    textAlign = TextAlign.Start
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 if (subtitle.isNotEmpty()) {
                     Box(
@@ -70,8 +64,7 @@ fun StandardBottomSheetHeader(
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                             style = MaterialTheme.typography.labelLarge,
                             text = subtitle,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            textAlign = TextAlign.Start
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                     }
                 }

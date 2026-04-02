@@ -1,7 +1,11 @@
 package chromahub.rhythm.app.features.local.presentation.screens
 
 import android.content.Context
+import chromahub.rhythm.app.features.local.presentation.components.UsbDirectVolumeSlider
 import android.net.Uri
+import chromahub.rhythm.app.infrastructure.audio.siphon.GlobalVolumeController
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -308,10 +312,8 @@ fun PlayerScreen(
     val playerBackgroundColor = BottomSheetDefaults.ContainerColor
 
     // Get AppSettings for volume control setting
-    val appSettingsInstance =
-        appSettings ?: chromahub.rhythm.app.shared.data.model.AppSettings.getInstance(context)
+    val appSettingsInstance = appSettings
     val useSystemVolume by appSettingsInstance.useSystemVolume.collectAsState()
-    val stopPlaybackOnZeroVolume by appSettingsInstance.stopPlaybackOnZeroVolume.collectAsState()
     val groupByAlbumArtist by appSettingsInstance.groupByAlbumArtist.collectAsState()
     val artistSeparatorEnabled by appSettingsInstance.artistSeparatorEnabled.collectAsState()
     val artistSeparatorDelimiters by appSettingsInstance.artistSeparatorDelimiters.collectAsState()
@@ -345,7 +347,6 @@ fun PlayerScreen(
     val showLyricsTranslation by appSettingsInstance.showLyricsTranslation.collectAsState()
     val showLyricsRomanization by appSettingsInstance.showLyricsRomanization.collectAsState()
     val keepScreenOnLyrics by appSettingsInstance.keepScreenOnLyrics.collectAsState()
-    val forcePlayerCompactMode by appSettingsInstance.forcePlayerCompactMode.collectAsState()
     
     // Enhanced seeking state - shows preview during scrubbing
     var isScrubbing by remember { mutableStateOf(false) }
@@ -382,7 +383,6 @@ fun PlayerScreen(
 
     // System volume state
     var systemVolume by remember { mutableFloatStateOf(0.5f) }
-    var wasPausedByZeroVolume by remember { mutableStateOf(false) }
 
     // Monitor system volume changes using ContentObserver instead of polling
     LaunchedEffect(useSystemVolume) {
@@ -415,30 +415,17 @@ fun PlayerScreen(
         }
     }
 
-    // Stop playback when system volume reaches 0 if setting is enabled, and resume when volume > 0
-    LaunchedEffect(systemVolume, stopPlaybackOnZeroVolume, isPlaying) {
-        if (useSystemVolume && stopPlaybackOnZeroVolume) {
-            if (systemVolume == 0f && isPlaying) {
-                onPlayPause()
-                wasPausedByZeroVolume = true
-            } else if (systemVolume > 0f && !isPlaying && wasPausedByZeroVolume) {
-                onPlayPause()
-                wasPausedByZeroVolume = false
-            }
-        }
-    }
-
     // Calculate screen dimensions
     val screenHeight = with(density) { configuration.screenHeightDp.dp.toPx() }
     val screenWidth = with(density) { configuration.screenWidthDp.dp.toPx() }
 
     // Enhanced screen size detection for better responsiveness
-    val isCompactHeight = forcePlayerCompactMode || configuration.screenHeightDp < 600
+    val isCompactHeight = configuration.screenHeightDp < 600
     val isLargeHeight = configuration.screenHeightDp > 800
     val isTablet = configuration.screenWidthDp >= 600 // Tablet detection
     val isLandscapeTablet = isTablet && configuration.screenWidthDp > configuration.screenHeightDp
     val isExtraSmallWidth = configuration.screenWidthDp < 360 // Extra small width (< 360dp)
-    val isCompactWidth = forcePlayerCompactMode || configuration.screenWidthDp < 400 // Compact width (< 400dp)
+    val isCompactWidth = configuration.screenWidthDp < 400 // Compact width (< 400dp)
     val isMidWidth = configuration.screenWidthDp in 400..499 // Mid-range width (400-499dp)
     
     // Bottom sheet states
@@ -762,7 +749,10 @@ fun PlayerScreen(
     }
 
     DisposableEffect(Unit) {
+        val macActivity = context.findActivity() as? chromahub.rhythm.app.activities.MainActivity
+        macActivity?.immersiveManager?.onPlayerScreenVisibilityChanged(true)
         onDispose {
+            macActivity?.immersiveManager?.onPlayerScreenVisibilityChanged(false)
             onStopDeviceMonitoring()
         }
     }
@@ -847,8 +837,6 @@ fun PlayerScreen(
             currentSong = song,
             queue = queue,
             currentQueueIndex = queuePosition - 1,
-            isShuffleEnabled = isShuffleEnabled,
-            repeatMode = repeatMode,
             onSongClick = { selectedSong ->
                 onSongClick(selectedSong)
                 showQueueSheet = false
@@ -872,7 +860,6 @@ fun PlayerScreen(
                 onClearQueue()
                 showQueueSheet = false
             },
-            onToggleShuffle = onToggleShuffle,
             sheetState = queueSheetState
         )
     }
@@ -883,10 +870,8 @@ fun PlayerScreen(
             playlists = playlists,
             onDismissRequest = onAddToPlaylistSheetDismiss,
             onAddToPlaylist = { playlist ->
-                playlist.id?.let { playlistId ->
-                    onAddSongToPlaylist(song, playlistId)
-                    onAddToPlaylistSheetDismiss()
-                }
+                onAddSongToPlaylist(song, playlist.id)
+                onAddToPlaylistSheetDismiss()
             },
             onCreateNewPlaylist = {
                 onAddToPlaylistSheetDismiss()
@@ -922,7 +907,7 @@ fun PlayerScreen(
                 showDeviceOutputSheet = false
                 onStopDeviceMonitoring()
             },
-            appSettings = appSettings ?: chromahub.rhythm.app.shared.data.model.AppSettings.getInstance(context),
+            appSettings = appSettings,
             onNavigateToSettings = {
                 showDeviceOutputSheet = false
                 navController.navigate(Screen.TunerQueuePlayback.route)
@@ -2069,7 +2054,7 @@ fun PlayerScreen(
                                                 else -> {
                                                     // Check for word-by-word lyrics first (highest quality)
                                                     val wordByWordLyrics = remember(lyrics) {
-                                                        lyrics?.getWordByWordLyricsOrNull()
+                                                        lyrics.getWordByWordLyricsOrNull()
                                                     }
                                                     
                                                     if (wordByWordLyrics != null) {
@@ -2079,14 +2064,14 @@ fun PlayerScreen(
                                                             currentPlaybackTime = currentTimeMs,
                                                             modifier = Modifier.fillMaxSize(),
                                                             onSeek = onLyricsSeek,
-                                                            lyricsSource = lyrics?.source,
+                                                            lyricsSource = lyrics.source,
                                                             textSizeMultiplier = playerLyricsTextSize,
                                                             textAlignment = lyricsTextAlign
                                                         )
                                                     } else {
                                                         // Fall back to line-by-line synced or plain lyrics
                                                         val lyricsText = remember(lyrics) {
-                                                            lyrics?.getBestLyrics() ?: ""
+                                                            lyrics.getBestLyrics() ?: ""
                                                         }
 
                                                         val parsedLyrics = remember(lyricsText) {
@@ -2104,7 +2089,7 @@ fun PlayerScreen(
                                                                 onSeek = onLyricsSeek,
                                                                 showTranslation = showLyricsTranslation,
                                                                 showRomanization = showLyricsRomanization,
-                                                                lyricsSource = lyrics?.source,
+                                                                lyricsSource = lyrics.source,
                                                                 textSizeMultiplier = playerLyricsTextSize,
                                                                 textAlignment = lyricsTextAlign
                                                             )
@@ -2441,6 +2426,10 @@ fun PlayerScreen(
 
                         Spacer(modifier = Modifier.height(if (isTablet) 20.dp else if (isCompactHeight) 6.dp else 12.dp))
                         
+                        // USB DAC Volume Slider
+                        val isUsbDirectActive by GlobalVolumeController.isUsbDirectActive.collectAsState(initial = false)
+                        UsbDirectVolumeSlider(isUsbDirectActive = isUsbDirectActive)
+
                         // Add spacing below progress bar on both views
                         Spacer(modifier = Modifier.height(if (isTablet) 12.dp else if (isCompactHeight) 4.dp else 8.dp))
 
@@ -2491,7 +2480,7 @@ fun PlayerScreen(
                                     HapticFeedbackType.LongPress
                                 )
                                 onSeek(
-                                    (currentTimeMs + 10000).coerceAtMost(totalTimeMs.toLong())
+                                    (currentTimeMs + 10000).coerceAtMost(totalTimeMs)
                                         .toFloat() / totalTimeMs
                                 )
                             },
@@ -4414,3 +4403,5 @@ fun PlaybackPitchDialog(
         }
     )
 }
+
+fun android.content.Context.findActivity(): android.app.Activity? { var context = this; while (context is android.content.ContextWrapper) { if (context is android.app.Activity) return context; context = context.baseContext }; return null }

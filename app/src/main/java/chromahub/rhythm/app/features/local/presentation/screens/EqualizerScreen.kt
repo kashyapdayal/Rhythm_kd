@@ -32,7 +32,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.material.icons.automirrored.filled.*
+import androidx.compose.material.icons.automirrored.rounded.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material.icons.rounded.*
@@ -345,10 +345,56 @@ fun TunerAnimatedSwitch(
     onCheckedChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    chromahub.rhythm.app.features.local.presentation.screens.settings.TunerAnimatedSwitch(
+    val thumbColor by animateColorAsState(
+        targetValue = if (checked) 
+            MaterialTheme.colorScheme.onPrimary
+        else 
+            MaterialTheme.colorScheme.outline,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "tuner_thumb_color"
+    )
+    
+    val trackColor by animateColorAsState(
+        targetValue = if (checked) 
+            MaterialTheme.colorScheme.primary
+        else 
+            MaterialTheme.colorScheme.surfaceContainerHighest,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "tuner_track_color"
+    )
+    
+    Switch(
         checked = checked,
         onCheckedChange = onCheckedChange,
-        modifier = modifier
+        modifier = modifier,
+        colors = SwitchDefaults.colors(
+            checkedThumbColor = thumbColor,
+            checkedTrackColor = trackColor,
+            checkedBorderColor = Color.Transparent,
+            uncheckedThumbColor = thumbColor,
+            uncheckedTrackColor = trackColor,
+            uncheckedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+        ),
+        thumbContent = {
+            AnimatedVisibility(
+                visible = checked,
+                enter = scaleIn(spring(dampingRatio = Spring.DampingRatioMediumBouncy)) + fadeIn(),
+                exit = scaleOut(spring(dampingRatio = Spring.DampingRatioMediumBouncy)) + fadeOut()
+            ) {
+                Icon(
+                    imageVector = Icons.Default.CheckCircle,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
     )
 }
 
@@ -416,7 +462,7 @@ fun EqualizerScreen(
         EqualizerPreset("Vocal", Icons.Rounded.RecordVoiceOver, listOf(-1.0f, 0.5f, 1.5f, 2.8f, 4.5f, 5.0f, 4.0f, 2.5f, 1.5f, 0.5f)),
         EqualizerPreset("Bass Boost", Icons.Rounded.Speaker, listOf(6.0f, 5.0f, 3.5f, 1.5f, 0f, 0f, 0f, 0f, 0f, 0f)),
         EqualizerPreset("Treble Boost", Icons.Rounded.Waves, listOf(0f, 0f, 0f, 0f, 0f, 0.5f, 1.5f, 3.0f, 5.0f, 6.0f)),
-        EqualizerPreset("V-Shape", Icons.Rounded.ShowChart, listOf(5.5f, 4.0f, 1.5f, -1.0f, -2.5f, -2.5f, -0.5f, 2.0f, 4.5f, 5.5f)),
+        EqualizerPreset("V-Shape", Icons.AutoMirrored.Rounded.ShowChart, listOf(5.5f, 4.0f, 1.5f, -1.0f, -2.5f, -2.5f, -0.5f, 2.0f, 4.5f, 5.5f)),
         EqualizerPreset("Harman", Icons.Rounded.Headphones, listOf(3.5f, 2.0f, 0.5f, -1.0f, 0f, 0.5f, 1.5f, 2.0f, 2.5f, 1.0f))
     )
 
@@ -632,7 +678,6 @@ fun EqualizerScreen(
         }
     ) { modifier ->
         val lazyListState = rememberSaveable(
-            key = "equalizer_settings_scroll_state",
             saver = LazyListStateSaver
         ) {
             androidx.compose.foundation.lazy.LazyListState()
