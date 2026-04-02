@@ -2,10 +2,10 @@ import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-
     alias(libs.plugins.ksp)
-    id("org.jetbrains.kotlin.plugin.parcelize")
+    id("kotlin-parcelize")
 //    alias(libs.plugins.kotlin.serialization)
 }
 
@@ -70,6 +70,8 @@ android {
         signingConfigs.getByName("debug")
     }
 
+    defaultConfig {
+    }
 
     buildTypes {
         release {
@@ -128,28 +130,10 @@ android {
         includeInBundle = false
     }
 
-    lint {
-        abortOnError = false
-        checkReleaseBuilds = false
-        baseline = file("lint-baseline.xml")
-    }
-
     packaging {
         resources {
-            merges += "META-INF/INDEX.LIST"
+            merges += "/META-INF/INDEX.LIST"
             merges += "**/io.netty.versions.properties"
-            excludes += "META-INF/services/reactor.blockhound.integration.BlockHoundIntegration"
-            excludes += "META-INF/DEPENDENCIES"
-            excludes += "META-INF/LICENSE"
-            excludes += "META-INF/LICENSE.txt"
-            excludes += "META-INF/license.txt"
-            excludes += "META-INF/NOTICE"
-            excludes += "META-INF/NOTICE.txt"
-            excludes += "META-INF/notice.txt"
-            excludes += "META-INF/ASL2.0"
-            excludes += "META-INF/AL2.0"
-            excludes += "META-INF/LGPL2.1"
-            excludes += "META-INF/*.md"
         }
     }
 
@@ -170,14 +154,13 @@ android {
         }
     }
 
-//    applicationVariants.all {
-//        outputs.all {
-//            (this as com.android.build.gradle.internal.api.BaseVariantOutputImpl).outputFileName =
-//                "Rhythm-${defaultConfig.versionName}-${name}.apk"
-//        }
-//    }
+    applicationVariants.all {
+        outputs.all {
+            (this as com.android.build.gradle.internal.api.BaseVariantOutputImpl).outputFileName =
+                "Rhythm-${defaultConfig.versionName}-${name}.apk"
+        }
+    }
 }
-
 
 dependencies {
     // Desugaring library
@@ -199,15 +182,15 @@ dependencies {
     
     // Material 3 dependencies
     implementation(platform(libs.androidx.compose.bom))
-    implementation("androidx.compose.material3:material3-android:1.5.0-alpha15")
-    implementation("androidx.compose.material3:material3-window-size-class-android:1.5.0-alpha15")
+    implementation("androidx.compose.material3:material3-android:1.5.0-alpha16")
+    implementation("androidx.compose.material3:material3-window-size-class-android:1.5.0-alpha16")
     implementation("com.google.android.material:material:1.13.0-alpha05")
 
     // Media3 dependencies
-    implementation("androidx.media3:media3-exoplayer:1.9.2")
-    implementation("androidx.media3:media3-exoplayer-dash:1.9.2")
-    implementation("androidx.media3:media3-ui:1.9.2")
-    implementation("androidx.media3:media3-session:1.9.2")
+    implementation("androidx.media3:media3-exoplayer:1.10.0")
+    implementation("androidx.media3:media3-exoplayer-dash:1.10.0")
+    implementation("androidx.media3:media3-ui:1.10.0")
+    implementation("androidx.media3:media3-session:1.10.0")
     implementation("org.jellyfin.media3:media3-ffmpeg-decoder:1.9.0+1")
     
     // Icons
@@ -219,7 +202,7 @@ dependencies {
     implementation("androidx.glance:glance-material3:1.1.1")
     
     // Physics-based animations
-    implementation("androidx.compose.animation:animation:1.10.5")
+    implementation("androidx.compose.animation:animation:1.10.6")
     //noinspection GradleDependency
     implementation("androidx.compose.animation:animation-graphics:1.8.3")
     implementation(libs.androidx.compose.animation.core)
@@ -261,7 +244,7 @@ dependencies {
     implementation(libs.androidx.foundation.layout)
     
     // WorkManager for background tasks
-    implementation("androidx.work:work-runtime-ktx:2.11.1")
+    implementation("androidx.work:work-runtime-ktx:2.11.2")
     
     // Room database
     implementation(libs.androidx.room.runtime)
