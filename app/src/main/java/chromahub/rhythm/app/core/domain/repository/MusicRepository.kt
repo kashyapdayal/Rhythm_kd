@@ -76,4 +76,9 @@ interface MusicRepository {
      * Get songs for a specific album by album ID.
      */
     suspend fun getSongsForAlbum(albumId: String): List<PlayableItem>
+    
+    /**
+     * Removes a song from the repository and device (if local).
+     */
+    suspend fun removeSong(songId: String): Boolean
 }

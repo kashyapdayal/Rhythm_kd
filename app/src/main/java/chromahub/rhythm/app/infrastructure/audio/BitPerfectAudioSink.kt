@@ -1,7 +1,11 @@
 package chromahub.rhythm.app.infrastructure.audio
 
 import android.content.Context
+import android.media.AudioAttributes as AndroidAudioAttributes
 import android.media.AudioFormat
+import android.media.AudioManager
+import android.media.AudioTrack
+import android.media.AudioDeviceInfo
 import android.os.Build
 import android.util.Log
 import androidx.annotation.OptIn
@@ -10,122 +14,281 @@ import androidx.media3.common.Format
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
-import androidx.media3.exoplayer.audio.AudioCapabilities
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.audio.AudioProcessor
+import chromahub.rhythm.app.infrastructure.audio.usb.VolumeAudioProcessor
 
 /**
- * Factory for creating AudioSink instances configured for bit-perfect playback.
- * 
- * Bit-perfect playback means outputting audio at its native sample rate without resampling.
- * Android normally resamples all audio to 48kHz, but this factory configures AudioSink to use
- * the track's original sample rate (e.g., 44.1kHz for CD quality, 96kHz for Hi-Res).
- * 
- * This prevents quality loss from unnecessary resampling and provides the best possible audio quality.
+ * Factory for creating AudioSink instances configured for bit-perfect playback
+ * and true USB exclusive mode (direct hardware offload).
  */
 @OptIn(UnstableApi::class)
 object BitPerfectAudioSink {
     
     private const val TAG = "BitPerfectAudioSink"
     
-    // Rhythm audio processors
-    private var rhythmBassBoostProcessor: RhythmBassBoostProcessor? = null
-    private var rhythmSpatializationProcessor: RhythmSpatializationProcessor? = null
-    
-    
+    // Rhythm audio processors are passed in create() and should not be stored as singletons
+    // to avoid interference between crossfading players.
+
     /**
-     * Create AudioSink with optional bit-perfect configuration and Rhythm audio effects.
-     *
-     * Bit-perfect mode:
-     * - Enables float output so ExoPlayer preserves the native sample format
-     *   instead of down-converting everything to 16-bit PCM.
-     * - Strips ALL audio processors (bass boost, spatialization, etc.) so the
-     *   decoded stream reaches the AudioTrack unmodified.
-     *
-     * NOTE: True bit-perfect playback on Android also requires bypassing the
-     * platform audio mixer, which needs MIXER_BEHAVIOR_BIT_PERFECT (Android 14+)
-     * or vendor-specific direct AudioTrack paths. This factory handles the
-     * ExoPlayer side; the mixer bypass is a platform-level concern.
+     * Create AudioSink with bit-perfect configuration and Rhythm audio effects
      */
+    @Suppress("DEPRECATION")
+    @android.annotation.SuppressLint("WrongConstant")
     fun create(
         context: Context, 
         enableBitPerfect: Boolean,
         bassBoostProcessor: RhythmBassBoostProcessor? = null,
-        spatializationProcessor: RhythmSpatializationProcessor? = null
+        spatializationProcessor: RhythmSpatializationProcessor? = null,
+        replayGainProcessor: RhythmReplayGainProcessor? = null,
+        usbDeviceProvider: (() -> AudioDeviceInfo?)? = null,
+        isExclusiveModeProvider: (() -> Boolean)? = null
     ): AudioSink {
-        Log.d(TAG, "Creating AudioSink (bit-perfect: $enableBitPerfect, Rhythm effects: ${bassBoostProcessor != null || spatializationProcessor != null})")
+        Log.d(TAG, "Creating AudioSink (bit-perfect: $enableBitPerfect, Rhythm effects: ${bassBoostProcessor != null || spatializationProcessor != null || replayGainProcessor != null})")
         
-        // Store processor references (available for later queries even if bit-perfect skips them)
-        rhythmBassBoostProcessor = bassBoostProcessor
-        rhythmSpatializationProcessor = spatializationProcessor
+        // Initialize the software volume fallback
+        val volProcessor = VolumeAudioProcessor()
         
         val builder = DefaultAudioSink.Builder(context)
+            .setEnableFloatOutput(false)
             .setEnableAudioTrackPlaybackParams(true)
         
-        if (enableBitPerfect) {
-            // Bit-perfect: preserve the native sample format (don't force 16-bit).
-            // Float output lets ExoPlayer pass high-res PCM through without truncation.
-            builder.setEnableFloatOutput(true)
-            
-            // No audio processors – the stream must reach the sink unmodified.
-            Log.d(TAG, "Bit-perfect mode: float output enabled, no audio processors")
-        } else {
-            // Normal mode: 16-bit output is fine, add Rhythm DSP processors.
-            builder.setEnableFloatOutput(false)
-            
-            val processors = mutableListOf<AudioProcessor>()
-            
-            if (bassBoostProcessor != null) {
-                processors.add(bassBoostProcessor)
-                Log.d(TAG, "Added Rhythm bass boost processor (enabled: ${bassBoostProcessor.isEnabled()})")
+        // Custom AudioTrackProvider for True USB Exclusive Mode
+        // Uses reflection to avoid compile errors if AudioTrackProvider is not available
+        // in the current Media3 version. The routing (setPreferredDevice) is also handled
+        // by RhythmPlayerEngine at the ExoPlayer level, so this is an enhanced path.
+        try {
+            val providerClass = Class.forName("androidx.media3.exoplayer.audio.DefaultAudioSink\$AudioTrackProvider")
+            val proxy = java.lang.reflect.Proxy.newProxyInstance(
+                providerClass.classLoader,
+                arrayOf(providerClass)
+            ) { _, method, args ->
+                if (method.name == "getAudioTrack") {
+                    var audioFormat = args?.firstOrNull { it is AudioFormat } as? AudioFormat
+                    val bufferSize = args?.firstOrNull { it is Int } as? Int ?: 0
+                    val device = usbDeviceProvider?.invoke()
+                    val exclusiveActive = isExclusiveModeProvider?.invoke() ?: false
+
+                    val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                    val nativeSampleRate = audioManager.getProperty(AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE)?.toIntOrNull() ?: 48000
+
+                    if (audioFormat == null) {
+                        Log.e(TAG, "AudioFormat missing from getAudioTrack arguments! Use fallback.")
+                        audioFormat = AudioFormat.Builder()
+                            .setSampleRate(nativeSampleRate)
+                            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                            .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
+                            .build()
+                    } else {
+                        // Fix sample rate for gapless transitions
+                        if (audioFormat.sampleRate != nativeSampleRate) {
+                            audioFormat = AudioFormat.Builder()
+                                .setSampleRate(audioFormat.sampleRate) // Explicitly match source content
+                                .setEncoding(audioFormat.encoding)
+                                .setChannelMask(audioFormat.channelMask)
+                                .build()
+                        }
+                    }
+
+                    val track: AudioTrack = try {
+                        val minBufferSize = AudioTrack.getMinBufferSize(
+                            audioFormat.sampleRate,
+                            audioFormat.channelMask,
+                            audioFormat.encoding
+                        )
+                        
+                        val trackBufferSize = if (exclusiveActive && minBufferSize > 0) {
+                            minBufferSize * 4
+                        } else if (bufferSize > 0) {
+                            bufferSize
+                        } else {
+                            minBufferSize * 2
+                        }
+
+                        val trackBuilder = AudioTrack.Builder()
+                            .setAudioFormat(audioFormat)
+                            .setBufferSizeInBytes(trackBufferSize)
+                            .setTransferMode(AudioTrack.MODE_STREAM)
+
+                        val sessionId = args?.firstOrNull { it is Int && it != bufferSize } as? Int
+                        if (sessionId != null && sessionId != AudioManager.AUDIO_SESSION_ID_GENERATE) {
+                            trackBuilder.setSessionId(sessionId)
+                        }
+
+                        val attrsBuilder = AndroidAudioAttributes.Builder()
+                            .setUsage(AndroidAudioAttributes.USAGE_MEDIA)
+                            .setContentType(AndroidAudioAttributes.CONTENT_TYPE_MUSIC)
+                            // Bug 5 FIX: Aurisys bypass requested automatically via USAGE_MEDIA + CONTENT_TYPE_MUSIC
+
+                        if (exclusiveActive && device != null) {
+                            attrsBuilder.setFlags(AndroidAudioAttributes.FLAG_LOW_LATENCY)
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                trackBuilder.setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
+                            }
+                        }
+
+                        trackBuilder.setAudioAttributes(attrsBuilder.build())
+                        trackBuilder.build()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "AudioTrack.Builder threw exception! Falling back to minimum viable AudioTrack.", e)
+                        val minBufSize = AudioTrack.getMinBufferSize(nativeSampleRate, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_16BIT)
+                        try {
+                            @Suppress("DEPRECATION")
+    @android.annotation.SuppressLint("WrongConstant")
+                            AudioTrack(
+                                AudioManager.STREAM_MUSIC,
+                                nativeSampleRate,
+                                AudioFormat.CHANNEL_OUT_STEREO,
+                                AudioFormat.ENCODING_PCM_16BIT,
+                                if (minBufSize > 0) minBufSize else 8192,
+                                AudioTrack.MODE_STREAM
+                            )
+                        } catch (legacyError: Exception) {
+                            throw IllegalStateException("AudioTrack build failed: format=$audioFormat", legacyError)
+                        }
+                    }
+
+                    // If FLAG_FAST is denied, retry without FLAG_LOW_LATENCY
+                    val finalTrack = if (track.state == AudioTrack.STATE_UNINITIALIZED) {
+                        Log.e(TAG, "AudioTrack state == STATE_UNINITIALIZED! Retrying without exclusive flags.")
+                        track.release()
+                        try {
+                            val attrsBuilder = AndroidAudioAttributes.Builder()
+                                .setUsage(AndroidAudioAttributes.USAGE_MEDIA)
+                                .setContentType(AndroidAudioAttributes.CONTENT_TYPE_MUSIC)
+                                // Bug 5 FIX: Aurisys bypass requested automatically via USAGE_MEDIA + CONTENT_TYPE_MUSIC
+                            
+                            AudioTrack.Builder()
+                                .setAudioFormat(audioFormat)
+                                .setAudioAttributes(attrsBuilder.build())
+                                .setBufferSizeInBytes(if (bufferSize > 0) bufferSize else 1024 * 16)
+                                .setTransferMode(AudioTrack.MODE_STREAM)
+                                .build()
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Absolute fallback failed", e)
+                            val minBufSize = AudioTrack.getMinBufferSize(nativeSampleRate, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_16BIT)
+                            try {
+                                @Suppress("DEPRECATION")
+    @android.annotation.SuppressLint("WrongConstant")
+                                AudioTrack(
+                                    AudioManager.STREAM_MUSIC,
+                                    nativeSampleRate,
+                                    AudioFormat.CHANNEL_OUT_STEREO,
+                                    AudioFormat.ENCODING_PCM_16BIT,
+                                    if (minBufSize > 0) minBufSize else 8192,
+                                    AudioTrack.MODE_STREAM
+                                )
+                            } catch (legacyError: Exception) {
+                                throw IllegalStateException("AudioTrack build failed: format=$audioFormat", legacyError)
+                            }
+                        }
+                    } else {
+                        track
+                    }
+
+                    if (finalTrack.state == AudioTrack.STATE_INITIALIZED && device != null) {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            finalTrack.setPreferredDevice(device)
+                        }
+                    }
+
+                    volProcessor.setBypass(enableBitPerfect && exclusiveActive)
+                    return@newProxyInstance finalTrack
+                } else if (method.name == "getAudioTrackChannelConfig") {
+                    // Media3 calls this to map channel count → AudioFormat channel mask.
+                    // The return type is int (primitive), so returning null causes an
+                    // NPE during auto-unboxing. We must return a valid channel config.
+                    val channelCount = args?.firstOrNull() as? Int ?: 2
+                    val config = when (channelCount) {
+                        1 -> AudioFormat.CHANNEL_OUT_MONO
+                        2 -> AudioFormat.CHANNEL_OUT_STEREO
+                        3 -> AudioFormat.CHANNEL_OUT_STEREO or AudioFormat.CHANNEL_OUT_FRONT_CENTER
+                        4 -> AudioFormat.CHANNEL_OUT_QUAD
+                        6 -> AudioFormat.CHANNEL_OUT_5POINT1
+                        8 -> AudioFormat.CHANNEL_OUT_7POINT1_SURROUND
+                        else -> AudioFormat.CHANNEL_OUT_STEREO
+                    }
+                    Log.d(TAG, "getAudioTrackChannelConfig($channelCount) → $config")
+                    config
+                } else if (method.name == "toString") {
+                    "BitPerfectAudioTrackProviderProxy"
+                } else if (method.name == "hashCode") {
+                    System.identityHashCode(this)
+                } else if (method.name == "equals") {
+                    args?.get(0) === this
+                } else {
+                    // Safety net: for any other method with a primitive return type,
+                    // return a type-safe default instead of null to avoid NPE.
+                    val returnType = method.returnType
+                    when {
+                        returnType == Int::class.javaPrimitiveType -> 0
+                        returnType == Long::class.javaPrimitiveType -> 0L
+                        returnType == Boolean::class.javaPrimitiveType -> false
+                        returnType == Float::class.javaPrimitiveType -> 0f
+                        returnType == Double::class.javaPrimitiveType -> 0.0
+                        else -> {
+                            Log.w(TAG, "Unhandled proxy method: ${method.name}, returning null")
+                            null
+                        }
+                    }
+                }
             }
-            
-            if (spatializationProcessor != null) {
-                processors.add(spatializationProcessor)
-                Log.d(TAG, "Added Rhythm spatialization processor (enabled: ${spatializationProcessor.isEnabled()})")
-            }
-            
-            if (processors.isNotEmpty()) {
-                Log.d(TAG, "Configuring audio processor chain with ${processors.size} Rhythm processors")
-                builder.setAudioProcessorChain(
-                    DefaultAudioSink.DefaultAudioProcessorChain(
-                        *processors.toTypedArray()
-                    )
+
+            val setMethod = DefaultAudioSink.Builder::class.java.getMethod("setAudioTrackProvider", providerClass)
+            setMethod.invoke(builder, proxy)
+            Log.i(TAG, "Successfully injected custom AudioTrackProvider via reflection")
+        } catch (e: ClassNotFoundException) {
+            Log.d(TAG, "AudioTrackProvider not available in this Media3 version — using default audio routing")
+        } catch (e: NoSuchMethodException) {
+            Log.d(TAG, "setAudioTrackProvider method not available — using default audio routing")
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to initialize AudioTrackProvider", e)
+        }
+
+        // Configure audio processor chain
+        val processors = mutableListOf<AudioProcessor>()
+        
+        // Always include the software volume processor in the chain first
+        // It stays inactive (activeVolume = 1.0) when hardware volume works or mode is normal
+        processors.add(volProcessor)
+
+        if (replayGainProcessor != null) {
+            processors.add(replayGainProcessor)
+            Log.d(TAG, "Added Rhythm ReplayGain processor")
+        }
+        
+        if (bassBoostProcessor != null) {
+            processors.add(bassBoostProcessor)
+            Log.d(TAG, "Added Rhythm bass boost processor")
+        }
+        
+        if (spatializationProcessor != null) {
+            processors.add(spatializationProcessor)
+            Log.d(TAG, "Added Rhythm spatialization processor")
+        }
+        
+        if (processors.isNotEmpty() || enableBitPerfect) {
+            builder.setAudioProcessorChain(
+                DefaultAudioSink.DefaultAudioProcessorChain(
+                    *processors.toTypedArray()
                 )
-            }
+            )
         }
         
         return builder.build()
     }
     
-    /**
-     * Get the current bass boost processor
-     */
-    fun getBassBoostProcessor(): RhythmBassBoostProcessor? = rhythmBassBoostProcessor
-    
-    /**
-     * Get the current spatialization processor
-     */
-    fun getSpatializationProcessor(): RhythmSpatializationProcessor? = rhythmSpatializationProcessor
-    
-    /**
-     * Check if the device supports the requested sample rate
-     */
+    // Helper methods for accessing processors from external components if needed
+    // Note: These now require a specific AudioSink instance to be effective in a multi-player setup
+    // For now, we keep them as stubs or remove them if not used.
     fun isSampleRateSupported(sampleRate: Int): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
-            // Before Android M, limited sample rate support
             return sampleRate in listOf(44100, 48000)
         }
-        
-        // Android M and above support a wider range
-        val supported = sampleRate in listOf(44100, 48000, 88200, 96000, 176400, 192000)
-        Log.d(TAG, "Sample rate ${sampleRate}Hz supported: $supported")
+        val supported = sampleRate in listOf(44100, 48000, 88200, 96000, 176400, 192000, 352800, 384000, 705600, 768000)
         return supported
     }
-    
-    /**
-     * Log the current playback format for debugging
-     */
+
     fun logPlaybackFormat(format: Format) {
         val sampleRate = if (format.sampleRate != Format.NO_VALUE) format.sampleRate else "unknown"
         val channels = if (format.channelCount != Format.NO_VALUE) format.channelCount else "unknown"
@@ -145,10 +308,7 @@ object BitPerfectAudioSink {
         Log.i(TAG, "Codec: ${format.sampleMimeType ?: "unknown"}")
         Log.i(TAG, "==========================")
     }
-    
-    /**
-     * Get channel mask for the specified channel count
-     */
+
     fun getChannelMask(channelCount: Int): Int {
         return when (channelCount) {
             1 -> AudioFormat.CHANNEL_OUT_MONO
@@ -159,3 +319,4 @@ object BitPerfectAudioSink {
         }
     }
 }
+

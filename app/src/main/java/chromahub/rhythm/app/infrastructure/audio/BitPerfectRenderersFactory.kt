@@ -26,7 +26,11 @@ class BitPerfectRenderersFactory(
     context: Context,
     private val enableBitPerfect: Boolean = false,
     private val bassBoostProcessor: RhythmBassBoostProcessor? = null,
-    private val spatializationProcessor: RhythmSpatializationProcessor? = null
+    private val spatializationProcessor: RhythmSpatializationProcessor? = null,
+    private val replayGainProcessor: RhythmReplayGainProcessor? = null,
+    private val usbDeviceProvider: (() -> android.media.AudioDeviceInfo?)? = null,
+    private val isExclusiveModeProvider: (() -> Boolean)? = null,
+    private val customAudioSinkOverride: AudioSink? = null
 ) : DefaultRenderersFactory(context) {
     
     companion object {
@@ -65,47 +69,46 @@ class BitPerfectRenderersFactory(
         Log.d(TAG, "Building audio renderers for bit-perfect playback with Rhythm effects")
         
         // Create our custom audio sink with Rhythm processors
-        val customAudioSink = BitPerfectAudioSink.create(
+        val customAudioSink = customAudioSinkOverride ?: BitPerfectAudioSink.create(
             context, 
             enableBitPerfect,
             bassBoostProcessor,
-            spatializationProcessor
+            spatializationProcessor,
+            replayGainProcessor,
+            usbDeviceProvider,
+            isExclusiveModeProvider
         )
         
-        // Add extension renderers (FFmpeg) FIRST so they get priority for formats
-        // like EAC3-JOC (Dolby Atmos) that platform MediaCodec may not decode properly
-        if (extensionRendererMode != EXTENSION_RENDERER_MODE_OFF) {
-            val extensionRendererIndex = out.size
-            super.buildAudioRenderers(
-                context,
-                extensionRendererMode,
-                mediaCodecSelector,
-                enableDecoderFallback,
-                customAudioSink,
-                eventHandler,
-                eventListener,
-                out
-            )
-            
-            // Log if extension renderers were added
-            val extensionCount = out.size - extensionRendererIndex
-            if (extensionCount > 0) {
-                Log.d(TAG, "Extension audio renderers added: $extensionCount (includes FFmpeg for EAC3-JOC/Dolby Atmos support)")
-                
-                // Remove the standard MediaCodecAudioRenderer that super added,
-                // since we'll add our own custom one with BitPerfectAudioSink
-                val iterator = out.listIterator(extensionRendererIndex)
-                while (iterator.hasNext()) {
-                    val renderer = iterator.next()
-                    if (renderer is MediaCodecAudioRenderer) {
-                        iterator.remove()
-                        Log.d(TAG, "Removed standard MediaCodecAudioRenderer, will add custom one")
-                    }
-                }
+        // Get base renderers from super
+        val startingIndex = out.size
+        super.buildAudioRenderers(
+            context,
+            extensionRendererMode,
+            mediaCodecSelector,
+            enableDecoderFallback,
+            customAudioSink,
+            eventHandler,
+            eventListener,
+            out
+        )
+        
+        // Remove the standard MediaCodecAudioRenderer that super added,
+        // since we'll add our own custom one with BitPerfectAudioSink below
+        val iterator = out.listIterator(startingIndex)
+        var removedStandard = false
+        while (iterator.hasNext()) {
+            val renderer = iterator.next()
+            if (renderer is MediaCodecAudioRenderer) {
+                iterator.remove()
+                removedStandard = true
             }
         }
         
-        // Add our custom MediaCodec audio renderer AFTER extension renderers
+        if (removedStandard) {
+            Log.d(TAG, "Removed standard MediaCodecAudioRenderer, will add custom one")
+        }
+        
+        // Add our custom MediaCodec audio renderer AFTER extension renderers (which were kept)
         // This ensures FFmpeg handles formats like EAC3-JOC before falling back to platform
         val audioRenderer = MediaCodecAudioRenderer(
             context,
