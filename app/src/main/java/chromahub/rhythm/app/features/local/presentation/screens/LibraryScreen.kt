@@ -551,6 +551,9 @@ fun LibraryScreen(
                         }
                     }
                 )
+            },
+            onDeleteSong = {
+                musicViewModel.requestDeleteSong(displaySong!!)
             }
         )
     }
