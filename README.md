@@ -17,7 +17,7 @@
 </picture>
 
 # Project Rhythm
-**Your Music, Your Rhythm. Experience professional-grade audio on Android.**
+**Your Music, Your Rhythm.**
 
 [![Platform](https://img.shields.io/badge/Android-34A853?style=flat-square&logo=android&logoColor=white)](https://android.com)
 [![API Level](https://img.shields.io/badge/API-26%2B-4285f4?style=flat-square&logo=android&logoColor=white)](https://android-arsenal.com/api?level=26)
