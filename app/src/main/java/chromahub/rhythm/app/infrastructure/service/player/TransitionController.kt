@@ -41,6 +41,24 @@ class TransitionController(
     private var transitionListener: Player.Listener? = null
     private var transitionSchedulerJob: Job? = null
     private var currentObservedPlayer: Player? = null
+    private var scheduleGeneration: Long = 0L
+
+    private fun nextScheduleGeneration(): Long {
+        scheduleGeneration += 1L
+        return scheduleGeneration
+    }
+
+    private fun invalidateScheduledTransitions() {
+        scheduleGeneration += 1L
+    }
+
+    private fun isLatestSchedule(
+        generation: Long,
+        expectedMediaId: String,
+        player: Player = engine.masterPlayer,
+    ): Boolean {
+        return generation == scheduleGeneration && player.currentMediaItem?.mediaId == expectedMediaId
+    }
 
     /** Re-attaches the listener when RhythmPlayerEngine swaps players */
     private val swapListener: (Player) -> Unit = { newPlayer ->
@@ -86,6 +104,7 @@ class TransitionController(
             override fun onTimelineChanged(timeline: Timeline, reason: Int) {
                 if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) {
                     Log.d(TAG, "Timeline changed (reason=$reason). Cancelling pending transition.")
+                    invalidateScheduledTransitions()
                     transitionSchedulerJob?.cancel()
                     engine.cancelNext()
                     engine.masterPlayer.currentMediaItem?.let { scheduleTransitionFor(it) }
@@ -94,6 +113,7 @@ class TransitionController(
 
             override fun onRepeatModeChanged(repeatMode: Int) {
                 Log.d(TAG, "Repeat mode changed to $repeatMode. Rescheduling transition.")
+                invalidateScheduledTransitions()
                 transitionSchedulerJob?.cancel()
                 engine.cancelNext()
                 engine.masterPlayer.currentMediaItem?.let { scheduleTransitionFor(it) }
@@ -117,16 +137,27 @@ class TransitionController(
      * 6. Polls playback position until the transition point, then fires
      */
     private fun scheduleTransitionFor(currentMediaItem: MediaItem) {
+        val expectedMediaId = currentMediaItem.mediaId
+        val generation = nextScheduleGeneration()
         transitionSchedulerJob?.cancel()
 
         transitionSchedulerJob = scope.launch {
             // Wait for any active transition to finish
             while (engine.isTransitionRunning()) {
+                if (!isActive || !isLatestSchedule(generation, expectedMediaId)) {
+                    Log.d(TAG, "Aborting stale schedule while waiting for active transition to finish.")
+                    return@launch
+                }
                 Log.d(TAG, "Waiting for active transition to finish...")
                 delay(500)
             }
 
             val player = engine.masterPlayer
+            if (!isLatestSchedule(generation, expectedMediaId, player)) {
+                Log.d(TAG, "Aborting stale schedule before transition preparation.")
+                return@launch
+            }
+
             val repeatMode = player.repeatMode
 
             if (repeatMode == Player.REPEAT_MODE_ONE && !appSettings.crossfadeRepeatOne.value) {
@@ -171,6 +202,11 @@ class TransitionController(
                 return@launch
             }
 
+            if (!isLatestSchedule(generation, expectedMediaId, player)) {
+                Log.d(TAG, "Aborting stale schedule before preparing next track.")
+                return@launch
+            }
+
             Log.d(TAG, "Preparing next track: ${nextMediaItem.mediaId}")
             engine.prepareNext(nextMediaItem)
 
@@ -198,11 +234,15 @@ class TransitionController(
             // Wait for track duration to become available
             var duration = player.duration
             while ((duration == C.TIME_UNSET || duration <= 0) && isActive) {
+                if (!isLatestSchedule(generation, expectedMediaId, player)) {
+                    Log.d(TAG, "Aborting stale schedule while waiting for duration.")
+                    return@launch
+                }
                 delay(500)
                 duration = player.duration
             }
 
-            if (!isActive) return@launch
+            if (!isActive || !isLatestSchedule(generation, expectedMediaId, player)) return@launch
 
             val minFade = 500L
             val guardWindow = 150L
@@ -231,8 +271,12 @@ class TransitionController(
                 val remaining = duration - player.currentPosition
                 val adjustedDuration = (remaining - guardWindow).coerceAtLeast(minFade)
                 if (remaining > guardWindow + minFade / 2) {
-                    Log.w(TAG, "Already past transition point! Triggering immediately.")
-                    engine.performTransition(settings.copy(durationMs = adjustedDuration.toInt()))
+                    if (isLatestSchedule(generation, expectedMediaId, player)) {
+                        Log.w(TAG, "Already past transition point! Triggering immediately.")
+                        engine.performTransition(settings.copy(durationMs = adjustedDuration.toInt()))
+                    } else {
+                        Log.d(TAG, "Skipping immediate trigger for stale schedule.")
+                    }
                 } else {
                     Log.w(TAG, "Too close to end (${remaining}ms left). Skipping to avoid glitch.")
                     engine.setPauseAtEndOfMediaItems(false)
@@ -242,6 +286,10 @@ class TransitionController(
 
             // Adaptive polling — sleep longer when far from transition point
             while (player.currentPosition < transitionPoint && isActive) {
+                if (!isLatestSchedule(generation, expectedMediaId, player)) {
+                    Log.d(TAG, "Aborting stale schedule while polling transition point.")
+                    return@launch
+                }
                 val remaining = transitionPoint - player.currentPosition
                 val sleep = when {
                     remaining > 5000 -> 1000L
@@ -251,7 +299,7 @@ class TransitionController(
                 delay(sleep)
             }
 
-            if (isActive) {
+            if (isActive && isLatestSchedule(generation, expectedMediaId, player)) {
                 Log.d(TAG, "FIRING TRANSITION NOW!")
                 engine.performTransition(settings.copy(durationMs = effectiveDuration.toInt()))
             } else {
@@ -266,6 +314,7 @@ class TransitionController(
      */
     fun release() {
         Log.d(TAG, "Releasing controller.")
+        invalidateScheduledTransitions()
         transitionSchedulerJob?.cancel()
         engine.removePlayerSwapListener(swapListener)
         transitionListener?.let { currentObservedPlayer?.removeListener(it) }

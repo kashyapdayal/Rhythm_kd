@@ -20,6 +20,7 @@ import chromahub.rhythm.app.infrastructure.audio.RhythmSpatializationProcessor
 import chromahub.rhythm.app.shared.data.model.TransitionSettings
 import chromahub.rhythm.app.util.envelope
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -50,6 +51,7 @@ class RhythmPlayerEngine(
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var transitionJob: Job? = null
+    @Volatile
     private var transitionRunning = false
 
     private lateinit var playerA: ExoPlayer
@@ -134,7 +136,7 @@ class RhythmPlayerEngine(
     val masterPlayer: Player
         get() = playerA
 
-    fun isTransitionRunning(): Boolean = transitionRunning
+    fun isTransitionRunning(): Boolean = transitionRunning || transitionJob?.isActive == true
 
     fun getAudioSessionId(): Int = if (::playerA.isInitialized) playerA.audioSessionId else 0
 
@@ -291,12 +293,19 @@ class RhythmPlayerEngine(
     /**
      * Performs the crossfade transition using the given settings.
      */
+    @Synchronized
     fun performTransition(settings: TransitionSettings) {
-        transitionJob?.cancel()
+        if (isTransitionRunning()) {
+            Log.w(TAG, "Ignoring duplicate transition request; a transition is already active.")
+            return
+        }
+
         transitionRunning = true
         transitionJob = scope.launch {
             try {
                 performOverlapTransition(settings)
+            } catch (_: CancellationException) {
+                Log.d(TAG, "Transition cancelled before completion.")
             } catch (e: Exception) {
                 Log.e(TAG, "Error performing transition", e)
                 playerA.volume = 1f
@@ -438,7 +447,9 @@ class RhythmPlayerEngine(
         playerA = incomingPlayer
         playerB = outgoingPlayer
 
-        playerB.pauseAtEndOfMediaItems = false
+        // Keep the outgoing player from auto-advancing while it is fading out.
+        // Otherwise it can jump to the next item and briefly replay an intro.
+        playerB.pauseAtEndOfMediaItems = true
         playerA.pauseAtEndOfMediaItems = false
 
         playerA.addListener(masterPlayerListener)

@@ -621,6 +621,7 @@ private fun RhythmGuardWarningHost(
         if (!rulesEnabled) {
             volumeDialogState = null
             breakDialogState = null
+            cancelRhythmGuardAlertNotification(context)
             if (auraMode == AppSettings.RHYTHM_GUARD_MODE_OFF) {
                 appSettings.clearRhythmGuardListeningTimeout()
             }
@@ -630,7 +631,13 @@ private fun RhythmGuardWarningHost(
         if (isListeningTimeoutActive) {
             volumeDialogState = null
             breakDialogState = null
+            cancelRhythmGuardAlertNotification(context)
             return@LaunchedEffect
+        }
+
+        if (!needsVolumeWarning && lastWarningType == RhythmGuardWarningType.VOLUME) {
+            volumeDialogState = null
+            cancelRhythmGuardAlertNotification(context)
         }
 
         val warningType = when {
@@ -642,6 +649,7 @@ private fun RhythmGuardWarningHost(
         if (warningType == null) {
             volumeDialogState = null
             breakDialogState = null
+            cancelRhythmGuardAlertNotification(context)
             return@LaunchedEffect
         }
 
