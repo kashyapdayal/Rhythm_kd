@@ -1825,22 +1825,27 @@ class MusicRepository(context: Context) {
      * Use this overload in hot loops to avoid reading AppSettings per call.
      */
     fun splitArtistNames(artistName: String, preloadedCharDelimiters: List<String>): List<String> {
-        // Word-level separators for collaborations
-        val wordSeparators = listOf(
-            " & ",
-            " and ",
-            ", ",
-            " feat. ",
-            " feat ",
-            " ft. ",
-            " ft ",
-            " featuring ",
-            " x ",
-            " X ",
-            " vs ",
-            " vs. ",
-            " with "
-        )
+        // No configured delimiters means splitting is disabled.
+        if (preloadedCharDelimiters.isEmpty()) {
+            return listOf(artistName.trim()).filter { it.isNotBlank() }
+        }
+
+        val selectedDelimiterChars = preloadedCharDelimiters.mapNotNull { it.firstOrNull() }.toSet()
+        val wordSeparators = mutableListOf<String>().apply {
+            if (selectedDelimiterChars.contains('&')) add(" & ")
+            add(" and ")
+            if (selectedDelimiterChars.contains(',')) add(", ")
+            add(" feat. ")
+            add(" feat ")
+            add(" ft. ")
+            add(" ft ")
+            add(" featuring ")
+            add(" x ")
+            add(" X ")
+            add(" vs ")
+            add(" vs. ")
+            add(" with ")
+        }
 
         var names = listOf(artistName)
 

@@ -102,19 +102,36 @@ fun ArtistDetailScreen(
             val charDelimiters = if (artistSeparatorEnabled) {
                 appSettings.artistSeparatorDelimiters.value.toList().map { it.toString() }
             } else emptyList()
-            
-            val wordSeparators = listOf(
-                " & ", " and ", ", ", " feat. ", " feat ", " ft. ", " ft ",
-                " featuring ", " x ", " X ", " vs ", " vs. ", " with "
-            )
-            var names = listOf(artistNameStr)
-            for (delimiter in charDelimiters) {
-                names = names.flatMap { it.split(delimiter) }
+
+            if (charDelimiters.isEmpty()) {
+                listOf(artistNameStr.trim()).filter { it.isNotBlank() }
+            } else {
+                val selectedDelimiterChars = charDelimiters.mapNotNull { it.firstOrNull() }.toSet()
+                val wordSeparators = mutableListOf<String>().apply {
+                    if (selectedDelimiterChars.contains('&')) add(" & ")
+                    add(" and ")
+                    if (selectedDelimiterChars.contains(',')) add(", ")
+                    add(" feat. ")
+                    add(" feat ")
+                    add(" ft. ")
+                    add(" ft ")
+                    add(" featuring ")
+                    add(" x ")
+                    add(" X ")
+                    add(" vs ")
+                    add(" vs. ")
+                    add(" with ")
+                }
+
+                var names = listOf(artistNameStr)
+                for (delimiter in charDelimiters) {
+                    names = names.flatMap { it.split(delimiter) }
+                }
+                for (separator in wordSeparators) {
+                    names = names.flatMap { it.split(separator, ignoreCase = true) }
+                }
+                names.map { it.trim() }.filter { it.isNotBlank() }
             }
-            for (separator in wordSeparators) {
-                names = names.flatMap { it.split(separator, ignoreCase = true) }
-            }
-            names.map { it.trim() }.filter { it.isNotBlank() }
         }
     }
     

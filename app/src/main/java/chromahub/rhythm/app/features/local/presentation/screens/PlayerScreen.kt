@@ -369,18 +369,35 @@ fun PlayerScreen(
                 emptyList()
             }
 
-            val separators = listOf(
-                " & ", " and ", ", ", " feat. ", " feat ", " ft. ", " ft ",
-                " featuring ", " x ", " X ", " vs ", " vs. ", " with "
-            )
-            var names = listOf(artistName)
-            for (delimiter in charDelimiters) {
-                names = names.flatMap { it.split(delimiter) }
+            if (charDelimiters.isEmpty()) {
+                listOf(artistName.trim()).filter { it.isNotBlank() }
+            } else {
+                val selectedDelimiterChars = charDelimiters.mapNotNull { it.firstOrNull() }.toSet()
+                val separators = mutableListOf<String>().apply {
+                    if (selectedDelimiterChars.contains('&')) add(" & ")
+                    add(" and ")
+                    if (selectedDelimiterChars.contains(',')) add(", ")
+                    add(" feat. ")
+                    add(" feat ")
+                    add(" ft. ")
+                    add(" ft ")
+                    add(" featuring ")
+                    add(" x ")
+                    add(" X ")
+                    add(" vs ")
+                    add(" vs. ")
+                    add(" with ")
+                }
+
+                var names = listOf(artistName)
+                for (delimiter in charDelimiters) {
+                    names = names.flatMap { it.split(delimiter) }
+                }
+                for (separator in separators) {
+                    names = names.flatMap { it.split(separator, ignoreCase = true) }
+                }
+                names.map { it.trim() }.filter { it.isNotBlank() }
             }
-            for (separator in separators) {
-                names = names.flatMap { it.split(separator, ignoreCase = true) }
-            }
-            names.map { it.trim() }.filter { it.isNotBlank() }
         }
     }
 

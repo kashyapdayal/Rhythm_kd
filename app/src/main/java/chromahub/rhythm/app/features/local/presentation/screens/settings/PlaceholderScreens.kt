@@ -3461,8 +3461,10 @@ fun ArtistSeparatorsSettingsScreen(onBackClick: () -> Unit) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
                     .padding(horizontal = 24.dp)
                     .padding(bottom = 24.dp)
+                    .navigationBarsPadding()
                     .graphicsLayer(alpha = contentAlpha)
             ) {
                 // Header
@@ -3510,118 +3512,127 @@ fun ArtistSeparatorsSettingsScreen(onBackClick: () -> Unit) {
                     '&' to context.getString(R.string.delimiter_ampersand)
                 )
 
-                // Delimiter options in a grid
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    contentPadding = PaddingValues(bottom = 8.dp)
+                // Delimiter options in a responsive two-column layout
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items(commonDelimiters) { (char, name) ->
-                        val isSelected = tempDelimiters.contains(char)
-                        
-                        // Master animation states
-                        var isPressed by remember { mutableStateOf(false) }
-                        val scale by animateFloatAsState(
-                            targetValue = if (isPressed) 0.96f else 1f,
-                            animationSpec = spring(
-                                dampingRatio = Spring.DampingRatioMediumBouncy,
-                                stiffness = Spring.StiffnessLow
-                            ),
-                            label = "delimiter_scale"
-                        )
-                        
-                        val containerColor by animateColorAsState(
-                            targetValue = if (isSelected)
-                                MaterialTheme.colorScheme.primaryContainer
-                            else
-                                MaterialTheme.colorScheme.surfaceContainerHigh,
-                            animationSpec = spring(
-                                dampingRatio = Spring.DampingRatioNoBouncy,
-                                stiffness = Spring.StiffnessMedium
-                            ),
-                            label = "delimiter_container_color"
-                        )
-                        
-                        Card(
-                            onClick = {
-                                HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
-                                isPressed = true
-                                tempDelimiters = if (tempDelimiters.contains(char)) {
-                                    tempDelimiters.replace(char.toString(), "")
-                                } else {
-                                    tempDelimiters + char
-                                }
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(130.dp)
-                                .graphicsLayer {
-                                    scaleX = scale
-                                    scaleY = scale
-                                },
-                            shape = RoundedCornerShape(16.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = containerColor
-                            ),
-                            border = if (isSelected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
-                            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                    commonDelimiters.chunked(2).forEach { delimiterRow ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .padding(12.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center
-                            ) {
-                                // Delimiter Preview
-                                Box(
-                                    modifier = Modifier
-                                        .size(48.dp)
-                                        .background(
-                                            color = if (isSelected)
-                                                MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-                                            else
-                                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
-                                            shape = RoundedCornerShape(12.dp)
-                                        ),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = char.toString(),
-                                        style = MaterialTheme.typography.titleLarge,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (isSelected)
-                                            MaterialTheme.colorScheme.primary
-                                        else
-                                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                                    )
-                                }
-                                
-                                Spacer(modifier = Modifier.height(8.dp))
-                                
-                                Text(
-                                    text = name,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                                    color = if (isSelected)
-                                        MaterialTheme.colorScheme.onPrimaryContainer
-                                    else
-                                        MaterialTheme.colorScheme.onSurface,
-                                    textAlign = TextAlign.Center,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
+                            delimiterRow.forEach { (char, name) ->
+                                val isSelected = tempDelimiters.contains(char)
+
+                                // Master animation states
+                                var isPressed by remember { mutableStateOf(false) }
+                                val scale by animateFloatAsState(
+                                    targetValue = if (isPressed) 0.96f else 1f,
+                                    animationSpec = spring(
+                                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                                        stiffness = Spring.StiffnessLow
+                                    ),
+                                    label = "delimiter_scale"
                                 )
-                                
-                                // Optional description could go here if needed
+
+                                val containerColor by animateColorAsState(
+                                    targetValue = if (isSelected)
+                                        MaterialTheme.colorScheme.primaryContainer
+                                    else
+                                        MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    animationSpec = spring(
+                                        dampingRatio = Spring.DampingRatioNoBouncy,
+                                        stiffness = Spring.StiffnessMedium
+                                    ),
+                                    label = "delimiter_container_color"
+                                )
+
+                                Card(
+                                    onClick = {
+                                        HapticUtils.performHapticFeedback(context, haptic, HapticFeedbackType.TextHandleMove)
+                                        isPressed = true
+                                        tempDelimiters = if (tempDelimiters.contains(char)) {
+                                            tempDelimiters.replace(char.toString(), "")
+                                        } else {
+                                            tempDelimiters + char
+                                        }
+                                    },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(130.dp)
+                                        .graphicsLayer {
+                                            scaleX = scale
+                                            scaleY = scale
+                                        },
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = containerColor
+                                    ),
+                                    border = if (isSelected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
+                                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                                ) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .padding(12.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.Center
+                                    ) {
+                                        // Delimiter Preview
+                                        Box(
+                                            modifier = Modifier
+                                                .size(48.dp)
+                                                .background(
+                                                    color = if (isSelected)
+                                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                                                    else
+                                                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
+                                                    shape = RoundedCornerShape(12.dp)
+                                                ),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = char.toString(),
+                                                style = MaterialTheme.typography.titleLarge,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isSelected)
+                                                    MaterialTheme.colorScheme.primary
+                                                else
+                                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                            )
+                                        }
+
+                                        Spacer(modifier = Modifier.height(8.dp))
+
+                                        Text(
+                                            text = name,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                            color = if (isSelected)
+                                                MaterialTheme.colorScheme.onPrimaryContainer
+                                            else
+                                                MaterialTheme.colorScheme.onSurface,
+                                            textAlign = TextAlign.Center,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+
+                                        // Optional description could go here if needed
+                                    }
+                                }
+
+                                // Reset press state
+                                LaunchedEffect(isPressed) {
+                                    if (isPressed) {
+                                        delay(150)
+                                        isPressed = false
+                                    }
+                                }
                             }
-                        }
-                        
-                        // Reset press state
-                        LaunchedEffect(isPressed) {
-                            if (isPressed) {
-                                delay(150)
-                                isPressed = false
+
+                            if (delimiterRow.size == 1) {
+                                Spacer(modifier = Modifier.weight(1f))
                             }
                         }
                     }
