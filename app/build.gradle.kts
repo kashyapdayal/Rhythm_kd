@@ -11,14 +11,14 @@ plugins {
 
 android {
     namespace = "chromahub.rhythm.app"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "chromahub.rhythm.app"
         minSdk = 26
-        targetSdk = 36
-        versionCode = 46360967
-        versionName = "4.6.360.967"
+        targetSdk = 37
+        versionCode = 46361969
+        versionName = "4.6.361.969"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -175,8 +175,8 @@ dependencies {
     
     // Material 3 dependencies
     implementation(platform(libs.androidx.compose.bom))
-    implementation("androidx.compose.material3:material3-android:1.5.0-alpha16")
-    implementation("androidx.compose.material3:material3-window-size-class-android:1.5.0-alpha16")
+    implementation("androidx.compose.material3:material3-android:1.5.0-alpha17")
+    implementation("androidx.compose.material3:material3-window-size-class-android:1.5.0-alpha17")
     implementation("com.google.android.material:material:1.13.0-alpha05")
 
     // Media3 dependencies
