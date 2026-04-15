@@ -23,6 +23,7 @@ import chromahub.rhythm.app.shared.data.model.Song
 import chromahub.rhythm.app.features.local.presentation.components.bottomsheets.ExtendedSongInfo
 import java.io.File
 import java.io.FileOutputStream
+import java.security.MessageDigest
 
 /**
  * Exception wrapper for RecoverableSecurityException that includes the pending intent
@@ -68,6 +69,13 @@ data class PendingLyricsWriteRequest(
  */
 object MediaUtils {
     private const val TAG = "MediaUtils"
+    private const val EMBEDDED_ARTWORK_CACHE_DIR = "embedded_artwork"
+    private const val EMBEDDED_ART_CACHE_MAX_BYTES = 256L * 1024 * 1024
+    private const val EMBEDDED_ART_CACHE_MAX_FILES = 1200
+    private const val EMBEDDED_ART_CACHE_CLEANUP_INTERVAL_MS = 10 * 60 * 1000L
+
+    @Volatile
+    private var lastEmbeddedArtworkCleanupMs: Long = 0L
 
     private fun applyArtworkToTag(
         context: Context,
@@ -326,24 +334,15 @@ object MediaUtils {
                 genre = null
             }
 
-            // Extract album art — write raw bytes directly to preserve quality
+            // Extract and cache embedded album art with bounded disk usage.
             val embeddedArt = retriever.embeddedPicture
-            if (embeddedArt != null) {
-                try {
-                    // Detect format from magic bytes
-                    val isJpeg = embeddedArt.size >= 2 && embeddedArt[0] == 0xFF.toByte() && embeddedArt[1] == 0xD8.toByte()
-                    val ext = if (isJpeg) "jpg" else "png"
-                    val artworkFile = File(context.cacheDir, "artwork_${uri.hashCode()}.$ext")
-                    if (!artworkFile.exists()) {
-                        FileOutputStream(artworkFile).use { out ->
-                            out.write(embeddedArt)
-                            out.flush()
-                        }
-                    }
-                    artworkUri = artworkFile.toUri()
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to save embedded artwork", e)
-                }
+            if (embeddedArt != null && embeddedArt.isNotEmpty()) {
+                artworkUri = cacheEmbeddedArtworkBytes(
+                    songUri = uri,
+                    cacheDir = context.cacheDir,
+                    embeddedArt = embeddedArt,
+                    lossless = false
+                )
             }
 
             // If we couldn't extract artwork, try to generate a placeholder
@@ -2094,64 +2093,19 @@ object MediaUtils {
      * @param lossless If true, saves raw bytes as PNG without re-compression; if false, compresses to JPEG quality 90
      * @return Uri pointing to the cached artwork file, or null if no embedded art found
      */
-    fun extractEmbeddedAlbumArt(context: Context, songUri: Uri, cacheDir: File, lossless: Boolean = false): Uri? {
+    fun extractEmbeddedAlbumArt(
+        context: Context,
+        songUri: Uri,
+        cacheDir: File,
+        lossless: Boolean = false
+    ): Uri? {
         val retriever = MediaMetadataRetriever()
         try {
             retriever.setDataSource(context, songUri)
 
-            // Extract embedded picture
             val embeddedArt = retriever.embeddedPicture
             if (embeddedArt != null && embeddedArt.isNotEmpty()) {
-                if (lossless) {
-                    // Detect image format from magic bytes
-                    val isJpeg = embeddedArt.size >= 2 &&
-                            embeddedArt[0] == 0xFF.toByte() && embeddedArt[1] == 0xD8.toByte()
-                    val isPng = embeddedArt.size >= 4 &&
-                            embeddedArt[0] == 0x89.toByte() && embeddedArt[1] == 0x50.toByte() &&
-                            embeddedArt[2] == 0x4E.toByte() && embeddedArt[3] == 0x47.toByte()
-
-                    if (isJpeg || isPng) {
-                        // Known format — write raw bytes losslessly
-                        val ext = if (isJpeg) "jpg" else "png"
-                        val artworkFile = File(cacheDir, "embedded_art_lossless_${songUri.hashCode()}.$ext")
-                        if (!artworkFile.exists() || artworkFile.length() == 0L) {
-                            FileOutputStream(artworkFile).use { out ->
-                                out.write(embeddedArt)
-                                out.flush()
-                            }
-                        }
-                        return artworkFile.toUri()
-                    } else {
-                        // Unknown format (BMP, TIFF, WEBP, etc.) — decode then save as PNG to preserve quality
-                        val bitmap = BitmapFactory.decodeByteArray(embeddedArt, 0, embeddedArt.size)
-                        if (bitmap != null) {
-                            val artworkFile = File(cacheDir, "embedded_art_lossless_${songUri.hashCode()}.png")
-                            if (!artworkFile.exists() || artworkFile.length() == 0L) {
-                                FileOutputStream(artworkFile).use { out ->
-                                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
-                                    out.flush()
-                                }
-                            }
-                            return artworkFile.toUri()
-                        }
-                        return null
-                    }
-                } else {
-                    // Save to cache with JPEG compression (default behavior)
-                    val artworkFile = File(cacheDir, "embedded_art_${songUri.hashCode()}.jpg")
-                    if (!artworkFile.exists() || artworkFile.length() == 0L) {
-                        FileOutputStream(artworkFile).use { out ->
-                            val bitmap = BitmapFactory.decodeByteArray(embeddedArt, 0, embeddedArt.size)
-                            if (bitmap != null) {
-                                bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
-                                out.flush()
-                            } else {
-                                return null
-                            }
-                        }
-                    }
-                    return artworkFile.toUri()
-                }
+                return cacheEmbeddedArtworkBytes(songUri, cacheDir, embeddedArt, lossless)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to extract embedded album art", e)
@@ -2163,5 +2117,329 @@ object MediaUtils {
             }
         }
         return null
+    }
+
+    /**
+     * Looks up cached embedded album artwork for a song URI.
+     * Supports both the current cache layout and legacy file names.
+     */
+    fun getCachedEmbeddedAlbumArtUri(cacheDir: File, songUri: Uri, lossless: Boolean = false): Uri? {
+        val songKey = buildArtworkCacheKey(songUri)
+        val prefix = if (lossless) "embedded_art_lossless_$songKey" else "embedded_art_$songKey"
+
+        val artworkCacheDir = File(cacheDir, EMBEDDED_ARTWORK_CACHE_DIR)
+        val extensions = listOf("jpg", "png", "webp", "gif", "bmp", "img")
+        for (ext in extensions) {
+            val candidate = File(artworkCacheDir, "$prefix.$ext")
+            if (candidate.exists() && candidate.length() > 0L) {
+                return candidate.toUri()
+            }
+        }
+
+        val legacyHash = songUri.hashCode()
+        val legacyCandidates = if (lossless) {
+            listOf(
+                File(cacheDir, "embedded_art_lossless_${legacyHash}.jpg"),
+                File(cacheDir, "embedded_art_lossless_${legacyHash}.png")
+            )
+        } else {
+            listOf(File(cacheDir, "embedded_art_${legacyHash}.jpg"))
+        }
+
+        for (candidate in legacyCandidates) {
+            if (candidate.exists() && candidate.length() > 0L) {
+                return candidate.toUri()
+            }
+        }
+
+        return null
+    }
+
+    private fun cacheEmbeddedArtworkBytes(
+        songUri: Uri,
+        cacheDir: File,
+        embeddedArt: ByteArray,
+        lossless: Boolean
+    ): Uri? {
+        if (embeddedArt.isEmpty()) return null
+
+        getCachedEmbeddedAlbumArtUri(cacheDir, songUri, lossless)?.let {
+            maybePruneArtworkCache(cacheDir)
+            return it
+        }
+
+        val artworkCacheDir = File(cacheDir, EMBEDDED_ARTWORK_CACHE_DIR)
+        if (!artworkCacheDir.exists() && !artworkCacheDir.mkdirs()) {
+            Log.w(TAG, "Could not create artwork cache directory: ${artworkCacheDir.absolutePath}")
+            return null
+        }
+
+        val songKey = buildArtworkCacheKey(songUri)
+        val prefix = if (lossless) "embedded_art_lossless_$songKey" else "embedded_art_$songKey"
+        val detectedExtension = detectArtworkExtension(embeddedArt)
+
+        val cachedFile = if (lossless) {
+            val target = File(artworkCacheDir, "$prefix.$detectedExtension")
+            when {
+                target.exists() && target.length() > 0L -> target
+                writeBytesAtomically(target, embeddedArt) -> target
+                else -> null
+            }
+        } else {
+            val lossyTarget = File(artworkCacheDir, "$prefix.jpg")
+            when {
+                lossyTarget.exists() && lossyTarget.length() > 0L -> lossyTarget
+                writeLossyArtwork(lossyTarget, embeddedArt) -> lossyTarget
+                else -> {
+                    val fallbackTarget = File(artworkCacheDir, "$prefix.$detectedExtension")
+                    when {
+                        fallbackTarget.exists() && fallbackTarget.length() > 0L -> fallbackTarget
+                        writeBytesAtomically(fallbackTarget, embeddedArt) -> fallbackTarget
+                        else -> null
+                    }
+                }
+            }
+        }
+
+        cachedFile ?: return null
+        maybePruneArtworkCache(cacheDir)
+        return cachedFile.toUri()
+    }
+
+    private fun writeLossyArtwork(targetFile: File, embeddedArt: ByteArray): Boolean {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(embeddedArt, 0, embeddedArt.size, bounds)
+
+        val decodeOptions = BitmapFactory.Options().apply {
+            inSampleSize = calculateInSampleSize(bounds.outWidth, bounds.outHeight, 1200, 1200)
+        }
+
+        val bitmap = BitmapFactory.decodeByteArray(embeddedArt, 0, embeddedArt.size, decodeOptions)
+            ?: return false
+
+        return try {
+            writeBitmapAtomically(targetFile, bitmap, Bitmap.CompressFormat.JPEG, 88)
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
+    private fun writeBitmapAtomically(
+        targetFile: File,
+        bitmap: Bitmap,
+        format: Bitmap.CompressFormat,
+        quality: Int
+    ): Boolean {
+        val parent = targetFile.parentFile ?: return false
+        if (!parent.exists() && !parent.mkdirs()) {
+            return false
+        }
+
+        val tempFile = File(parent, "${targetFile.name}.tmp")
+        return try {
+            if (tempFile.exists()) {
+                tempFile.delete()
+            }
+
+            var compressed = false
+            FileOutputStream(tempFile).use { out ->
+                compressed = bitmap.compress(format, quality, out)
+                out.flush()
+            }
+
+            if (!compressed) {
+                tempFile.delete()
+                return false
+            }
+
+            replaceFile(tempFile, targetFile)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to write bitmap cache file: ${targetFile.absolutePath}", e)
+            tempFile.delete()
+            false
+        }
+    }
+
+    private fun writeBytesAtomically(targetFile: File, bytes: ByteArray): Boolean {
+        val parent = targetFile.parentFile ?: return false
+        if (!parent.exists() && !parent.mkdirs()) {
+            return false
+        }
+
+        val tempFile = File(parent, "${targetFile.name}.tmp")
+        return try {
+            if (tempFile.exists()) {
+                tempFile.delete()
+            }
+
+            FileOutputStream(tempFile).use { out ->
+                out.write(bytes)
+                out.flush()
+            }
+
+            replaceFile(tempFile, targetFile)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to write artwork bytes: ${targetFile.absolutePath}", e)
+            tempFile.delete()
+            false
+        }
+    }
+
+    private fun replaceFile(tempFile: File, targetFile: File): Boolean {
+        if (targetFile.exists() && !targetFile.delete()) {
+            return false
+        }
+
+        if (tempFile.renameTo(targetFile)) {
+            return true
+        }
+
+        return try {
+            tempFile.copyTo(targetFile, overwrite = true)
+            tempFile.delete()
+            true
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to move temp artwork file into place", e)
+            false
+        }
+    }
+
+    private fun calculateInSampleSize(
+        width: Int,
+        height: Int,
+        requestedWidth: Int,
+        requestedHeight: Int
+    ): Int {
+        if (width <= 0 || height <= 0) return 1
+
+        var inSampleSize = 1
+        var halfWidth = width / 2
+        var halfHeight = height / 2
+
+        while ((halfWidth / inSampleSize) >= requestedWidth &&
+            (halfHeight / inSampleSize) >= requestedHeight
+        ) {
+            inSampleSize *= 2
+        }
+
+        return inSampleSize.coerceAtLeast(1)
+    }
+
+    private fun detectArtworkExtension(data: ByteArray): String {
+        if (data.size >= 2 &&
+            data[0] == 0xFF.toByte() &&
+            data[1] == 0xD8.toByte()
+        ) {
+            return "jpg"
+        }
+
+        if (data.size >= 4 &&
+            data[0] == 0x89.toByte() &&
+            data[1] == 0x50.toByte() &&
+            data[2] == 0x4E.toByte() &&
+            data[3] == 0x47.toByte()
+        ) {
+            return "png"
+        }
+
+        if (data.size >= 12 &&
+            data[0] == 'R'.code.toByte() &&
+            data[1] == 'I'.code.toByte() &&
+            data[2] == 'F'.code.toByte() &&
+            data[3] == 'F'.code.toByte() &&
+            data[8] == 'W'.code.toByte() &&
+            data[9] == 'E'.code.toByte() &&
+            data[10] == 'B'.code.toByte() &&
+            data[11] == 'P'.code.toByte()
+        ) {
+            return "webp"
+        }
+
+        if (data.size >= 4 &&
+            data[0] == 'G'.code.toByte() &&
+            data[1] == 'I'.code.toByte() &&
+            data[2] == 'F'.code.toByte() &&
+            data[3] == '8'.code.toByte()
+        ) {
+            return "gif"
+        }
+
+        if (data.size >= 2 &&
+            data[0] == 'B'.code.toByte() &&
+            data[1] == 'M'.code.toByte()
+        ) {
+            return "bmp"
+        }
+
+        return "img"
+    }
+
+    private fun buildArtworkCacheKey(songUri: Uri): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+            .digest(songUri.toString().toByteArray(Charsets.UTF_8))
+        return digest.joinToString(separator = "") { byte ->
+            "%02x".format(byte.toInt() and 0xFF)
+        }
+    }
+
+    private fun maybePruneArtworkCache(cacheDir: File) {
+        val now = System.currentTimeMillis()
+        val shouldPrune = synchronized(this) {
+            if (now - lastEmbeddedArtworkCleanupMs < EMBEDDED_ART_CACHE_CLEANUP_INTERVAL_MS) {
+                false
+            } else {
+                lastEmbeddedArtworkCleanupMs = now
+                true
+            }
+        }
+
+        if (!shouldPrune) return
+
+        val artworkCacheDir = File(cacheDir, EMBEDDED_ARTWORK_CACHE_DIR)
+        val currentArtworkFiles = artworkCacheDir
+            .listFiles { file -> file.isFile }
+            ?.toMutableList()
+            ?: mutableListOf()
+
+        val legacyArtworkFiles = cacheDir
+            .listFiles { file ->
+                file.isFile &&
+                    (file.name.startsWith("embedded_art_") || file.name.startsWith("embedded_art_lossless_"))
+            }
+            ?.toList()
+            .orEmpty()
+
+        val allArtworkFiles = mutableListOf<File>().apply {
+            addAll(currentArtworkFiles)
+            addAll(legacyArtworkFiles)
+        }
+
+        if (allArtworkFiles.isEmpty()) return
+
+        var totalSize = allArtworkFiles.sumOf { it.length() }
+        var fileCount = allArtworkFiles.size
+
+        if (totalSize <= EMBEDDED_ART_CACHE_MAX_BYTES && fileCount <= EMBEDDED_ART_CACHE_MAX_FILES) {
+            return
+        }
+
+        allArtworkFiles.sortBy { it.lastModified() }
+
+        for (file in allArtworkFiles) {
+            if (totalSize <= EMBEDDED_ART_CACHE_MAX_BYTES && fileCount <= EMBEDDED_ART_CACHE_MAX_FILES) {
+                break
+            }
+
+            val fileSize = file.length()
+            if (file.delete()) {
+                totalSize -= fileSize
+                fileCount--
+            }
+        }
+
+        Log.d(
+            TAG,
+            "Pruned artwork cache to ${totalSize / (1024 * 1024)}MB across $fileCount files"
+        )
     }
 }

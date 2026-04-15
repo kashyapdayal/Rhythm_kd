@@ -1113,27 +1113,12 @@ class MusicRepository(context: Context) {
 
             val useEmbeddedArt = appSettings.ignoreMediaStoreCovers.value || appSettings.losslessArtwork.value
             val effectiveArtUri = if (useEmbeddedArt) {
-                // Check if embedded art was previously extracted to cache
                 val lossless = appSettings.losslessArtwork.value
-                val prefix = if (lossless) "embedded_art_lossless_" else "embedded_art_"
-                val cachedFile = if (lossless) {
-                    // Try both extensions for lossless
-                    val jpg = java.io.File(context.cacheDir, "${prefix}${contentUri.hashCode()}.jpg")
-                    val png = java.io.File(context.cacheDir, "${prefix}${contentUri.hashCode()}.png")
-                    when {
-                        jpg.exists() -> jpg
-                        png.exists() -> png
-                        else -> null
-                    }
-                } else {
-                    val f = java.io.File(context.cacheDir, "${prefix}${contentUri.hashCode()}.jpg")
-                    if (f.exists()) f else null
-                }
-                if (cachedFile != null) {
-                    Uri.fromFile(cachedFile)
-                } else {
-                    albumArtUri // Fallback; background task will extract later
-                }
+                chromahub.rhythm.app.util.MediaUtils.getCachedEmbeddedAlbumArtUri(
+                    cacheDir = context.cacheDir,
+                    songUri = contentUri,
+                    lossless = lossless
+                ) ?: albumArtUri // Fallback; background task will extract later
             } else {
                 albumArtUri
             }
