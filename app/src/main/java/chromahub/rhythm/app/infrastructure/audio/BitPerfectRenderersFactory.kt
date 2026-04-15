@@ -1,6 +1,7 @@
 package chromahub.rhythm.app.infrastructure.audio
 
 import android.content.Context
+import android.media.MediaCodecList
 import android.os.Handler
 import android.util.Log
 import androidx.annotation.OptIn
@@ -28,6 +29,8 @@ class BitPerfectRenderersFactory(
     private val bassBoostProcessor: RhythmBassBoostProcessor? = null,
     private val spatializationProcessor: RhythmSpatializationProcessor? = null
 ) : DefaultRenderersFactory(context) {
+
+    private val hasOfficialDolbyEac3Decoder = hasOfficialDolbyEac3Decoder()
     
     companion object {
         private const val TAG = "BitPerfectFactory"
@@ -39,6 +42,10 @@ class BitPerfectRenderersFactory(
         
         // Prefer extension renderers when available if available for better format support
         setExtensionRendererMode(EXTENSION_RENDERER_MODE_PREFER)
+
+        if (hasOfficialDolbyEac3Decoder) {
+            Log.i(TAG, "Official Dolby EAC3 C2 decoder detected; platform decoder will be prioritized over FFmpeg")
+        }
         
         if (enableBitPerfect) {
             Log.i(TAG, "Bit-perfect mode enabled - audio will output at native sample rate")
@@ -72,10 +79,11 @@ class BitPerfectRenderersFactory(
             spatializationProcessor
         )
         
-        // Add extension renderers (FFmpeg) FIRST so they get priority for formats
-        // like EAC3-JOC (Dolby Atmos) that platform MediaCodec may not decode properly
+        val extensionRendererIndex = out.size
+
+        // Add extension renderers and remove default MediaCodec renderer.
+        // A custom MediaCodec renderer will be inserted with conditional priority.
         if (extensionRendererMode != EXTENSION_RENDERER_MODE_OFF) {
-            val extensionRendererIndex = out.size
             super.buildAudioRenderers(
                 context,
                 extensionRendererMode,
@@ -105,8 +113,8 @@ class BitPerfectRenderersFactory(
             }
         }
         
-        // Add our custom MediaCodec audio renderer AFTER extension renderers
-        // This ensures FFmpeg handles formats like EAC3-JOC before falling back to platform
+        // Add our custom MediaCodec audio renderer with conditional ordering.
+        // Dolby-certified devices prioritize MediaCodec; others keep FFmpeg-first fallback behavior.
         val audioRenderer = MediaCodecAudioRenderer(
             context,
             mediaCodecSelector,
@@ -115,8 +123,36 @@ class BitPerfectRenderersFactory(
             eventListener,
             customAudioSink
         )
-        
-        out.add(audioRenderer)
+
+        if (hasOfficialDolbyEac3Decoder && extensionRendererMode != EXTENSION_RENDERER_MODE_OFF) {
+            out.add(extensionRendererIndex, audioRenderer)
+            Log.d(TAG, "Prioritized MediaCodec renderer before FFmpeg extensions for Dolby EAC3/JOC")
+        } else {
+            out.add(audioRenderer)
+        }
+
         Log.d(TAG, "Audio renderer configured: bit-perfect=$enableBitPerfect, Rhythm effects enabled")
+    }
+
+    private fun hasOfficialDolbyEac3Decoder(): Boolean {
+        return try {
+            val dolbyDecoderNames = setOf(
+                "c2.dolby.eac3.decoder",
+                "c2.dolby.eac3.decoder.ac3"
+            )
+
+            val hasDecoder = MediaCodecList(MediaCodecList.ALL_CODECS)
+                .codecInfos
+                .asSequence()
+                .filter { !it.isEncoder }
+                .map { it.name.lowercase() }
+                .any { it in dolbyDecoderNames }
+
+            Log.d(TAG, "Official Dolby EAC3 decoder support: $hasDecoder")
+            hasDecoder
+        } catch (e: Exception) {
+            Log.w(TAG, "Unable to query codec list for Dolby support", e)
+            false
+        }
     }
 }
