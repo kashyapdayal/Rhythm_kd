@@ -67,6 +67,8 @@ class MediaPlaybackService : MediaLibraryService(), Player.Listener {
     private var lastRepeatMode: Int? = null
     private var lastFavoriteState: Boolean? = null
     private var lastWidgetSnapshotKey: String? = null
+    private var lastHandledPlayerTransitionMediaId: String? = null
+    private var lastHandledControllerTransitionMediaId: String? = null
     
     // Debounce custom layout updates to prevent flickering
     private var updateLayoutJob: Job? = null
@@ -224,6 +226,10 @@ class MediaPlaybackService : MediaLibraryService(), Player.Listener {
         const val SHUFFLE_MODE_OFF = "shuffle_off"
         const val FAVORITE_ON = "favorite_on"
         const val FAVORITE_OFF = "favorite_off"
+
+        private const val METADATA_EXTRA_ORIGINAL_TITLE = "chromahub.rhythm.app.extra.original_title"
+        private const val METADATA_EXTRA_ORIGINAL_ARTIST = "chromahub.rhythm.app.extra.original_artist"
+        private const val METADATA_EXTRA_ORIGINAL_ALBUM = "chromahub.rhythm.app.extra.original_album"
     }
 
     override fun onCreate() {
@@ -536,6 +542,16 @@ class MediaPlaybackService : MediaLibraryService(), Player.Listener {
             }
             
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                val transitionMediaId = mediaItem?.mediaId
+                if (
+                    reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED &&
+                    transitionMediaId != null &&
+                    transitionMediaId == lastHandledPlayerTransitionMediaId
+                ) {
+                    Log.d(TAG, "Ignoring metadata-only player transition for mediaId=$transitionMediaId")
+                    return
+                }
+
                 // Send scrobble broadcast when track changes
                 if (appSettings.scrobblingEnabled.value && mediaItem != null) {
                     try {
@@ -584,6 +600,8 @@ class MediaPlaybackService : MediaLibraryService(), Player.Listener {
                 serviceScope.launch {
                     updateWidgetFromMediaItem(mediaItem)
                 }
+
+                lastHandledPlayerTransitionMediaId = transitionMediaId
             }
             
             // NEW in Media3 1.9.0: Monitor audio capabilities changes
@@ -1557,6 +1575,16 @@ class MediaPlaybackService : MediaLibraryService(), Player.Listener {
 
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
         super.onMediaItemTransition(mediaItem, reason)
+        val transitionMediaId = mediaItem?.mediaId
+        if (
+            reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED &&
+            transitionMediaId != null &&
+            transitionMediaId == lastHandledControllerTransitionMediaId
+        ) {
+            Log.d(TAG, "Ignoring metadata-only controller transition for mediaId=$transitionMediaId")
+            return
+        }
+
         Log.d(TAG, "Media item transitioned: ${mediaItem?.mediaMetadata?.title}, reason=$reason")
         
         // Update custom layout when song changes to reflect correct favorite state
@@ -1564,6 +1592,8 @@ class MediaPlaybackService : MediaLibraryService(), Player.Listener {
         
         // Update widget with new song info
         updateWidgetFromMediaItem(mediaItem)
+
+        lastHandledControllerTransitionMediaId = transitionMediaId
     }
     
     override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -1578,11 +1608,25 @@ class MediaPlaybackService : MediaLibraryService(), Player.Listener {
      */
     private fun convertMediaItemToSong(mediaItem: MediaItem): Song? {
         return try {
+            val extras = mediaItem.mediaMetadata.extras
+            val canonicalTitle = extras?.getString(METADATA_EXTRA_ORIGINAL_TITLE)
+            val canonicalArtist = extras?.getString(METADATA_EXTRA_ORIGINAL_ARTIST)
+            val canonicalAlbum = extras?.getString(METADATA_EXTRA_ORIGINAL_ALBUM)
+
             Song(
                 id = mediaItem.mediaId,
-                title = mediaItem.mediaMetadata.title?.toString() ?: "Unknown",
-                artist = mediaItem.mediaMetadata.artist?.toString() ?: "Unknown",
-                album = mediaItem.mediaMetadata.albumTitle?.toString() ?: "",
+                title = canonicalTitle
+                    ?.takeIf { it.isNotBlank() }
+                    ?: mediaItem.mediaMetadata.title?.toString()
+                    ?: "Unknown",
+                artist = canonicalArtist
+                    ?.takeIf { it.isNotBlank() }
+                    ?: mediaItem.mediaMetadata.artist?.toString()
+                    ?: "Unknown",
+                album = canonicalAlbum
+                    ?.takeIf { it.isNotBlank() }
+                    ?: mediaItem.mediaMetadata.albumTitle?.toString()
+                    ?: "",
                 uri = mediaItem.requestMetadata.mediaUri ?: Uri.EMPTY,
                 artworkUri = mediaItem.mediaMetadata.artworkUri,
                 duration = player.duration.takeIf { it > 0 } ?: 0L,

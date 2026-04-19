@@ -12,6 +12,7 @@ import android.content.Intent
 import android.content.IntentFilter
 
 import android.os.Build
+import android.os.Bundle
 import android.os.SystemClock
 import android.media.audiofx.AudioEffect
 import android.net.Uri
@@ -120,6 +121,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         private const val PLAYLIST_EXPORT_NOTIFICATION_ID = 1503
         private const val LIBRARY_SETUP_NOTIFICATION_ID = 1504
         private const val OPERATION_NOTIFICATION_AUTO_DISMISS_MS = 6000L
+
+        private const val DEFAULT_BLUETOOTH_LYRIC_LINE = "No lyrics"
+        private const val METADATA_EXTRA_ORIGINAL_TITLE = "chromahub.rhythm.app.extra.original_title"
+        private const val METADATA_EXTRA_ORIGINAL_ARTIST = "chromahub.rhythm.app.extra.original_artist"
+        private const val METADATA_EXTRA_ORIGINAL_ALBUM = "chromahub.rhythm.app.extra.original_album"
     }
 
     private val repository = MusicRepository(application)
@@ -236,6 +242,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     private var cachedParsedSyncedLyrics: List<LyricLine> = emptyList()
     private var lastBroadcastLyricSongId: String? = null
     private var lastBroadcastLyricLine: String? = null
+    private var lastAppliedBluetoothLyricSongId: String? = null
+    private var lastAppliedBluetoothLyricLine: String? = null
     
     // Scan job for cancellation support
     private var scanJob: Job? = null
@@ -3423,6 +3431,15 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             Log.d(TAG, "Media item transition: ${mediaItem?.mediaId}, reason: $reason")
+
+            if (
+                reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED &&
+                mediaItem?.mediaId != null &&
+                mediaItem.mediaId == _currentSong.value?.id
+            ) {
+                Log.d(TAG, "Ignoring playlist metadata refresh for current song: ${mediaItem.mediaId}")
+                return
+            }
             
             // Finalize stats for the previous song before switching
             finalizePlaybackTracking()
@@ -3579,7 +3596,13 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun maybeBroadcastBluetoothLyricsLine(controller: MediaController) {
-        if (!appSettings.broadcastStatusEnabled.value || !appSettings.bluetoothLyricsEnabled.value) {
+        val bluetoothLyricsActive = appSettings.broadcastStatusEnabled.value && appSettings.bluetoothLyricsEnabled.value
+        if (!bluetoothLyricsActive) {
+            if (lastAppliedBluetoothLyricSongId != null || lastAppliedBluetoothLyricLine != null) {
+                restoreStandardNowPlayingMetadata(controller, _currentSong.value)
+            }
+            lastBroadcastLyricSongId = null
+            lastBroadcastLyricLine = null
             return
         }
 
@@ -3602,8 +3625,114 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             bluetoothLyricsMode = true,
             currentLyricLine = lyricLine
         )
+        applyBluetoothLyricsNowPlayingMetadata(controller, song, lyricLine)
         lastBroadcastLyricSongId = song.id
         lastBroadcastLyricLine = lyricLine
+    }
+
+    private fun applyBluetoothLyricsNowPlayingMetadata(
+        controller: MediaController,
+        song: Song,
+        lyricLine: String?
+    ) {
+        if (song.id == lastAppliedBluetoothLyricSongId && lyricLine == lastAppliedBluetoothLyricLine) {
+            return
+        }
+
+        try {
+            val currentIndex = controller.currentMediaItemIndex
+            if (currentIndex == C.INDEX_UNSET || currentIndex !in 0 until controller.mediaItemCount) {
+                return
+            }
+
+            val currentItem = controller.getMediaItemAt(currentIndex)
+            if (currentItem.mediaId != song.id) {
+                return
+            }
+
+            val updatedMetadata = currentItem.mediaMetadata
+                .buildUpon()
+                .setTitle(lyricLine?.takeIf { it.isNotBlank() } ?: DEFAULT_BLUETOOTH_LYRIC_LINE)
+                .setArtist(mergeSongTitleAndArtist(song))
+                .setAlbumTitle(song.album)
+                .setArtworkUri(song.artworkUri ?: currentItem.mediaMetadata.artworkUri)
+                .setExtras(buildCanonicalMetadataExtras(song, currentItem.mediaMetadata.extras))
+                .build()
+
+            val updatedItem = currentItem.buildUpon()
+                .setMediaMetadata(updatedMetadata)
+                .build()
+
+            controller.replaceMediaItem(currentIndex, updatedItem)
+            lastAppliedBluetoothLyricSongId = song.id
+            lastAppliedBluetoothLyricLine = lyricLine
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to apply Bluetooth lyrics metadata to current media item", e)
+        }
+    }
+
+    private fun restoreStandardNowPlayingMetadata(controller: MediaController, song: Song?) {
+        val targetSong = song ?: run {
+            lastAppliedBluetoothLyricSongId = null
+            lastAppliedBluetoothLyricLine = null
+            return
+        }
+
+        try {
+            val currentIndex = controller.currentMediaItemIndex
+            if (currentIndex == C.INDEX_UNSET || currentIndex !in 0 until controller.mediaItemCount) {
+                return
+            }
+
+            val currentItem = controller.getMediaItemAt(currentIndex)
+            if (currentItem.mediaId != targetSong.id) {
+                return
+            }
+
+            val currentMetadata = currentItem.mediaMetadata
+            val currentTitle = currentMetadata.title?.toString()
+            val currentArtist = currentMetadata.artist?.toString()
+
+            if (currentTitle == targetSong.title && currentArtist == targetSong.artist) {
+                return
+            }
+
+            val restoredMetadata = currentMetadata
+                .buildUpon()
+                .setTitle(targetSong.title)
+                .setArtist(targetSong.artist)
+                .setAlbumTitle(targetSong.album)
+                .setArtworkUri(targetSong.artworkUri ?: currentMetadata.artworkUri)
+                .setExtras(buildCanonicalMetadataExtras(targetSong, currentMetadata.extras))
+                .build()
+
+            val restoredItem = currentItem.buildUpon()
+                .setMediaMetadata(restoredMetadata)
+                .build()
+
+            controller.replaceMediaItem(currentIndex, restoredItem)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to restore standard metadata after Bluetooth lyrics", e)
+        } finally {
+            lastAppliedBluetoothLyricSongId = null
+            lastAppliedBluetoothLyricLine = null
+        }
+    }
+
+    private fun mergeSongTitleAndArtist(song: Song): String {
+        return listOf(song.title, song.artist)
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .joinToString(" - ")
+            .ifBlank { song.title }
+    }
+
+    private fun buildCanonicalMetadataExtras(song: Song, existingExtras: Bundle?): Bundle {
+        val extras = Bundle(existingExtras ?: Bundle())
+        extras.putString(METADATA_EXTRA_ORIGINAL_TITLE, song.title)
+        extras.putString(METADATA_EXTRA_ORIGINAL_ARTIST, song.artist)
+        extras.putString(METADATA_EXTRA_ORIGINAL_ALBUM, song.album)
+        return extras
     }
 
     private fun resolveCurrentSyncedLyricLine(
@@ -3617,6 +3746,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             cachedSyncedLyricsRaw = rawLyrics
             cachedParsedSyncedLyrics = LyricsParser.parseLyrics(rawLyrics)
             lastBroadcastLyricLine = null
+            lastAppliedBluetoothLyricLine = null
         }
 
         if (cachedParsedSyncedLyrics.isEmpty()) {
@@ -3637,6 +3767,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         if (clearLastBroadcast) {
             lastBroadcastLyricSongId = null
             lastBroadcastLyricLine = null
+            lastAppliedBluetoothLyricSongId = null
+            lastAppliedBluetoothLyricLine = null
         }
     }
 
