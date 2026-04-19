@@ -1800,6 +1800,12 @@
     <string name="settings_rhythm_guard_manual_threshold_title">High-Volume Warning Threshold: %1$d%%</string>
     <string name="settings_rhythm_aura_manual_threshold_desc">Set when Rhythm Guard should warn about potentially harmful volume.</string>
     <string name="settings_rhythm_guard_manual_threshold_desc">Set when Rhythm Guard should warn about potentially harmful volume.</string>
+    <string name="settings_rhythm_aura_device_controls_title">Output Controls</string>
+    <string name="settings_rhythm_guard_device_controls_title">Output Controls</string>
+    <string name="settings_rhythm_aura_device_controls_speaker_limit_title">Apply Volume Limits On Phone Speaker</string>
+    <string name="settings_rhythm_guard_device_controls_speaker_limit_title">Apply Volume Limits On Phone Speaker</string>
+    <string name="settings_rhythm_aura_device_controls_speaker_limit_desc">When off, Rhythm Guard skips volume clamping and volume warnings on built-in speaker output.</string>
+    <string name="settings_rhythm_guard_device_controls_speaker_limit_desc">When off, Rhythm Guard skips volume clamping and volume warnings on built-in speaker output.</string>
     <string name="settings_rhythm_guard_alert_controls_title">Listening Alert Controls</string>
     <string name="settings_rhythm_guard_alert_controls_desc">Fine-tune exposure alerts, reminder timeout, and default break resume interval.</string>
     <string name="settings_rhythm_guard_alert_threshold_title">Exposure Alert Threshold: %1$s</string>

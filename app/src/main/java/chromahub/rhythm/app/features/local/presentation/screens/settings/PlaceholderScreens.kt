@@ -5013,7 +5013,7 @@ fun UpdatesSettingsScreen(onBackClick: () -> Unit) {
                                     Icon(
                                         imageVector = RhythmIcons.Check,
                                         contentDescription = null,
-                                        
+                                        tint = MaterialTheme.colorScheme.primary,
                                         modifier = Modifier.size(40.dp)
                                     )
                                     Spacer(modifier = Modifier.height(8.dp))
@@ -5072,7 +5072,7 @@ fun UpdatesSettingsScreen(onBackClick: () -> Unit) {
                                     Icon(
                                         imageVector = RhythmIcons.Refresh,
                                         contentDescription = context.getString(R.string.updates_manual_check),
-                                        
+                                        tint = MaterialTheme.colorScheme.primary,
                                         modifier = Modifier.size(40.dp)
                                     )
                                     Spacer(modifier = Modifier.height(8.dp))
@@ -5124,7 +5124,7 @@ fun UpdatesSettingsScreen(onBackClick: () -> Unit) {
                                     Icon(
                                         imageVector = RhythmIcons.Check,
                                         contentDescription = context.getString(R.string.updates_up_to_date),
-                                        
+                                        tint = MaterialTheme.colorScheme.primary,
                                         modifier = Modifier.size(40.dp)
                                     )
                                     Spacer(modifier = Modifier.height(8.dp))
@@ -6519,6 +6519,7 @@ fun RhythmGuardSettingsScreen(onBackClick: () -> Unit) {
     val dailyListeningStats by appSettings.dailyListeningStats.collectAsState()
 
     val stopPlaybackOnZeroVolume by appSettings.stopPlaybackOnZeroVolume.collectAsState()
+    val rhythmGuardApplyVolumeLimitOnSpeaker by appSettings.rhythmGuardApplyVolumeLimitOnSpeaker.collectAsState()
 
     val currentSystemVolume = rememberSystemMusicVolumeFraction(context)
     val playbackStatsRepository = remember(context) { PlaybackStatsRepository.getInstance(context) }
@@ -6893,6 +6894,28 @@ fun RhythmGuardSettingsScreen(onBackClick: () -> Unit) {
                         )
                     }
                 }
+            }
+
+            item {
+                val outputSettingItems = listOf(
+                    SettingItem(
+                        Icons.Default.Speaker,
+                        context.getString(R.string.settings_rhythm_guard_device_controls_speaker_limit_title),
+                        context.getString(R.string.settings_rhythm_guard_device_controls_speaker_limit_desc),
+                        toggleState = rhythmGuardApplyVolumeLimitOnSpeaker,
+                        onToggleChange = { appSettings.setRhythmGuardApplyVolumeLimitOnSpeaker(it) }
+                    )
+                )
+
+                val materialItems = outputSettingItems.map { item ->
+                    toMaterial3SettingsItem(context = context, item = item, hapticFeedback = haptic)
+                }
+
+                Material3SettingsGroup(
+                    title = context.getString(R.string.settings_rhythm_guard_device_controls_title),
+                    items = materialItems,
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
             }
 
             if (auraMode == AppSettings.RHYTHM_GUARD_MODE_MANUAL) {

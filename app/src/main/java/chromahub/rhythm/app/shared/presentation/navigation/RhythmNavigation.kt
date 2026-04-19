@@ -100,6 +100,7 @@ import chromahub.rhythm.app.shared.presentation.viewmodel.AppModeViewModel
 import chromahub.rhythm.app.features.local.presentation.viewmodel.MusicViewModel
 import chromahub.rhythm.app.shared.presentation.viewmodel.ThemeViewModel
 import chromahub.rhythm.app.shared.data.model.AppSettings
+import chromahub.rhythm.app.util.AudioDeviceManager
 import androidx.core.app.NotificationCompat
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.delay
@@ -264,6 +265,7 @@ private fun RhythmGuardWarningHost(
     val alertNotificationsEnabled by appSettings.rhythmGuardAlertNotificationsEnabled.collectAsState()
     val timerNotificationsEnabled by appSettings.rhythmGuardTimerNotificationsEnabled.collectAsState()
     val manualVolumeThreshold by appSettings.rhythmGuardManualVolumeThreshold.collectAsState()
+    val applyVolumeLimitOnSpeaker by appSettings.rhythmGuardApplyVolumeLimitOnSpeaker.collectAsState()
     val configuredAlertThresholdMinutes by appSettings.rhythmGuardAlertThresholdMinutes.collectAsState()
     val warningTimeoutMinutes by appSettings.rhythmGuardWarningTimeoutMinutes.collectAsState()
     val postTimeoutCooldownMinutes by appSettings.rhythmGuardPostTimeoutCooldownMinutes.collectAsState()
@@ -277,8 +279,12 @@ private fun RhythmGuardWarningHost(
     val listeningTime by appSettings.listeningTime.collectAsState()
 
     val currentSong by musicViewModel.currentSong.collectAsState()
+    val currentPlaybackDevice by musicViewModel.currentDevice.collectAsState()
     val currentSystemVolume = rememberSystemMusicVolumeFraction(context)
     var todayExposureMinutes by remember { mutableIntStateOf(0) }
+
+    val isSpeakerOutput = currentPlaybackDevice?.id == AudioDeviceManager.DEVICE_SPEAKER
+    val shouldApplyVolumeLimitForCurrentOutput = applyVolumeLimitOnSpeaker || !isSpeakerOutput
 
     val activePolicy = remember(auraAge) { appSettings.getRhythmGuardPolicy(auraAge) }
     val effectiveExposureLimitMinutes = if (auraMode == AppSettings.RHYTHM_GUARD_MODE_AUTO) {
@@ -310,7 +316,11 @@ private fun RhythmGuardWarningHost(
         else -> false
     }
     val needsVolumeWarning =
-        rulesEnabled && !isListeningTimeoutActive && volumeWarningEnabled && currentSystemVolume > activeThreshold
+        rulesEnabled &&
+            !isListeningTimeoutActive &&
+            volumeWarningEnabled &&
+            shouldApplyVolumeLimitForCurrentOutput &&
+            currentSystemVolume > activeThreshold
     val needsExposureWarning =
         rulesEnabled &&
             !isListeningTimeoutActive &&
@@ -582,8 +592,21 @@ private fun RhythmGuardWarningHost(
         }
     }
 
-    LaunchedEffect(rulesEnabled, auraMode, currentSystemVolume, activeThreshold, auraAge) {
+    LaunchedEffect(
+        rulesEnabled,
+        auraMode,
+        currentSystemVolume,
+        activeThreshold,
+        activeThresholdPercent,
+        auraAge,
+        shouldApplyVolumeLimitForCurrentOutput
+    ) {
         if (!rulesEnabled || auraMode != AppSettings.RHYTHM_GUARD_MODE_AUTO) {
+            return@LaunchedEffect
+        }
+
+        if (!shouldApplyVolumeLimitForCurrentOutput) {
+            lastAutoClampThresholdPercent = -1
             return@LaunchedEffect
         }
 

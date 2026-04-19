@@ -179,6 +179,7 @@ class AppSettings private constructor(context: Context) {
         private const val KEY_RHYTHM_GUARD_AGE = "rhythm_guard_age"
         private const val KEY_RHYTHM_GUARD_MANUAL_WARNINGS_ENABLED = "rhythm_guard_manual_warnings_enabled"
         private const val KEY_RHYTHM_GUARD_MANUAL_VOLUME_THRESHOLD = "rhythm_guard_manual_volume_threshold"
+        private const val KEY_RHYTHM_GUARD_APPLY_VOLUME_LIMIT_ON_SPEAKER = "rhythm_guard_apply_volume_limit_on_speaker"
         private const val KEY_RHYTHM_GUARD_LAST_AUTO_APPLIED_AT = "rhythm_guard_last_auto_applied_at"
         private const val KEY_RHYTHM_GUARD_ALERT_THRESHOLD_MINUTES = "rhythm_guard_alert_threshold_minutes"
         private const val KEY_RHYTHM_GUARD_WARNING_TIMEOUT_MINUTES = "rhythm_guard_warning_timeout_minutes"
@@ -974,6 +975,11 @@ class AppSettings private constructor(context: Context) {
     val rhythmGuardManualVolumeThreshold: StateFlow<Float> = _rhythmAuraManualVolumeThreshold.asStateFlow()
     @Deprecated("Use rhythmGuardManualVolumeThreshold")
     val rhythmAuraManualVolumeThreshold: StateFlow<Float> = rhythmGuardManualVolumeThreshold
+
+    private val _rhythmGuardApplyVolumeLimitOnSpeaker = MutableStateFlow(
+        prefs.getBoolean(KEY_RHYTHM_GUARD_APPLY_VOLUME_LIMIT_ON_SPEAKER, false)
+    )
+    val rhythmGuardApplyVolumeLimitOnSpeaker: StateFlow<Boolean> = _rhythmGuardApplyVolumeLimitOnSpeaker.asStateFlow()
 
     private val _rhythmAuraLastAutoAppliedAt = MutableStateFlow(
         safeLong(KEY_RHYTHM_GUARD_LAST_AUTO_APPLIED_AT, safeLong(KEY_RHYTHM_AURA_LAST_AUTO_APPLIED_AT, 0L))
@@ -2214,6 +2220,11 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
             .putFloat(KEY_RHYTHM_AURA_MANUAL_VOLUME_THRESHOLD, safeThreshold)
             .apply()
         _rhythmAuraManualVolumeThreshold.value = safeThreshold
+    }
+
+    fun setRhythmGuardApplyVolumeLimitOnSpeaker(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_RHYTHM_GUARD_APPLY_VOLUME_LIMIT_ON_SPEAKER, enabled).apply()
+        _rhythmGuardApplyVolumeLimitOnSpeaker.value = enabled
     }
 
     @Deprecated("Use setRhythmGuardManualVolumeThreshold")
@@ -3880,6 +3891,10 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
             KEY_RHYTHM_GUARD_MANUAL_VOLUME_THRESHOLD,
             prefs.getFloat(KEY_RHYTHM_AURA_MANUAL_VOLUME_THRESHOLD, 0.68f)
         ).coerceIn(0.40f, 0.95f)
+        _rhythmGuardApplyVolumeLimitOnSpeaker.value = prefs.getBoolean(
+            KEY_RHYTHM_GUARD_APPLY_VOLUME_LIMIT_ON_SPEAKER,
+            false
+        )
         _rhythmAuraLastAutoAppliedAt.value = safeLong(
             KEY_RHYTHM_GUARD_LAST_AUTO_APPLIED_AT,
             safeLong(KEY_RHYTHM_AURA_LAST_AUTO_APPLIED_AT, 0L)

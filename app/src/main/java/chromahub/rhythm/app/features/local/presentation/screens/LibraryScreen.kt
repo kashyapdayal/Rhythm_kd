@@ -4009,7 +4009,7 @@ fun LibrarySongItem(
                                         Icon(
                                             imageVector = Icons.Filled.Star,
                                             contentDescription = null,
-                                            
+                                            tint = MaterialTheme.colorScheme.onTertiaryContainer,
                                             modifier = Modifier
                                                 .fillMaxSize()
                                                 .padding(6.dp)
@@ -4381,7 +4381,7 @@ fun PlaylistItem(
                                 Icon(
                                     imageVector = Icons.Default.AccessTime,
                                     contentDescription = null,
-                                    
+                                    tint = MaterialTheme.colorScheme.onTertiaryContainer,
                                     modifier = Modifier.size(12.dp)
                                 )
                                 Text(
@@ -4722,7 +4722,7 @@ fun LibraryAlbumItem(
                                 Icon(
                                     imageVector = Icons.Default.DateRange,
                                     contentDescription = null,
-                                    
+                                    tint = MaterialTheme.colorScheme.onTertiaryContainer,
                                     modifier = Modifier.size(12.dp)
                                 )
                                 Text(
@@ -5207,7 +5207,7 @@ fun AlbumGridItem(
                                 Icon(
                                     imageVector = Icons.Default.DateRange,
                                     contentDescription = null,
-                                    
+                                    tint = MaterialTheme.colorScheme.onTertiaryContainer,
                                     modifier = Modifier.size(10.dp)
                                 )
                                 Text(
@@ -5730,7 +5730,7 @@ private fun ArtistGridCard(
                                 Icon(
                                     imageVector = RhythmIcons.Album,
                                     contentDescription = null,
-                                    
+                                    tint = MaterialTheme.colorScheme.onTertiaryContainer,
                                     modifier = Modifier.size(10.dp)
                                 )
                                 Text(
@@ -5844,7 +5844,7 @@ private fun ArtistListCard(
                                 Icon(
                                     imageVector = RhythmIcons.Album,
                                     contentDescription = null,
-                                    
+                                    tint = MaterialTheme.colorScheme.onTertiaryContainer,
                                     modifier = Modifier.size(12.dp)
                                 )
                                 Text(
@@ -6062,7 +6062,7 @@ fun SingleCardExplorerContent(
                                 Icon(
                                     imageVector = Icons.Default.Info,
                                     contentDescription = null,
-                                    
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.size(20.dp)
                                 )
                                 Text(
@@ -6489,7 +6489,7 @@ fun SingleCardExplorerContent(
                             Icon(
                                 imageVector = Icons.Default.Storage,
                                 contentDescription = "Storage",
-                                
+                                tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(22.dp)
                             )
                             Spacer(modifier = Modifier.width(10.dp))
@@ -7957,7 +7957,7 @@ fun FolderItem(
                     Icon(
                         imageVector = Icons.Default.Folder,
                         contentDescription = "Folder",
-                        
+                        tint = MaterialTheme.colorScheme.onTertiaryContainer,
                         modifier = Modifier.size(36.dp)
                     )
                 }
@@ -8616,7 +8616,7 @@ fun ExplorerItemCard(
                             Icon(
                                 imageVector = Icons.Default.Folder,
                                 contentDescription = "Folder",
-                                
+                                tint = MaterialTheme.colorScheme.onTertiaryContainer,
                                 modifier = Modifier.size(28.dp) // Reduced proportionally
                             )
                         }
