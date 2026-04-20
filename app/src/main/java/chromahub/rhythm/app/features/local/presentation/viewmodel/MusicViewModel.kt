@@ -3450,13 +3450,13 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             // Update current song and queue position
             mediaItem?.let { item ->
                 val songId = item.mediaId
-                val song = _songs.value.find { it.id == songId }
+                val song = resolveSongFromMediaItem(item)
                 
                 if (song != null) {
                     _currentSong.value = song
                     
                     // Start tracking the new song
-                    startPlaybackTracking(songId)
+                    startPlaybackTracking(song.id)
                     
                     // Update recently played
                     updateRecentlyPlayed(song)
@@ -3466,7 +3466,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     
                     // Update queue position - comprehensive logic from both listeners
                     val currentQueue = _currentQueue.value
-                    val newIndex = currentQueue.songs.indexOfFirst { it.id == songId }
+                    val newIndex = currentQueue.songs.indexOfFirst { it.id == song.id }
                     
                     if (newIndex != -1 && newIndex != currentQueue.currentIndex) {
                         // Only update if the index actually changed
@@ -3483,7 +3483,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                                 controller.getMediaItemAt(index)
                             }
                             val mediaItemSongs = mediaItems.mapNotNull { mediaItem ->
-                                _songs.value.find { it.id == mediaItem.mediaId }
+                                resolveSongFromMediaItem(mediaItem)
                             }
                             
                             if (mediaItemSongs.isNotEmpty()) {
@@ -3777,33 +3777,14 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             val mediaItem = controller.currentMediaItem
             mediaItem?.let {
                 val id = it.mediaId
-                var song = _songs.value.find { song -> song.id == id }
+                val queueSong = _currentQueue.value.songs.find { queueEntry -> queueEntry.id == id }
+                var song = _songs.value.find { localSong -> localSong.id == id } ?: queueSong
                 var isExternalSong = false
-                
+
                 if (song == null) {
                     // Try to create song from mediaItem metadata (for external files)
-                    val metadata = it.mediaMetadata
-                    if (metadata.title != null) {
-                        song = Song(
-                            id = id,
-                            title = metadata.title.toString(),
-                            artist = metadata.artist?.toString() ?: "Unknown Artist",
-                            album = metadata.albumTitle?.toString() ?: "Unknown Album",
-                            albumId = "",
-                            duration = controller.duration,
-                            uri = it.localConfiguration?.uri ?: Uri.EMPTY,
-                            artworkUri = metadata.artworkUri,
-                            trackNumber = 0,
-                            year = 0,
-                            genre = null,
-                            dateAdded = System.currentTimeMillis(),
-                            albumArtist = null,
-                            bitrate = null,
-                            sampleRate = null,
-                            channels = null,
-                            codec = null,
-                            discNumber = 1
-                        )
+                    song = mediaItemToTransientSong(it)
+                    if (song != null) {
                         isExternalSong = true
                         Log.d(TAG, "Created external song from mediaItem: ${song.title}")
                     }
@@ -3911,6 +3892,19 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             codec = null,
             discNumber = 1
         )
+    }
+
+    private fun resolveSongFromMediaItem(mediaItem: MediaItem): Song? {
+        val mediaId = mediaItem.mediaId
+        val queuedSong = if (mediaId.isNotBlank()) {
+            _currentQueue.value.songs.find { it.id == mediaId }
+        } else {
+            null
+        }
+
+        return _songs.value.find { it.id == mediaId }
+            ?: queuedSong
+            ?: mediaItemToTransientSong(mediaItem)
     }
 
     private fun resolveQueueOccurrenceForSong(songId: String, queueIndex: Int): Int {
@@ -4416,6 +4410,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 // Update both the StateFlow and persistence
                 _recentlyPlayed.value = currentList
                 appSettings.updateRecentlyPlayed(currentList.map { it.id })
+                appSettings.updateRecentlyPlayedSongCache(currentList)
                 appSettings.updateLastPlayedTimestamp(System.currentTimeMillis())
                 
                 // Log the update
@@ -7939,8 +7934,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         try {
             // Restore recently played
             val recentIds = appSettings.recentlyPlayed.value
+            val recentSongCache = appSettings.recentlyPlayedSongCache.value
             val recentSongs = recentIds.mapNotNull { id ->
-                _songs.value.find { it.id == id }
+                _songs.value.find { it.id == id } ?: recentSongCache[id]
             }
             _recentlyPlayed.value = recentSongs
             

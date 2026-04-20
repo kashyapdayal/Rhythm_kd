@@ -42,6 +42,7 @@ import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -49,7 +50,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -71,20 +74,32 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import chromahub.rhythm.app.R
+import chromahub.rhythm.app.features.local.presentation.components.bottomsheets.AlbumBottomSheet
 import chromahub.rhythm.app.features.local.presentation.components.player.MiniPlayer
 import chromahub.rhythm.app.features.local.presentation.navigation.Screen
+import chromahub.rhythm.app.features.local.presentation.screens.ArtistDetailScreen
 import chromahub.rhythm.app.features.local.presentation.screens.EqualizerScreen
+import chromahub.rhythm.app.features.local.presentation.screens.ListeningStatsScreen
+import chromahub.rhythm.app.features.local.presentation.screens.PlaylistDetailScreen
 import chromahub.rhythm.app.features.local.presentation.screens.PlayerScreen
+import chromahub.rhythm.app.features.local.presentation.screens.settings.RhythmGuardSettingsScreen
 import chromahub.rhythm.app.features.local.presentation.screens.settings.QueuePlaybackSettingsScreen
 import chromahub.rhythm.app.features.local.presentation.viewmodel.MusicViewModel as LocalMusicViewModel
+import chromahub.rhythm.app.features.streaming.domain.model.StreamingAlbum
+import chromahub.rhythm.app.features.streaming.domain.model.StreamingArtist
+import chromahub.rhythm.app.features.streaming.domain.model.StreamingPlaylist
 import chromahub.rhythm.app.features.streaming.domain.model.StreamingSong
 import chromahub.rhythm.app.features.streaming.presentation.screens.StreamingContentHomeScreen
 import chromahub.rhythm.app.features.streaming.presentation.screens.StreamingHomeScreen
+import chromahub.rhythm.app.features.streaming.presentation.screens.StreamingLibraryScreen
 import chromahub.rhythm.app.features.streaming.presentation.screens.StreamingSearchScreen
 import chromahub.rhythm.app.features.streaming.presentation.screens.StreamingServiceSetupScreen
 import chromahub.rhythm.app.features.streaming.presentation.screens.StreamingSettingsScreen
 import chromahub.rhythm.app.features.streaming.presentation.viewmodel.StreamingMusicViewModel
+import chromahub.rhythm.app.shared.data.model.Album
 import chromahub.rhythm.app.shared.data.model.AppSettings
+import chromahub.rhythm.app.shared.data.model.Artist
+import chromahub.rhythm.app.shared.data.model.Playlist
 import chromahub.rhythm.app.shared.data.model.Song
 import chromahub.rhythm.app.shared.presentation.components.common.ExpressiveShapes
 import chromahub.rhythm.app.shared.presentation.components.icons.RhythmIcons
@@ -94,9 +109,19 @@ import chromahub.rhythm.app.util.HapticUtils
 private sealed class StreamingScreen(val route: String, val titleRes: Int? = null) {
     data object Integration : StreamingScreen("streaming_integration")
     data object Home : StreamingScreen("streaming_home", R.string.home)
+    data object Library : StreamingScreen("streaming_library", R.string.library)
     data object Search : StreamingScreen("streaming_search", R.string.search)
     data object Settings : StreamingScreen("streaming_settings", R.string.settings_title)
+    data object RhythmStats : StreamingScreen("streaming_rhythm_stats")
+    data object RhythmGuard : StreamingScreen("streaming_rhythm_guard")
     data object Player : StreamingScreen("streaming_player")
+    data object ArtistDetail : StreamingScreen("streaming_artist/{artistId}?artistName={artistName}") {
+        fun createRoute(artistId: String, artistName: String): String =
+            "streaming_artist/${Uri.encode(artistId)}?artistName=${Uri.encode(artistName)}"
+    }
+    data object PlaylistDetail : StreamingScreen("streaming_playlist/{playlistId}") {
+        fun createRoute(playlistId: String): String = "streaming_playlist/${Uri.encode(playlistId)}"
+    }
     data object ServiceSetup : StreamingScreen("streaming_service_setup/{serviceId}") {
         fun createRoute(serviceId: String): String = "streaming_service_setup/$serviceId"
     }
@@ -140,6 +165,9 @@ fun StreamingNavigation(
     val artists by localMusicViewModel.artists.collectAsState()
     val isMediaLoading by localMusicViewModel.isBuffering.collectAsState()
     val isSeeking by localMusicViewModel.isSeeking.collectAsState()
+    val recentlyPlayed by localMusicViewModel.recentlyPlayed.collectAsState()
+    val listeningTime by localMusicViewModel.listeningTime.collectAsState()
+    val playbackStatsSummary by localMusicViewModel.playbackStatsSummary.collectAsState()
 
     val sessions by streamingMusicViewModel.serviceSessions.collectAsState()
     val hasConnectedService = sessions.values.any { it.isConnected }
@@ -150,11 +178,12 @@ fun StreamingNavigation(
     val showMiniPlayer = currentSong != null && !isPlayerRoute
     val showBottomNav = hasConnectedService && !isPlayerRoute && !isPlayerUtilityRoute && (
         currentRoute == StreamingScreen.Home.route ||
-            currentRoute == StreamingScreen.Settings.route ||
+            currentRoute == StreamingScreen.Library.route ||
             currentRoute == StreamingScreen.Search.route
         )
     val requiresConnectedService =
         currentRoute == StreamingScreen.Home.route ||
+            currentRoute == StreamingScreen.Library.route ||
             currentRoute == StreamingScreen.Search.route ||
             currentRoute == StreamingScreen.Settings.route
 
@@ -306,7 +335,7 @@ fun StreamingNavigation(
                 }
             }
         }
-    ) {
+    ) { _ ->
         NavHost(
             navController = navController,
             startDestination = StreamingScreen.Integration.route,
@@ -337,7 +366,7 @@ fun StreamingNavigation(
                 route = StreamingScreen.Home.route,
                 enterTransition = {
                     when {
-                        initialState.destination.route == StreamingScreen.Settings.route -> {
+                        initialState.destination.route == StreamingScreen.Library.route -> {
                             fadeIn(animationSpec = tween(300)) +
                                 slideInHorizontally(
                                     initialOffsetX = { -it },
@@ -351,7 +380,7 @@ fun StreamingNavigation(
                 },
                 exitTransition = {
                     when {
-                        targetState.destination.route == StreamingScreen.Settings.route -> {
+                        targetState.destination.route == StreamingScreen.Library.route -> {
                             fadeOut(animationSpec = tween(300)) +
                                 slideOutHorizontally(
                                     targetOffsetX = { -it },
@@ -365,7 +394,7 @@ fun StreamingNavigation(
                 },
                 popEnterTransition = {
                     when {
-                        initialState.destination.route == StreamingScreen.Settings.route -> {
+                        initialState.destination.route == StreamingScreen.Library.route -> {
                             fadeIn(animationSpec = tween(300)) +
                                 slideInHorizontally(
                                     initialOffsetX = { -it },
@@ -383,14 +412,104 @@ fun StreamingNavigation(
             ) {
                 StreamingContentHomeScreen(
                     viewModel = streamingMusicViewModel,
+                    recentlyPlayedSongs = recentlyPlayed,
+                    playbackStatsSummary = playbackStatsSummary,
+                    listeningTimeMs = listeningTime,
                     onNavigateToSettings = {
                         navigateToTopLevel(StreamingScreen.Settings.route)
+                    },
+                    onNavigateToSearch = {
+                        navigateToTopLevel(StreamingScreen.Search.route)
+                    },
+                    onNavigateToRhythmGuard = {
+                        navController.navigate(StreamingScreen.RhythmGuard.route) {
+                            launchSingleTop = true
+                        }
+                    },
+                    onNavigateToRhythmStats = {
+                        navController.navigate(StreamingScreen.RhythmStats.route) {
+                            launchSingleTop = true
+                        }
                     },
                     onConfigureService = { serviceId ->
                         navController.navigate(StreamingScreen.ServiceSetup.createRoute(serviceId)) {
                             launchSingleTop = true
                         }
                     }
+                )
+            }
+
+            composable(
+                route = StreamingScreen.Library.route,
+                enterTransition = {
+                    when {
+                        initialState.destination.route == StreamingScreen.Home.route -> {
+                            fadeIn(animationSpec = tween(300)) +
+                                slideInHorizontally(
+                                    initialOffsetX = { it },
+                                    animationSpec = tween(350, easing = EaseInOutQuart)
+                                )
+                        }
+                        else -> {
+                            fadeIn(animationSpec = tween(300))
+                        }
+                    }
+                },
+                exitTransition = {
+                    when {
+                        targetState.destination.route == StreamingScreen.Home.route -> {
+                            fadeOut(animationSpec = tween(300)) +
+                                slideOutHorizontally(
+                                    targetOffsetX = { it },
+                                    animationSpec = tween(350, easing = EaseInOutQuart)
+                                )
+                        }
+                        else -> {
+                            fadeOut(animationSpec = tween(300))
+                        }
+                    }
+                },
+                popEnterTransition = {
+                    when {
+                        initialState.destination.route == StreamingScreen.Home.route -> {
+                            fadeIn(animationSpec = tween(300)) +
+                                slideInHorizontally(
+                                    initialOffsetX = { it },
+                                    animationSpec = tween(350, easing = EaseInOutQuart)
+                                )
+                        }
+                        else -> {
+                            fadeIn(animationSpec = tween(200))
+                        }
+                    }
+                },
+                popExitTransition = {
+                    fadeOut(animationSpec = tween(200))
+                }
+            ) {
+                StreamingLibraryScreen(
+                    viewModel = streamingMusicViewModel,
+                    onConfigureService = { serviceId ->
+                        navController.navigate(StreamingScreen.ServiceSetup.createRoute(serviceId)) {
+                            launchSingleTop = true
+                        }
+                    },
+                    onNavigateToArtist = { artist ->
+                        navController.navigate(
+                            StreamingScreen.ArtistDetail.createRoute(artist.id, artist.name)
+                        ) {
+                            launchSingleTop = true
+                        }
+                    },
+                    onNavigateToPlaylist = { playlist ->
+                        navController.navigate(
+                            StreamingScreen.PlaylistDetail.createRoute(playlist.id)
+                        ) {
+                            launchSingleTop = true
+                        }
+                    },
+                    activeSongId = currentSong?.id,
+                    isPlayerPlaying = isPlaying
                 )
             }
 
@@ -418,6 +537,13 @@ fun StreamingNavigation(
                     viewModel = streamingMusicViewModel,
                     onConfigureService = { serviceId ->
                         navController.navigate(StreamingScreen.ServiceSetup.createRoute(serviceId)) {
+                            launchSingleTop = true
+                        }
+                    },
+                    onNavigateToArtist = { artist ->
+                        navController.navigate(
+                            StreamingScreen.ArtistDetail.createRoute(artist.id, artist.name)
+                        ) {
                             launchSingleTop = true
                         }
                     }
@@ -453,6 +579,457 @@ fun StreamingNavigation(
                         }
                     },
                     onSwitchToLocalMode = onSwitchToLocalMode
+                )
+            }
+
+            composable(
+                route = StreamingScreen.RhythmStats.route,
+                enterTransition = {
+                    fadeIn(animationSpec = tween(250))
+                },
+                exitTransition = {
+                    fadeOut(animationSpec = tween(200))
+                },
+                popExitTransition = {
+                    fadeOut(animationSpec = tween(200))
+                }
+            ) {
+                ListeningStatsScreen(
+                    navController = navController,
+                    viewModel = localMusicViewModel
+                )
+            }
+
+            composable(
+                route = StreamingScreen.RhythmGuard.route,
+                enterTransition = {
+                    fadeIn(animationSpec = tween(250))
+                },
+                exitTransition = {
+                    fadeOut(animationSpec = tween(200))
+                },
+                popExitTransition = {
+                    fadeOut(animationSpec = tween(200))
+                }
+            ) {
+                RhythmGuardSettingsScreen(
+                    onBackClick = {
+                        navController.popBackStack()
+                    }
+                )
+            }
+
+            composable(
+                route = StreamingScreen.ArtistDetail.route,
+                arguments = listOf(
+                    navArgument("artistId") { type = NavType.StringType },
+                    navArgument("artistName") {
+                        type = NavType.StringType
+                        nullable = true
+                        defaultValue = ""
+                    }
+                ),
+                enterTransition = {
+                    fadeIn(animationSpec = tween(250))
+                },
+                exitTransition = {
+                    fadeOut(animationSpec = tween(200))
+                },
+                popExitTransition = {
+                    fadeOut(animationSpec = tween(200))
+                }
+            ) { backStackEntry ->
+                val artistId = backStackEntry.arguments
+                    ?.getString("artistId")
+                    ?.let(Uri::decode)
+                    .orEmpty()
+                val routeArtistName = backStackEntry.arguments
+                    ?.getString("artistName")
+                    ?.let(Uri::decode)
+                    .orEmpty()
+
+                val followedArtists by streamingMusicViewModel.followedArtists.collectAsState()
+                val searchResults by streamingMusicViewModel.searchResults.collectAsState()
+                val currentService by streamingMusicViewModel.currentService.collectAsState()
+                val haptics = LocalHapticFeedback.current
+
+                val resolvedArtistName = remember(artistId, routeArtistName) {
+                    routeArtistName.ifBlank { inferArtistNameFromId(artistId) }
+                }
+
+                val selectedArtist = remember(
+                    artistId,
+                    resolvedArtistName,
+                    followedArtists,
+                    searchResults,
+                    currentService
+                ) {
+                    (followedArtists + searchResults.artists)
+                        .distinctBy { it.id }
+                        .firstOrNull { it.id == artistId }
+                        ?: StreamingArtist(
+                            id = artistId,
+                            name = resolvedArtistName.ifBlank {
+                                context.getString(R.string.artists_title)
+                            },
+                            artworkUri = null,
+                            songCount = 0,
+                            albumCount = 0,
+                            sourceType = currentService
+                        )
+                }
+
+                var artistSongs by remember(artistId) {
+                    mutableStateOf(selectedArtist.getTopTracks())
+                }
+                var artistAlbums by remember(artistId) {
+                    mutableStateOf(selectedArtist.getAlbumsList())
+                }
+                var isArtistLoading by remember(artistId) { mutableStateOf(true) }
+
+                var showAlbumBottomSheet by remember { mutableStateOf(false) }
+                var selectedAlbum by remember { mutableStateOf<StreamingAlbum?>(null) }
+                var selectedAlbumSongs by remember { mutableStateOf<List<StreamingSong>>(emptyList()) }
+                var isAlbumSheetLoading by remember { mutableStateOf(false) }
+                val albumBottomSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+
+                LaunchedEffect(artistId, selectedArtist.name) {
+                    if (artistId.isBlank()) {
+                        artistSongs = emptyList()
+                        artistAlbums = emptyList()
+                        isArtistLoading = false
+                        return@LaunchedEffect
+                    }
+
+                    isArtistLoading = true
+                    artistSongs = streamingMusicViewModel.getArtistTopSongs(
+                        artistId = artistId,
+                        artistNameHint = selectedArtist.name,
+                        limit = 80
+                    )
+                    artistAlbums = streamingMusicViewModel.getArtistAlbums(
+                        artistId = artistId,
+                        artistNameHint = selectedArtist.name
+                    )
+                    isArtistLoading = false
+                }
+
+                LaunchedEffect(showAlbumBottomSheet, selectedAlbum?.id) {
+                    if (showAlbumBottomSheet) {
+                        val album = selectedAlbum ?: return@LaunchedEffect
+                        isAlbumSheetLoading = true
+                        selectedAlbumSongs = try {
+                            streamingMusicViewModel.getAlbumSongs(album)
+                        } catch (_: Exception) {
+                            album.getTracks()
+                        }
+                        isAlbumSheetLoading = false
+                    }
+                }
+
+                val localArtistSongs = remember(artistSongs) {
+                    artistSongs.map { it.toDisplaySong() }
+                }
+                val localArtistAlbums = remember(artistAlbums, localArtistSongs) {
+                    artistAlbums.map { it.toDisplayAlbum(localArtistSongs) }
+                }
+                val localArtist = remember(
+                    selectedArtist,
+                    resolvedArtistName,
+                    localArtistSongs,
+                    localArtistAlbums
+                ) {
+                    selectedArtist.toDisplayArtist(
+                        fallbackName = resolvedArtistName,
+                        songs = localArtistSongs,
+                        albums = localArtistAlbums
+                    )
+                }
+                val artistSongsById = remember(artistSongs) { artistSongs.associateBy { it.id } }
+
+                ArtistDetailScreen(
+                    artistName = localArtist.name,
+                    onBack = { navController.popBackStack() },
+                    onSongClick = { localSong ->
+                        val queue = if (artistSongs.isNotEmpty()) artistSongs else {
+                            artistSongsById[localSong.id]?.let { listOf(it) }.orEmpty()
+                        }
+                        if (queue.isNotEmpty()) {
+                            val index = queue.indexOfFirst { it.id == localSong.id }.coerceAtLeast(0)
+                            streamingMusicViewModel.playQueue(
+                                queue = queue,
+                                startIndex = index,
+                                shuffle = false
+                            )
+                        }
+                    },
+                    onAlbumClick = { localAlbum ->
+                        val resolvedAlbum = artistAlbums.firstOrNull { it.id == localAlbum.id }
+                            ?: artistAlbums.firstOrNull {
+                                it.title.equals(localAlbum.title, ignoreCase = true) &&
+                                    it.artist.equals(localAlbum.artist, ignoreCase = true)
+                            }
+                        if (resolvedAlbum != null) {
+                            selectedAlbum = resolvedAlbum
+                            selectedAlbumSongs = resolvedAlbum.getTracks()
+                            showAlbumBottomSheet = true
+                        }
+                    },
+                    onPlayAll = { songs ->
+                        if (artistSongs.isNotEmpty()) {
+                            streamingMusicViewModel.playQueue(
+                                queue = artistSongs,
+                                startIndex = 0,
+                                shuffle = false
+                            )
+                        } else {
+                            val fallbackQueue = songs.mapNotNull { artistSongsById[it.id] }
+                            if (fallbackQueue.isNotEmpty()) {
+                                streamingMusicViewModel.playQueue(
+                                    queue = fallbackQueue,
+                                    startIndex = 0,
+                                    shuffle = false
+                                )
+                            }
+                        }
+                    },
+                    onShufflePlay = {
+                        if (artistSongs.isNotEmpty()) {
+                            streamingMusicViewModel.playQueue(
+                                queue = artistSongs,
+                                startIndex = 0,
+                                shuffle = true
+                            )
+                        }
+                    },
+                    onAddToQueue = { localSong ->
+                        artistSongsById[localSong.id]?.let { streamingSong ->
+                            streamingMusicViewModel.playQueue(
+                                queue = listOf(streamingSong),
+                                startIndex = 0,
+                                shuffle = false
+                            )
+                        }
+                    },
+                    onAddSongToPlaylist = {},
+                    onPlayerClick = {
+                        navController.navigate(StreamingScreen.Player.route) {
+                            launchSingleTop = true
+                        }
+                    },
+                    onPlayNext = {},
+                    onToggleFavorite = {},
+                    favoriteSongs = emptySet(),
+                    onShowSongInfo = {},
+                    currentSong = currentSong,
+                    isPlaying = isPlaying,
+                    artistOverride = localArtist,
+                    songsOverride = localArtistSongs,
+                    albumsOverride = localArtistAlbums,
+                    isContentLoadingOverride = isArtistLoading
+                )
+
+                val currentAlbum = selectedAlbum
+                if (showAlbumBottomSheet && currentAlbum != null) {
+                    val localAlbum = remember(currentAlbum, selectedAlbumSongs) {
+                        currentAlbum.toDisplayAlbum(selectedAlbumSongs.map { it.toDisplaySong() })
+                    }
+                    val selectedAlbumSongsById = remember(selectedAlbumSongs) {
+                        selectedAlbumSongs.associateBy { it.id }
+                    }
+
+                    AlbumBottomSheet(
+                        album = localAlbum,
+                        onDismiss = {
+                            showAlbumBottomSheet = false
+                            selectedAlbum = null
+                            selectedAlbumSongs = emptyList()
+                        },
+                        onSongClick = { localSong ->
+                            val index = selectedAlbumSongs.indexOfFirst { it.id == localSong.id }
+                            if (index >= 0) {
+                                streamingMusicViewModel.playQueue(
+                                    queue = selectedAlbumSongs,
+                                    startIndex = index,
+                                    shuffle = false
+                                )
+                            }
+                        },
+                        onPlayAll = { localQueue ->
+                            val queue = localQueue
+                                .mapNotNull { selectedAlbumSongsById[it.id] }
+                                .ifEmpty { selectedAlbumSongs }
+                            if (queue.isNotEmpty()) {
+                                streamingMusicViewModel.playQueue(
+                                    queue = queue,
+                                    startIndex = 0,
+                                    shuffle = false
+                                )
+                            } else {
+                                streamingMusicViewModel.playAlbum(currentAlbum)
+                            }
+                        },
+                        onShufflePlay = { localQueue ->
+                            val queue = localQueue
+                                .mapNotNull { selectedAlbumSongsById[it.id] }
+                                .ifEmpty { selectedAlbumSongs }
+                            if (queue.isNotEmpty()) {
+                                streamingMusicViewModel.playQueue(
+                                    queue = queue,
+                                    startIndex = 0,
+                                    shuffle = true
+                                )
+                            } else {
+                                streamingMusicViewModel.playAlbum(currentAlbum)
+                            }
+                        },
+                        onAddToQueue = { localSong ->
+                            selectedAlbumSongsById[localSong.id]?.let { streamingSong ->
+                                streamingMusicViewModel.playQueue(
+                                    queue = listOf(streamingSong),
+                                    startIndex = 0,
+                                    shuffle = false
+                                )
+                            }
+                        },
+                        onAddSongToPlaylist = {},
+                        onPlayerClick = {
+                            navController.navigate(StreamingScreen.Player.route) {
+                                launchSingleTop = true
+                            }
+                        },
+                        sheetState = albumBottomSheetState,
+                        haptics = haptics,
+                        currentSong = currentSong,
+                        isPlaying = isPlaying
+                    )
+                }
+            }
+
+            composable(
+                route = StreamingScreen.PlaylistDetail.route,
+                arguments = listOf(navArgument("playlistId") { type = NavType.StringType }),
+                enterTransition = {
+                    fadeIn(animationSpec = tween(250))
+                },
+                exitTransition = {
+                    fadeOut(animationSpec = tween(200))
+                },
+                popExitTransition = {
+                    fadeOut(animationSpec = tween(200))
+                }
+            ) { backStackEntry ->
+                val playlistId = backStackEntry.arguments
+                    ?.getString("playlistId")
+                    ?.let(Uri::decode)
+                    .orEmpty()
+
+                val savedPlaylists by streamingMusicViewModel.savedPlaylists.collectAsState()
+                val featuredPlaylists by streamingMusicViewModel.featuredPlaylists.collectAsState()
+                val searchResults by streamingMusicViewModel.searchResults.collectAsState()
+
+                val selectedPlaylist = remember(
+                    playlistId,
+                    savedPlaylists,
+                    featuredPlaylists,
+                    searchResults
+                ) {
+                    (savedPlaylists + featuredPlaylists + searchResults.playlists)
+                        .distinctBy { it.id }
+                        .firstOrNull { it.id == playlistId }
+                }
+
+                val playlistTracks = remember(selectedPlaylist) {
+                    selectedPlaylist?.getTracks().orEmpty()
+                }
+                val playlistTracksById = remember(playlistTracks) {
+                    playlistTracks.associateBy { it.id }
+                }
+                val localPlaylistSongs = remember(playlistTracks) {
+                    playlistTracks.map { it.toDisplaySong() }
+                }
+                val localPlaylist = remember(selectedPlaylist, localPlaylistSongs, playlistId) {
+                    selectedPlaylist?.toDisplayPlaylist(localPlaylistSongs)
+                        ?: Playlist(
+                            id = playlistId,
+                            name = context.getString(R.string.library_tab_playlists),
+                            songs = localPlaylistSongs
+                        )
+                }
+
+                PlaylistDetailScreen(
+                    playlist = localPlaylist,
+                    currentSong = currentSong,
+                    isPlaying = isPlaying,
+                    progress = progress,
+                    onPlayPause = { localMusicViewModel.togglePlayPause() },
+                    onPlayerClick = {
+                        navController.navigate(StreamingScreen.Player.route) {
+                            launchSingleTop = true
+                        }
+                    },
+                    onPlayAll = {
+                        if (playlistTracks.isNotEmpty()) {
+                            streamingMusicViewModel.playQueue(
+                                queue = playlistTracks,
+                                startIndex = 0,
+                                shuffle = false
+                            )
+                        }
+                    },
+                    onShufflePlay = {
+                        if (playlistTracks.isNotEmpty()) {
+                            streamingMusicViewModel.playQueue(
+                                queue = playlistTracks,
+                                startIndex = 0,
+                                shuffle = true
+                            )
+                        }
+                    },
+                    onSongClick = { localSong ->
+                        val index = playlistTracks.indexOfFirst { it.id == localSong.id }
+                        if (index >= 0) {
+                            streamingMusicViewModel.playQueue(
+                                queue = playlistTracks,
+                                startIndex = index,
+                                shuffle = false
+                            )
+                        }
+                    },
+                    onPlaySongFromPlaylist = { localSong, localQueue ->
+                        val queue = localQueue
+                            .mapNotNull { playlistTracksById[it.id] }
+                            .ifEmpty { playlistTracks }
+                        if (queue.isNotEmpty()) {
+                            val index = queue.indexOfFirst { it.id == localSong.id }.coerceAtLeast(0)
+                            streamingMusicViewModel.playQueue(
+                                queue = queue,
+                                startIndex = index,
+                                shuffle = false
+                            )
+                        }
+                    },
+                    onBack = { navController.popBackStack() },
+                    onRemoveSong = { _, _ -> },
+                    onRenamePlaylist = {},
+                    onDeletePlaylist = {},
+                    onAddSongsToPlaylist = {},
+                    onSkipNext = { streamingMusicViewModel.skipToNext() },
+                    onSearchClick = { navigateToTopLevel(StreamingScreen.Search.route) },
+                    onPlayNext = {},
+                    onAddToQueue = { localSong ->
+                        playlistTracksById[localSong.id]?.let { streamingSong ->
+                            streamingMusicViewModel.playQueue(
+                                queue = listOf(streamingSong),
+                                startIndex = 0,
+                                shuffle = false
+                            )
+                        }
+                    },
+                    onToggleFavorite = {},
+                    onGoToAlbum = {},
+                    onGoToArtist = {},
+                    onShare = {}
                 )
             }
 
@@ -494,8 +1071,6 @@ fun StreamingNavigation(
                     )
                 }
             ) {
-                val currentSongDurationMs = (currentSong?.duration ?: 0L) * 1000L
-
                 PlayerScreen(
                     song = currentSong,
                     isPlaying = isPlaying,
@@ -508,11 +1083,7 @@ fun StreamingNavigation(
                     onSkipPrevious = { localMusicViewModel.skipToPrevious() },
                     onSeek = { position -> localMusicViewModel.seekTo(position) },
                     onLyricsSeek = { lyricPositionMs ->
-                        if (currentSongDurationMs > 0L) {
-                            localMusicViewModel.seekTo(
-                                (lyricPositionMs.toFloat() / currentSongDurationMs.toFloat()).coerceIn(0f, 1f)
-                            )
-                        }
+                        localMusicViewModel.seekTo(lyricPositionMs.coerceAtLeast(0L))
                     },
                     onBack = { navController.popBackStack() },
                     onLocationClick = { localMusicViewModel.showOutputSwitcherDialog() },
@@ -546,7 +1117,7 @@ fun StreamingNavigation(
                         localMusicViewModel.moveQueueItem(fromIndex, toIndex)
                     },
                     onAddSongsToQueue = { navigateToTopLevel(StreamingScreen.Search.route) },
-                    onNavigateToLibrary = { navigateToTopLevel(StreamingScreen.Home.route) },
+                    onNavigateToLibrary = { navigateToTopLevel(StreamingScreen.Library.route) },
                     onClearQueue = { localMusicViewModel.clearQueue() },
                     isMediaLoading = isMediaLoading,
                     isSeeking = isSeeking,
@@ -626,6 +1197,89 @@ private fun StreamingSong.toLocalSong(): Song? {
     )
 }
 
+private fun StreamingSong.toDisplaySong(): Song {
+    val playbackUri = when {
+        !streamingUrl.isNullOrBlank() -> Uri.parse(streamingUrl)
+        !previewUrl.isNullOrBlank() -> Uri.parse(previewUrl)
+        else -> Uri.parse("streaming://track/$id")
+    }
+
+    return Song(
+        id = id,
+        title = title,
+        artist = artist,
+        album = album,
+        duration = duration,
+        uri = playbackUri,
+        artworkUri = artworkUri?.takeIf { it.isNotBlank() }?.let(Uri::parse)
+    )
+}
+
+private fun StreamingAlbum.toDisplayAlbum(displaySongs: List<Song>): Album {
+    val albumSongs = if (displaySongs.isNotEmpty()) {
+        displaySongs.filter {
+            it.album.equals(title, ignoreCase = true) &&
+                it.artist.equals(artist, ignoreCase = true)
+        }
+    } else {
+        getTracks().map { it.toDisplaySong() }
+    }
+
+    return Album(
+        id = id,
+        title = title,
+        artist = artist,
+        artworkUri = artworkUri?.takeIf { it.isNotBlank() }?.let(Uri::parse),
+        year = year ?: 0,
+        songs = albumSongs,
+        numberOfSongs = if (songCount > 0) songCount else albumSongs.size
+    )
+}
+
+private fun StreamingArtist.toDisplayArtist(
+    fallbackName: String,
+    songs: List<Song>,
+    albums: List<Album>
+): Artist {
+    return Artist(
+        id = id,
+        name = name.ifBlank { fallbackName.ifBlank { "Artist" } },
+        artworkUri = artworkUri?.takeIf { it.isNotBlank() }?.let(Uri::parse),
+        albums = albums,
+        songs = songs,
+        numberOfAlbums = if (albumCount > 0) albumCount else albums.size,
+        numberOfTracks = if (songCount > 0) songCount else songs.size
+    )
+}
+
+private fun StreamingPlaylist.toDisplayPlaylist(displaySongs: List<Song>): Playlist {
+    return Playlist(
+        id = id,
+        name = name,
+        songs = displaySongs,
+        artworkUri = artworkUri?.takeIf { it.isNotBlank() }?.let(Uri::parse)
+    )
+}
+
+private fun inferArtistNameFromId(artistId: String): String {
+    if (artistId.isBlank()) {
+        return ""
+    }
+
+    val decoded = Uri.decode(artistId)
+    val normalized = decoded
+        .substringAfterLast("artist:", decoded)
+        .substringAfterLast("::")
+        .substringAfterLast(":")
+        .substringAfterLast("/")
+        .replace('_', ' ')
+        .replace('-', ' ')
+        .replace('+', ' ')
+        .trim()
+
+    return normalized.ifBlank { decoded }
+}
+
 @Composable
 private fun StreamingBottomBar(
     currentRoute: String,
@@ -667,9 +1321,9 @@ private fun StreamingBottomBar(
                             Pair(RhythmIcons.HomeFilled, RhythmIcons.Home)
                         ),
                         Triple(
-                            StreamingScreen.Settings.route,
-                            context.getString(R.string.settings_title),
-                            Pair(RhythmIcons.SettingsFilled, RhythmIcons.Settings)
+                            StreamingScreen.Library.route,
+                            context.getString(R.string.library),
+                            Pair(RhythmIcons.Navigation.Library, RhythmIcons.Navigation.LibraryOutlined)
                         )
                     )
 

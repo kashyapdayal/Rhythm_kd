@@ -1,48 +1,135 @@
 package chromahub.rhythm.app.features.streaming.presentation.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoGraph
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.Recommend
+import androidx.compose.material.icons.filled.RestartAlt
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.WavingHand
+import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.Headphones
+import androidx.compose.material.icons.rounded.NewReleases
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.Reorder
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Shuffle
+import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.carousel.CarouselDefaults
+import androidx.compose.material3.carousel.HorizontalCenteredHeroCarousel
+import androidx.compose.material3.carousel.rememberCarouselState
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import chromahub.rhythm.app.R
+import chromahub.rhythm.app.core.domain.model.SourceType
+import chromahub.rhythm.app.features.streaming.domain.model.StreamingAlbum
+import chromahub.rhythm.app.features.streaming.domain.model.StreamingPlaylist
+import chromahub.rhythm.app.features.streaming.domain.model.StreamingServiceId
+import chromahub.rhythm.app.features.streaming.domain.model.StreamingSong
 import chromahub.rhythm.app.features.streaming.presentation.model.StreamingServiceOptions
 import chromahub.rhythm.app.features.streaming.presentation.viewmodel.StreamingMusicViewModel
 import chromahub.rhythm.app.shared.data.model.AppSettings
+import chromahub.rhythm.app.shared.data.model.Song
+import chromahub.rhythm.app.shared.data.repository.PlaybackStatsRepository
+import chromahub.rhythm.app.shared.presentation.components.common.ButtonGroupStyle
 import chromahub.rhythm.app.shared.presentation.components.common.CollapsibleHeaderScreen
+import chromahub.rhythm.app.shared.presentation.components.common.ExpressiveButtonGroup
 import chromahub.rhythm.app.shared.presentation.components.common.ExpressiveFilledIconButton
+import chromahub.rhythm.app.shared.presentation.components.common.ExpressiveGroupButton
 import chromahub.rhythm.app.shared.presentation.components.icons.RhythmIcons
 import chromahub.rhythm.app.util.HapticUtils
+import chromahub.rhythm.app.util.M3ImageUtils
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import java.util.Calendar
+
+private const val STREAMING_SECTION_GREETING = "GREETING"
+private const val STREAMING_SECTION_RHYTHM_GUARD = "RHYTHM_GUARD"
+private const val STREAMING_SECTION_RHYTHM_STATS = "RHYTHM_STATS"
+private const val STREAMING_SECTION_DISCOVER = "DISCOVER"
+private const val STREAMING_SECTION_RECENTLY_PLAYED = "RECENTLY_PLAYED"
+private const val STREAMING_SECTION_NEW_RELEASES = "NEW_RELEASES"
+
+private val defaultStreamingHomeSections = listOf(
+    STREAMING_SECTION_GREETING,
+    STREAMING_SECTION_DISCOVER,
+    STREAMING_SECTION_RHYTHM_GUARD,
+    STREAMING_SECTION_RHYTHM_STATS,
+    STREAMING_SECTION_RECENTLY_PLAYED,
+    STREAMING_SECTION_NEW_RELEASES
+)
 
 @Composable
 fun StreamingContentHomeScreen(
     viewModel: StreamingMusicViewModel,
+    recentlyPlayedSongs: List<Song>,
+    playbackStatsSummary: PlaybackStatsRepository.PlaybackStatsSummary?,
+    listeningTimeMs: Long,
     onNavigateToSettings: () -> Unit,
+    onNavigateToSearch: () -> Unit,
+    onNavigateToRhythmGuard: () -> Unit,
+    onNavigateToRhythmStats: () -> Unit,
     onConfigureService: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -52,24 +139,148 @@ fun StreamingContentHomeScreen(
 
     val selectedService by appSettings.streamingService.collectAsState()
     val sessions by viewModel.serviceSessions.collectAsState()
+    val recommendations by viewModel.recommendations.collectAsState()
+    val newReleases by viewModel.newReleases.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
+    val sectionOrder by appSettings.streamingHomeSectionOrder.collectAsState()
+    val showGreetingSection by appSettings.streamingHomeShowGreeting.collectAsState()
+    val showRhythmGuardSection by appSettings.streamingHomeShowRhythmGuard.collectAsState()
+    val showRhythmStatsSection by appSettings.streamingHomeShowRhythmStats.collectAsState()
+    val showDiscoverSection by appSettings.streamingHomeShowRecommended.collectAsState()
+    val discoverAutoScroll by appSettings.homeDiscoverAutoScroll.collectAsState()
+    val discoverAutoScrollInterval by appSettings.homeDiscoverAutoScrollInterval.collectAsState()
+    val showRecentSection by appSettings.streamingHomeShowRecentlyPlayed.collectAsState()
+    val showNewReleasesSection by appSettings.streamingHomeShowNewReleases.collectAsState()
+    val persistedSongsPlayed by appSettings.songsPlayed.collectAsState()
+    val persistedUniqueArtists by appSettings.uniqueArtists.collectAsState()
+    val dailyListeningStats by appSettings.dailyListeningStats.collectAsState()
+    val rhythmGuardMode by appSettings.rhythmGuardMode.collectAsState()
+    val rhythmGuardAge by appSettings.rhythmGuardAge.collectAsState()
+    val rhythmGuardAlertThresholdMinutes by appSettings.rhythmGuardAlertThresholdMinutes.collectAsState()
+    val rhythmGuardTimeoutUntilMs by appSettings.rhythmGuardTimeoutUntilMs.collectAsState()
+
+    var showSectionOrderBottomSheet by remember { mutableStateOf(false) }
+
     val selectedOption = remember(selectedService) {
         StreamingServiceOptions.defaults.firstOrNull { it.id == selectedService }
     }
     val selectedServiceName = selectedOption?.let { context.getString(it.nameRes) }
         ?: context.getString(R.string.streaming_not_selected)
-    val selectedSession = sessions[selectedService]
-    val isSelectedServiceConnected = selectedSession?.isConnected == true
+    val selectedServiceId = selectedOption?.id ?: selectedService
+    val fallbackServiceId = StreamingServiceOptions.defaults.firstOrNull()?.id.orEmpty()
+    val serviceIdForConfig = selectedServiceId.ifBlank { fallbackServiceId }
 
-    LaunchedEffect(selectedService, isSelectedServiceConnected) {
+    val isSelectedServiceConnected = sessions[selectedServiceId]?.isConnected == true
+
+    val hasAnyWidgetContent =
+        recommendations.isNotEmpty() ||
+            newReleases.isNotEmpty()
+
+    val resolvedSectionOrder = remember(sectionOrder) {
+        (
+            sectionOrder
+                .map(::normalizeStreamingSectionId)
+                .filter { it in defaultStreamingHomeSections } + defaultStreamingHomeSections
+            ).distinct()
+    }
+    val sectionVisibility = remember(
+        showGreetingSection,
+        showDiscoverSection,
+        showRhythmGuardSection,
+        showRhythmStatsSection,
+        showRecentSection,
+        showNewReleasesSection
+    ) {
+        mapOf(
+            STREAMING_SECTION_GREETING to showGreetingSection,
+            STREAMING_SECTION_DISCOVER to showDiscoverSection,
+            STREAMING_SECTION_RHYTHM_GUARD to showRhythmGuardSection,
+            STREAMING_SECTION_RHYTHM_STATS to showRhythmStatsSection,
+            STREAMING_SECTION_RECENTLY_PLAYED to showRecentSection,
+            STREAMING_SECTION_NEW_RELEASES to showNewReleasesSection
+        )
+    }
+    val orderedSections = remember(resolvedSectionOrder) {
+        val fixedTopSections = listOf(STREAMING_SECTION_GREETING, STREAMING_SECTION_DISCOVER)
+        fixedTopSections + resolvedSectionOrder.filterNot { it in fixedTopSections }
+    }
+    val visibleSections = remember(orderedSections, sectionVisibility) {
+        orderedSections.filter { sectionVisibility[it] == true }
+    }
+
+    val recommendationWidgetSongs = recommendations.take(12)
+    val streamingRecentSongs = remember(recentlyPlayedSongs, selectedServiceId) {
+        recentlyPlayedSongs
+            .mapNotNull { song -> song.toStreamingSongOrNull(selectedServiceId) }
+            .distinctBy { it.id }
+            .take(20)
+    }
+    val recentSongsForSelectedService = remember(streamingRecentSongs, selectedServiceId) {
+        val serviceSongs = streamingRecentSongs.filter { it.id.startsWith("$selectedServiceId::") }
+        if (serviceSongs.isNotEmpty()) serviceSongs else streamingRecentSongs
+    }
+
+    val totalListeningDurationMs = playbackStatsSummary?.totalDurationMs?.takeIf { it > 0L } ?: listeningTimeMs
+    val songsPlayedForStats = playbackStatsSummary?.totalPlayCount?.takeIf { it > 0 } ?: persistedSongsPlayed
+    val uniqueArtistsForStats = playbackStatsSummary?.uniqueArtists?.takeIf { it > 0 } ?: persistedUniqueArtists
+    val rhythmGuardPolicy = remember(rhythmGuardAge) { appSettings.getRhythmGuardPolicy(rhythmGuardAge) }
+    val rhythmGuardRecommendedMinutes = when (rhythmGuardMode) {
+        AppSettings.RHYTHM_GUARD_MODE_MANUAL -> rhythmGuardAlertThresholdMinutes
+            .takeIf { it > 0 }
+            ?: rhythmGuardPolicy.recommendedDailyMinutes
+        else -> rhythmGuardPolicy.recommendedDailyMinutes
+    }
+    val todayListeningMinutes = remember(dailyListeningStats, persistedSongsPlayed, totalListeningDurationMs) {
+        appSettings.estimateRhythmGuardTodayListeningMinutes(
+            dailyListeningStats = dailyListeningStats,
+            songsPlayed = persistedSongsPlayed,
+            listeningTimeMs = totalListeningDurationMs
+        )
+    }
+    val rhythmGuardTimeoutRemainingMs = (rhythmGuardTimeoutUntilMs - System.currentTimeMillis()).coerceAtLeast(0L)
+    val isRhythmGuardTimeoutActive = rhythmGuardTimeoutRemainingMs > 0L
+    val greetingMessage = rememberGreetingMessage(context)
+    val greetingQuote = rememberGreetingQuote(context)
+
+    LaunchedEffect(selectedServiceId, isSelectedServiceConnected) {
         if (isSelectedServiceConnected) {
             viewModel.loadHomeContent()
         }
+    }
+
+    if (showSectionOrderBottomSheet) {
+        StreamingHomeSectionOrderBottomSheet(
+            appSettings = appSettings,
+            onDismiss = { showSectionOrderBottomSheet = false }
+        )
     }
 
     CollapsibleHeaderScreen(
         title = stringResource(id = R.string.streaming_integration_title),
         headerDisplayMode = 1,
         actions = {
+            if (isSelectedServiceConnected) {
+                ExpressiveFilledIconButton(
+                    onClick = {
+                        HapticUtils.performHapticFeedback(
+                            context,
+                            haptics,
+                            HapticFeedbackType.LongPress
+                        )
+                        showSectionOrderBottomSheet = true
+                    },
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Reorder,
+                        contentDescription = stringResource(id = R.string.cd_reorder_home_sections)
+                    )
+                }
+            }
+
             ExpressiveFilledIconButton(
                 onClick = {
                     HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
@@ -79,7 +290,7 @@ fun StreamingContentHomeScreen(
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 ),
-                modifier = Modifier.padding(end = 16.dp)
+                modifier = Modifier.padding(start = 8.dp, end = 16.dp)
             ) {
                 Icon(
                     imageVector = RhythmIcons.Settings,
@@ -93,134 +304,276 @@ fun StreamingContentHomeScreen(
                 .then(contentModifier)
                 .fillMaxSize()
                 .padding(horizontal = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            verticalArrangement = Arrangement.spacedBy(40.dp),
+            contentPadding = PaddingValues(bottom = 24.dp)
         ) {
-            item {
-                Text(
-                    text = stringResource(id = R.string.streaming_dashboard_subtitle, selectedServiceName),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
 
             if (!isSelectedServiceConnected) {
                 item {
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainer
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            Text(
-                                text = stringResource(id = R.string.streaming_home_selected_service_unavailable),
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold
+                    StreamingDisconnectedStateCard(
+                        selectedServiceName = selectedServiceName,
+                        onConfigureService = {
+                            HapticUtils.performHapticFeedback(
+                                context,
+                                haptics,
+                                HapticFeedbackType.LongPress
                             )
-                            Text(
-                                text = stringResource(
-                                    id = R.string.streaming_home_connect_selected_service,
-                                    selectedServiceName
-                                ),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Button(
-                                onClick = { onConfigureService(selectedService) },
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text(text = stringResource(id = R.string.streaming_manage_service))
+                            if (serviceIdForConfig.isNotBlank()) {
+                                onConfigureService(serviceIdForConfig)
+                            } else {
+                                onNavigateToSettings()
                             }
+                        },
+                        onOpenSettings = {
+                            HapticUtils.performHapticFeedback(
+                                context,
+                                haptics,
+                                HapticFeedbackType.TextHandleMove
+                            )
+                            onNavigateToSettings()
                         }
-                    }
-                }
-            } else {
-                item {
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainer
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                text = stringResource(
-                                    id = R.string.streaming_home_connected_service,
-                                    selectedServiceName
-                                ),
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold
-                            )
-
-                            if (!selectedSession?.username.isNullOrBlank()) {
-                                Text(
-                                    text = stringResource(
-                                        id = R.string.streaming_service_setup_connected_as,
-                                        selectedSession?.username.orEmpty()
-                                    ),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-
-                            if (!selectedSession?.serverUrl.isNullOrBlank()) {
-                                Text(
-                                    text = selectedSession?.serverUrl.orEmpty(),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                        }
-                    }
-                }
-
-                item {
-                    Text(
-                        text = stringResource(id = R.string.streaming_home_for_service, selectedServiceName),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface
                     )
                 }
-
-                itemsIndexed(serviceHighlightsFor(selectedService), key = { index, item -> "$index-$item" }) { index, line ->
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainer
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            verticalAlignment = Alignment.Top
-                        ) {
-                            Text(
-                                text = "${index + 1}.",
-                                style = MaterialTheme.typography.titleSmall,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Text(
-                                text = line,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+            } else {
+                if (isLoading && !hasAnyWidgetContent) {
+                    item {
+                        StreamingLoadingCard()
                     }
                 }
+
+                visibleSections.forEach { sectionId ->
+                    when (sectionId) {
+                        STREAMING_SECTION_GREETING -> {
+                            item(key = "streaming_section_greeting") {
+                                StreamingGreetingWidgetCard(
+                                    greeting = greetingMessage,
+                                    quote = greetingQuote,
+                                    selectedServiceName = selectedServiceName,
+                                    onNavigateToSearch = onNavigateToSearch
+                                )
+                            }
+                        }
+
+                        STREAMING_SECTION_DISCOVER -> {
+                            item(key = "streaming_section_discover") {
+                                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                                    if (showGreetingSection) {
+                                    StreamingWidgetSectionTitle(
+                                        title = stringResource(id = R.string.home_section_discover),
+                                        subtitle = stringResource(
+                                            id = R.string.streaming_home_widget_recommended_subtitle,
+                                            selectedServiceName
+                                        ),
+                                        onPlayAll = recommendationWidgetSongs.takeIf { it.isNotEmpty() }
+                                            ?.let { songs ->
+                                                {
+                                                    HapticUtils.performHapticFeedback(
+                                                        context,
+                                                        haptics,
+                                                        HapticFeedbackType.LongPress
+                                                    )
+                                                    viewModel.playQueue(songs, startIndex = 0, shuffle = false)
+                                                }
+                                            },
+                                        onShufflePlay = recommendationWidgetSongs.takeIf { it.size > 1 }
+                                            ?.let { songs ->
+                                                {
+                                                    HapticUtils.performHapticFeedback(
+                                                        context,
+                                                        haptics,
+                                                        HapticFeedbackType.LongPress
+                                                    )
+                                                    viewModel.playQueue(songs, startIndex = 0, shuffle = true)
+                                                }
+                                            }
+                                    )
+                                }
+
+                                    if (recommendationWidgetSongs.isEmpty()) {
+                                    StreamingSectionEmptyCard(
+                                        icon = Icons.Rounded.Headphones,
+                                        title = stringResource(id = R.string.streaming_home_widget_recommended_empty),
+                                        subtitle = stringResource(id = R.string.streaming_home_widget_empty_hint)
+                                    )
+                                } else {
+                                    StreamingRecommendationsCarousel(
+                                        songs = recommendationWidgetSongs,
+                                        autoScrollEnabled = discoverAutoScroll,
+                                        autoScrollIntervalSeconds = discoverAutoScrollInterval,
+                                        onPlaySong = { _, index ->
+                                            viewModel.playQueue(
+                                                queue = recommendationWidgetSongs,
+                                                startIndex = index,
+                                                shuffle = false
+                                            )
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                        }
+
+                        STREAMING_SECTION_RHYTHM_GUARD -> {
+                            item(key = "streaming_section_rhythm_guard") {
+                                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                                    StreamingWidgetSectionTitle(
+                                        title = stringResource(id = R.string.settings_rhythm_guard),
+                                        subtitle = stringResource(id = R.string.settings_rhythm_guard_list_desc)
+                                    )
+
+                                    StreamingRhythmGuardCard(
+                                        rhythmGuardMode = rhythmGuardMode,
+                                        rhythmGuardRecommendedMinutes = rhythmGuardRecommendedMinutes,
+                                        todayListeningMinutes = todayListeningMinutes,
+                                        isGuardTimeoutActive = isRhythmGuardTimeoutActive,
+                                        guardTimeoutRemainingMs = rhythmGuardTimeoutRemainingMs,
+                                        onCardClick = {
+                                            HapticUtils.performHapticFeedback(
+                                                context,
+                                                haptics,
+                                                HapticFeedbackType.LongPress
+                                            )
+                                            onNavigateToRhythmGuard()
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        STREAMING_SECTION_RHYTHM_STATS -> {
+                            item(key = "streaming_section_rhythm_stats") {
+                                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                                    StreamingWidgetSectionTitle(
+                                        title = stringResource(id = R.string.settings_rhythm_stats),
+                                        subtitle = stringResource(id = R.string.settings_rhythm_stats_desc)
+                                    )
+
+                                    StreamingRhythmStatsCard(
+                                        listeningDurationMs = totalListeningDurationMs,
+                                        songsPlayed = songsPlayedForStats,
+                                        uniqueArtists = uniqueArtistsForStats,
+                                        onCardClick = {
+                                            HapticUtils.performHapticFeedback(
+                                                context,
+                                                haptics,
+                                                HapticFeedbackType.LongPress
+                                            )
+                                            onNavigateToRhythmStats()
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        STREAMING_SECTION_RECENTLY_PLAYED -> {
+                            item(key = "streaming_section_recent") {
+                                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                                    StreamingWidgetSectionTitle(
+                                        title = stringResource(id = R.string.home_section_recently_played),
+                                        subtitle = stringResource(id = R.string.home_recently_played_subtitle),
+                                        onPlayAll = recentSongsForSelectedService.takeIf { it.isNotEmpty() }
+                                            ?.let { songs ->
+                                                {
+                                                    HapticUtils.performHapticFeedback(
+                                                        context,
+                                                        haptics,
+                                                        HapticFeedbackType.LongPress
+                                                    )
+                                                    viewModel.playQueue(
+                                                        queue = songs,
+                                                        startIndex = 0,
+                                                        shuffle = false
+                                                    )
+                                                }
+                                            },
+                                        onShufflePlay = recentSongsForSelectedService.takeIf { it.size > 1 }
+                                            ?.let { songs ->
+                                                {
+                                                    HapticUtils.performHapticFeedback(
+                                                        context,
+                                                        haptics,
+                                                        HapticFeedbackType.LongPress
+                                                    )
+                                                    viewModel.playQueue(
+                                                        queue = songs,
+                                                        startIndex = 0,
+                                                        shuffle = true
+                                                    )
+                                                }
+                                            }
+                                    )
+
+                                    if (recentSongsForSelectedService.isEmpty()) {
+                                    StreamingSectionEmptyCard(
+                                        icon = Icons.Default.History,
+                                        title = stringResource(id = R.string.home_no_recent_activity),
+                                        subtitle = stringResource(id = R.string.home_no_recent_activity_desc)
+                                    )
+                                } else {
+                                    LazyRow(
+                                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        itemsIndexed(
+                                            items = recentSongsForSelectedService,
+                                            key = { _, song -> song.id }
+                                        ) { index, song ->
+                                            StreamingSongWidgetCard(
+                                                song = song,
+                                                onPlaySong = {
+                                                    viewModel.playQueue(
+                                                        queue = recentSongsForSelectedService,
+                                                        startIndex = index,
+                                                        shuffle = false
+                                                    )
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        }
+
+                        STREAMING_SECTION_NEW_RELEASES -> {
+                            item(key = "streaming_section_new_releases") {
+                                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                                    StreamingWidgetSectionTitle(
+                                        title = stringResource(id = R.string.streaming_home_widget_new_releases_title),
+                                        subtitle = stringResource(
+                                            id = R.string.streaming_home_widget_new_releases_subtitle,
+                                            selectedServiceName
+                                        )
+                                    )
+
+                                    if (newReleases.isEmpty()) {
+                                    StreamingSectionEmptyCard(
+                                        icon = Icons.Rounded.NewReleases,
+                                        title = stringResource(id = R.string.streaming_home_widget_new_releases_empty),
+                                        subtitle = stringResource(id = R.string.streaming_home_widget_empty_hint)
+                                    )
+                                } else {
+                                    LazyRow(
+                                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        items(
+                                            items = newReleases.take(12),
+                                            key = { it.id }
+                                        ) { album ->
+                                            StreamingAlbumWidgetCard(
+                                                album = album,
+                                                onPlayAlbum = { viewModel.playAlbum(album) }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                    }
+                }
+            }
             }
 
             item {
@@ -230,32 +583,1489 @@ fun StreamingContentHomeScreen(
     }
 }
 
-private fun serviceHighlightsFor(serviceId: String): List<String> {
-    return when (serviceId.uppercase()) {
-        StreamingServiceOptions.SUBSONIC -> listOf(
-            "Resume your personal server library.",
-            "Browse artists, albums, and playlists from your Subsonic endpoint.",
-            "Search your server tracks instantly."
+@Composable
+private fun StreamingDisconnectedStateCard(
+    selectedServiceName: String,
+    onConfigureService: () -> Unit,
+    onOpenSettings: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+        ),
+        elevation = noShadowCardElevation()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Surface(
+                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.45f),
+                shape = MaterialTheme.shapes.large,
+                modifier = Modifier.size(52.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.CloudOff,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                    modifier = Modifier.padding(14.dp)
+                )
+            }
+
+            Text(
+                text = stringResource(id = R.string.streaming_home_selected_service_unavailable),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
+
+            Text(
+                text = stringResource(
+                    id = R.string.streaming_home_connect_selected_service,
+                    selectedServiceName
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Button(
+                    onClick = onConfigureService,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(text = stringResource(id = R.string.streaming_manage_service))
+                }
+
+                OutlinedButton(
+                    onClick = onOpenSettings,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Settings,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(text = stringResource(id = R.string.streaming_home_open_settings))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StreamingWidgetSectionTitle(
+    title: String,
+    subtitle: String,
+    onPlayAll: (() -> Unit)? = null,
+    onShufflePlay: (() -> Unit)? = null
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 2.dp)
+            )
+        }
+
+        if (onPlayAll != null || onShufflePlay != null) {
+            ExpressiveButtonGroup(style = ButtonGroupStyle.Tonal) {
+                onPlayAll?.let { playAction ->
+                    ExpressiveGroupButton(
+                        onClick = playAction,
+                        isStart = true,
+                        isEnd = onShufflePlay == null
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.PlayArrow,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = stringResource(id = R.string.action_play),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+
+                onShufflePlay?.let { shuffleAction ->
+                    ExpressiveGroupButton(
+                        onClick = shuffleAction,
+                        isStart = onPlayAll == null,
+                        isEnd = true
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Shuffle,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        if (onPlayAll == null) {
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = stringResource(id = R.string.action_shuffle),
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StreamingGreetingWidgetCard(
+    greeting: String,
+    quote: String,
+    selectedServiceName: String,
+    onNavigateToSearch: () -> Unit
+) {
+    val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
+
+    Card(
+        onClick = {
+            HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
+            onNavigateToSearch()
+        },
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(28.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer
+        ),
+        elevation = noShadowCardElevation()
+    ) {
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                repeat(3) {
+                    Icon(
+                        imageVector = Icons.Default.WavingHand,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.18f),
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.12f),
+                    modifier = Modifier.size(42.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.WavingHand,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = greeting,
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                    Text(
+                        text = quote,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.86f),
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                    Text(
+                        text = stringResource(
+                            id = R.string.streaming_home_widget_greeting_subtitle,
+                            selectedServiceName
+                        ),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f),
+                        modifier = Modifier.padding(top = 6.dp)
+                    )
+                }
+
+                FilledIconButton(
+                    onClick = {
+                        HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
+                        onNavigateToSearch()
+                    },
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    ),
+                    modifier = Modifier.size(44.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = stringResource(id = R.string.cd_search),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StreamingRhythmGuardCard(
+    rhythmGuardMode: String,
+    rhythmGuardRecommendedMinutes: Int,
+    todayListeningMinutes: Int,
+    isGuardTimeoutActive: Boolean,
+    guardTimeoutRemainingMs: Long,
+    onCardClick: () -> Unit
+) {
+    val guardModeLabel = rhythmGuardModeDisplayName(rhythmGuardMode)
+    val guardSnapshotLabel = if (todayListeningMinutes > rhythmGuardRecommendedMinutes) {
+        stringResource(id = R.string.settings_rhythm_guard_snapshot_widget_above_limit)
+    } else {
+        stringResource(id = R.string.settings_rhythm_guard_snapshot_widget_within_limit)
+    }
+    val guardStateSummary = if (isGuardTimeoutActive) {
+        stringResource(
+            id = R.string.streaming_home_guard_break_active,
+            formatCompactDuration(guardTimeoutRemainingMs)
         )
-        StreamingServiceOptions.JELLYFIN -> listOf(
-            "Continue from your Jellyfin media library.",
-            "Open favorites and recently added albums.",
-            "Search your Jellyfin collection by title or artist."
+    } else {
+        guardSnapshotLabel
+    }
+
+    Card(
+        onClick = onCardClick,
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
+        ),
+        elevation = noShadowCardElevation()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Security,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+
+                Surface(
+                    shape = MaterialTheme.shapes.large,
+                    color = if (isGuardTimeoutActive) {
+                        MaterialTheme.colorScheme.errorContainer
+                    } else {
+                        MaterialTheme.colorScheme.primaryContainer
+                    }
+                ) {
+                    Text(
+                        text = guardModeLabel,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (isGuardTimeoutActive) {
+                            MaterialTheme.colorScheme.onErrorContainer
+                        } else {
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        },
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                    )
+                }
+            }
+
+            Text(
+                text = stringResource(
+                    id = R.string.streaming_home_guard_exposure,
+                    todayListeningMinutes,
+                    rhythmGuardRecommendedMinutes
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = guardStateSummary,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun StreamingRhythmStatsCard(
+    listeningDurationMs: Long,
+    songsPlayed: Int,
+    uniqueArtists: Int,
+    onCardClick: () -> Unit
+) {
+    val listeningTimeLabel = formatListeningDurationShort(listeningDurationMs)
+
+    Card(
+        onClick = onCardClick,
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
+        ),
+        elevation = noShadowCardElevation()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                StreamingStatPill(
+                    title = stringResource(id = R.string.home_stat_listening_time),
+                    value = listeningTimeLabel,
+                    modifier = Modifier.weight(1f)
+                )
+                StreamingStatPill(
+                    title = stringResource(id = R.string.home_stat_songs_played),
+                    value = songsPlayed.toString(),
+                    modifier = Modifier.weight(1f)
+                )
+                StreamingStatPill(
+                    title = stringResource(id = R.string.home_stat_artists),
+                    value = uniqueArtists.toString(),
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun StreamingStatPill(
+    title: String,
+    value: String,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier,
+        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        shape = MaterialTheme.shapes.large
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(
+                text = value,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = title,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun StreamingRecommendationsCarousel(
+    songs: List<StreamingSong>,
+    autoScrollEnabled: Boolean,
+    autoScrollIntervalSeconds: Int,
+    onPlaySong: (StreamingSong, Int) -> Unit
+) {
+    val carouselState = rememberCarouselState(
+        initialItem = 0,
+        itemCount = { songs.size }
+    )
+
+    LaunchedEffect(songs.size, autoScrollEnabled, autoScrollIntervalSeconds) {
+        if (autoScrollEnabled && songs.size > 1) {
+            while (true) {
+                delay(autoScrollIntervalSeconds.coerceIn(2, 20) * 1000L)
+                val currentItem = carouselState.currentItem
+                val nextItem = (currentItem + 1) % songs.size
+                carouselState.animateScrollToItem(nextItem)
+            }
+        }
+    }
+
+    HorizontalCenteredHeroCarousel(
+        state = carouselState,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(268.dp)
+            .padding(vertical = 6.dp),
+        itemSpacing = 8.dp,
+        contentPadding = PaddingValues(horizontal = 0.dp),
+        flingBehavior = CarouselDefaults.singleAdvanceFlingBehavior(state = carouselState)
+    ) { itemIndex ->
+        val song = songs[itemIndex]
+        StreamingRecommendationHeroCard(
+            song = song,
+            onPlaySong = { onPlaySong(song, itemIndex) },
+            isPeeked = itemIndex != carouselState.currentItem,
+            modifier = Modifier
+                .fillMaxSize()
+                .maskClip(MaterialTheme.shapes.extraLarge)
         )
-        StreamingServiceOptions.NETEASE_CLOUD_MUSIC -> listOf(
-            "Open your cloud playlists and liked songs.",
-            "Discover trending releases in your region.",
-            "Search by song, artist, or playlist on Netease."
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun androidx.compose.material3.carousel.CarouselItemScope.StreamingRecommendationHeroCard(
+    song: StreamingSong,
+    onPlaySong: () -> Unit,
+    isPeeked: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
+
+    Card(
+        onClick = {
+            HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
+            onPlaySong()
+        },
+        modifier = modifier,
+        shape = MaterialTheme.shapes.extraLarge,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
+        ),
+        elevation = noShadowCardElevation()
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            M3ImageUtils.TrackImage(
+                imageUrl = song.artworkUri,
+                trackName = song.title,
+                modifier = Modifier.fillMaxSize(),
+                applyExpressiveShape = false
+            )
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                MaterialTheme.colorScheme.surface.copy(alpha = 0.28f),
+                                MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+                                MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+                            )
+                        )
+                    )
+            )
+
+            if (!isPeeked) {
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .fillMaxWidth()
+                        .padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = song.title,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+
+                    Text(
+                        text = song.artist,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StreamingLoadingCard() {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
+        ),
+        elevation = noShadowCardElevation()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Refresh,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary
+            )
+            Text(
+                text = stringResource(id = R.string.streaming_status_loading),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun StreamingSectionEmptyCard(
+    icon: ImageVector,
+    title: String,
+    subtitle: String
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+        ),
+        elevation = noShadowCardElevation()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Surface(
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
+                modifier = Modifier.size(54.dp)
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.padding(14.dp)
+                )
+            }
+
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                textAlign = TextAlign.Center,
+                fontWeight = FontWeight.SemiBold
+            )
+
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
+        }
+    }
+}
+
+@Composable
+private fun StreamingSongWidgetCard(
+    song: StreamingSong,
+    onPlaySong: () -> Unit
+) {
+    val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
+
+    Card(
+        onClick = {
+            HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
+            onPlaySong()
+        },
+        modifier = Modifier
+            .width(180.dp)
+            .height(80.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        ),
+        elevation = noShadowCardElevation()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            M3ImageUtils.TrackImage(
+                imageUrl = song.artworkUri,
+                trackName = song.title,
+                modifier = Modifier.size(52.dp),
+                applyExpressiveShape = true
+            )
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = song.title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = song.artist,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            Icon(
+                imageVector = Icons.Rounded.PlayArrow,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(16.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun StreamingAlbumWidgetCard(
+    album: StreamingAlbum,
+    onPlayAlbum: () -> Unit
+) {
+    val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
+
+    Card(
+        onClick = {
+            HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
+            onPlayAlbum()
+        },
+        modifier = Modifier.width(190.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
+        ),
+        elevation = noShadowCardElevation()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            M3ImageUtils.AlbumArt(
+                imageUrl = album.artworkUri,
+                albumName = album.title,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(168.dp)
+            )
+
+            Text(
+                text = album.title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            Text(
+                text = album.artist,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            album.year?.let { year ->
+                Text(
+                    text = year.toString(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun StreamingPlaylistWidgetCard(
+    playlist: StreamingPlaylist,
+    onPlayPlaylist: () -> Unit
+) {
+    val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
+
+    Card(
+        onClick = {
+            HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.TextHandleMove)
+            onPlayPlaylist()
+        },
+        modifier = Modifier.width(232.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.72f)
+        ),
+        elevation = noShadowCardElevation()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            M3ImageUtils.PlaylistImage(
+                imageUrl = playlist.artworkUri,
+                playlistName = playlist.name,
+                modifier = Modifier.size(68.dp)
+            )
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = playlist.name,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                Text(
+                    text = playlist.description.orEmpty().ifBlank {
+                        stringResource(
+                            id = R.string.streaming_home_widget_playlist_track_count,
+                            playlist.songCount
+                        )
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun StreamingHomeSectionOrderBottomSheet(
+    appSettings: AppSettings,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    val sectionOrder by appSettings.streamingHomeSectionOrder.collectAsState()
+    val showGreeting by appSettings.streamingHomeShowGreeting.collectAsState()
+    val showRhythmGuard by appSettings.streamingHomeShowRhythmGuard.collectAsState()
+    val showRhythmStats by appSettings.streamingHomeShowRhythmStats.collectAsState()
+    val showRecent by appSettings.streamingHomeShowRecentlyPlayed.collectAsState()
+    val showDiscover by appSettings.streamingHomeShowRecommended.collectAsState()
+    val showNewReleases by appSettings.streamingHomeShowNewReleases.collectAsState()
+
+    var reorderableSections by remember(sectionOrder) {
+        mutableStateOf(
+            (
+                sectionOrder
+                    .map(::normalizeStreamingSectionId)
+                    .filter { it in defaultStreamingHomeSections } + defaultStreamingHomeSections
+                )
+                .distinct()
+                .filterNot { it == STREAMING_SECTION_GREETING || it == STREAMING_SECTION_DISCOVER }
         )
-        StreamingServiceOptions.QQ_MUSIC -> listOf(
-            "Jump into your QQ Music recommendations.",
-            "Open your saved tracks and playlists.",
-            "Search the QQ catalog and your personal library."
+    }
+    var visibilityMap by remember(
+        showGreeting,
+        showRhythmGuard,
+        showRhythmStats,
+        showRecent,
+        showNewReleases,
+        showDiscover
+    ) {
+        mutableStateOf(
+            mapOf(
+                STREAMING_SECTION_GREETING to showGreeting,
+                STREAMING_SECTION_DISCOVER to showDiscover,
+                STREAMING_SECTION_RHYTHM_GUARD to showRhythmGuard,
+                STREAMING_SECTION_RHYTHM_STATS to showRhythmStats,
+                STREAMING_SECTION_RECENTLY_PLAYED to showRecent,
+                STREAMING_SECTION_NEW_RELEASES to showNewReleases
+            )
         )
-        else -> listOf(
-            "Connect a supported service to continue.",
-            "Service-aware recommendations will appear here.",
-            "Use search to find tracks after connecting."
-        )
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        dragHandle = {
+            BottomSheetDefaults.DragHandle(
+                color = MaterialTheme.colorScheme.primary
+            )
+        },
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+    ) {
+        val totalSectionCards = reorderableSections.size + 2
+
+        Column(modifier = Modifier.fillMaxWidth()) {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .padding(horizontal = 24.dp, vertical = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                item {
+                    Column {
+                        Text(
+                            text = stringResource(id = R.string.bottomsheet_home_section_order),
+                            style = MaterialTheme.typography.displayMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Box(
+                            modifier = Modifier
+                                .padding(top = 6.dp)
+                                .background(
+                                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    shape = CircleShape
+                                )
+                        ) {
+                            Text(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                style = MaterialTheme.typography.labelLarge,
+                                text = stringResource(id = R.string.bottomsheet_reorder_toggle_visibility),
+                                overflow = TextOverflow.Ellipsis,
+                                maxLines = 1,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(18.dp))
+                }
+
+                item(key = STREAMING_SECTION_GREETING) {
+                    val isVisible = visibilityMap[STREAMING_SECTION_GREETING] == true
+
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                        ),
+                        shape = streamingGroupedBottomSheetItemShape(0, totalSectionCards)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                modifier = Modifier.weight(1f),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(14.dp)
+                            ) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.tertiaryContainer,
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Default.PushPin,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+
+                                Icon(
+                                    imageVector = streamingSectionIcon(STREAMING_SECTION_GREETING),
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(22.dp)
+                                )
+
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = stringResource(id = streamingSectionTitleRes(STREAMING_SECTION_GREETING)),
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = stringResource(id = R.string.streaming_home_section_fixed_hint),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            IconButton(
+                                onClick = {
+                                    HapticUtils.performHapticFeedback(
+                                        context,
+                                        haptics,
+                                        HapticFeedbackType.TextHandleMove
+                                    )
+                                    visibilityMap = visibilityMap.toMutableMap().apply {
+                                        this[STREAMING_SECTION_GREETING] = !isVisible
+                                    }
+                                },
+                                modifier = Modifier.size(40.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (isVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                    contentDescription = null,
+                                    tint = if (isVisible) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.58f)
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                item(key = STREAMING_SECTION_DISCOVER) {
+                    val isVisible = visibilityMap[STREAMING_SECTION_DISCOVER] == true
+
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                        ),
+                        shape = streamingGroupedBottomSheetItemShape(1, totalSectionCards)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                modifier = Modifier.weight(1f),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(14.dp)
+                            ) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.tertiaryContainer,
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Default.PushPin,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+
+                                Icon(
+                                    imageVector = streamingSectionIcon(STREAMING_SECTION_DISCOVER),
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(22.dp)
+                                )
+
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = stringResource(id = streamingSectionTitleRes(STREAMING_SECTION_DISCOVER)),
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = stringResource(id = R.string.streaming_home_section_fixed_hint),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            IconButton(
+                                onClick = {
+                                    HapticUtils.performHapticFeedback(
+                                        context,
+                                        haptics,
+                                        HapticFeedbackType.TextHandleMove
+                                    )
+                                    visibilityMap = visibilityMap.toMutableMap().apply {
+                                        this[STREAMING_SECTION_DISCOVER] = !isVisible
+                                    }
+                                },
+                                modifier = Modifier.size(40.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (isVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                    contentDescription = null,
+                                    tint = if (isVisible) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.58f)
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                itemsIndexed(
+                    items = reorderableSections,
+                    key = { _, sectionId -> sectionId }
+                ) { index, sectionId ->
+                    val isVisible = visibilityMap[sectionId] == true
+
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                        ),
+                        shape = streamingGroupedBottomSheetItemShape(index + 2, totalSectionCards)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                modifier = Modifier.weight(1f),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.secondaryContainer,
+                                    modifier = Modifier.size(34.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Text(
+                                            text = "${index + 1}",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                }
+
+                                Icon(
+                                    imageVector = streamingSectionIcon(sectionId),
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(22.dp)
+                                )
+
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = stringResource(id = streamingSectionTitleRes(sectionId)),
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    streamingSectionSubtitleRes(sectionId)?.let { subtitleRes ->
+                                        Text(
+                                            text = stringResource(id = subtitleRes),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                            }
+
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                IconButton(
+                                    onClick = {
+                                        HapticUtils.performHapticFeedback(
+                                            context,
+                                            haptics,
+                                            HapticFeedbackType.TextHandleMove
+                                        )
+                                        visibilityMap = visibilityMap.toMutableMap().apply {
+                                            this[sectionId] = !isVisible
+                                        }
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = if (isVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                        contentDescription = null
+                                    )
+                                }
+
+                                IconButton(
+                                    enabled = index > 0,
+                                    onClick = {
+                                        if (index <= 0) return@IconButton
+                                        HapticUtils.performHapticFeedback(
+                                            context,
+                                            haptics,
+                                            HapticFeedbackType.TextHandleMove
+                                        )
+                                        reorderableSections = reorderableSections.toMutableList().apply {
+                                            val moved = removeAt(index)
+                                            add(index - 1, moved)
+                                        }
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ArrowUpward,
+                                        contentDescription = stringResource(id = R.string.cd_move_up)
+                                    )
+                                }
+
+                                IconButton(
+                                    enabled = index < reorderableSections.lastIndex,
+                                    onClick = {
+                                        if (index >= reorderableSections.lastIndex) return@IconButton
+                                        HapticUtils.performHapticFeedback(
+                                            context,
+                                            haptics,
+                                            HapticFeedbackType.TextHandleMove
+                                        )
+                                        reorderableSections = reorderableSections.toMutableList().apply {
+                                            val moved = removeAt(index)
+                                            add(index + 1, moved)
+                                        }
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ArrowDownward,
+                                        contentDescription = stringResource(id = R.string.cd_move_down)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 10.dp, bottom = 20.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
+                                reorderableSections = defaultStreamingHomeSections.filterNot {
+                                    it == STREAMING_SECTION_GREETING || it == STREAMING_SECTION_DISCOVER
+                                }
+                                visibilityMap = mapOf(
+                                    STREAMING_SECTION_GREETING to true,
+                                    STREAMING_SECTION_DISCOVER to true,
+                                    STREAMING_SECTION_RHYTHM_GUARD to true,
+                                    STREAMING_SECTION_RHYTHM_STATS to true,
+                                    STREAMING_SECTION_RECENTLY_PLAYED to true,
+                                    STREAMING_SECTION_NEW_RELEASES to true
+                                )
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.RestartAlt,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(text = stringResource(id = R.string.ui_reset))
+                        }
+
+                        Button(
+                            onClick = {
+                                HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
+                                appSettings.setStreamingHomeSectionOrder(
+                                    listOf(STREAMING_SECTION_GREETING, STREAMING_SECTION_DISCOVER) + reorderableSections
+                                )
+                                appSettings.setStreamingHomeShowGreeting(
+                                    visibilityMap[STREAMING_SECTION_GREETING] == true
+                                )
+                                appSettings.setStreamingHomeShowRhythmGuard(
+                                    visibilityMap[STREAMING_SECTION_RHYTHM_GUARD] == true
+                                )
+                                appSettings.setStreamingHomeShowRhythmStats(
+                                    visibilityMap[STREAMING_SECTION_RHYTHM_STATS] == true
+                                )
+                                appSettings.setStreamingHomeShowRecentlyPlayed(
+                                    visibilityMap[STREAMING_SECTION_RECENTLY_PLAYED] == true
+                                )
+                                appSettings.setStreamingHomeShowRecommended(
+                                    visibilityMap[STREAMING_SECTION_DISCOVER] == true
+                                )
+                                appSettings.setStreamingHomeShowNewReleases(
+                                    visibilityMap[STREAMING_SECTION_NEW_RELEASES] == true
+                                )
+                                scope.launch {
+                                    sheetState.hide()
+                                    onDismiss()
+                                }
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(text = stringResource(id = R.string.ui_save))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun streamingGroupedBottomSheetItemShape(index: Int, totalCount: Int): RoundedCornerShape {
+    if (totalCount <= 1) return RoundedCornerShape(24.dp)
+
+    return when (index) {
+        0 -> RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 8.dp, bottomEnd = 8.dp)
+        totalCount - 1 -> RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
+        else -> RoundedCornerShape(8.dp)
+    }
+}
+
+private fun streamingSectionIcon(sectionId: String): ImageVector {
+    return when (sectionId) {
+        STREAMING_SECTION_GREETING -> Icons.Default.WavingHand
+        STREAMING_SECTION_DISCOVER -> Icons.Default.Recommend
+        STREAMING_SECTION_RHYTHM_GUARD -> Icons.Default.Security
+        STREAMING_SECTION_RHYTHM_STATS -> Icons.Default.AutoGraph
+        STREAMING_SECTION_RECENTLY_PLAYED -> Icons.Default.History
+        STREAMING_SECTION_NEW_RELEASES -> Icons.Rounded.NewReleases
+        else -> RhythmIcons.Music.Song
+    }
+}
+
+private fun streamingSectionSubtitleRes(sectionId: String): Int? {
+    return when (sectionId) {
+        STREAMING_SECTION_DISCOVER -> R.string.home_explore_music
+        STREAMING_SECTION_RHYTHM_GUARD -> R.string.settings_rhythm_guard_list_desc
+        STREAMING_SECTION_RHYTHM_STATS -> R.string.settings_rhythm_stats_desc
+        STREAMING_SECTION_RECENTLY_PLAYED -> R.string.home_recently_played_subtitle
+        STREAMING_SECTION_NEW_RELEASES -> R.string.streaming_home_widget_new_releases_empty
+        else -> null
+    }
+}
+
+private fun streamingSectionTitleRes(sectionId: String): Int {
+    return when (sectionId) {
+        STREAMING_SECTION_GREETING -> R.string.home_section_greeting
+        STREAMING_SECTION_DISCOVER -> R.string.home_section_discover
+        STREAMING_SECTION_RHYTHM_GUARD -> R.string.settings_rhythm_guard
+        STREAMING_SECTION_RHYTHM_STATS -> R.string.settings_rhythm_stats
+        STREAMING_SECTION_RECENTLY_PLAYED -> R.string.home_section_recently_played
+        STREAMING_SECTION_NEW_RELEASES -> R.string.home_section_new_releases
+        else -> R.string.home
+    }
+}
+
+private fun normalizeStreamingSectionId(sectionId: String): String {
+    return when (sectionId.trim()) {
+        "STATS" -> STREAMING_SECTION_RHYTHM_STATS
+        "RECOMMENDED" -> STREAMING_SECTION_DISCOVER
+        "PLAYLISTS" -> STREAMING_SECTION_DISCOVER
+        else -> sectionId.trim()
+    }
+}
+
+private fun rhythmGuardModeDisplayName(mode: String): String {
+    return when (mode) {
+        AppSettings.RHYTHM_GUARD_MODE_AUTO -> "Adaptive Guard"
+        AppSettings.RHYTHM_GUARD_MODE_MANUAL -> "Manual Guard"
+        else -> "Guard Off"
+    }
+}
+
+@Composable
+private fun noShadowCardElevation() = CardDefaults.cardElevation(
+    defaultElevation = 0.dp,
+    pressedElevation = 0.dp,
+    focusedElevation = 0.dp,
+    hoveredElevation = 0.dp,
+    draggedElevation = 0.dp
+)
+
+@Composable
+private fun rememberGreetingMessage(context: android.content.Context): String {
+    val hourOfDay = remember { Calendar.getInstance().get(Calendar.HOUR_OF_DAY) }
+    val greetingRes = when (hourOfDay) {
+        in 5..11 -> R.string.home_greeting_morning
+        in 12..16 -> R.string.home_greeting_afternoon
+        in 17..21 -> R.string.home_greeting_evening
+        else -> R.string.home_greeting_night
+    }
+    return context.getString(greetingRes)
+}
+
+@Composable
+private fun rememberGreetingQuote(context: android.content.Context): String {
+    val hourOfDay = remember { Calendar.getInstance().get(Calendar.HOUR_OF_DAY) }
+    return remember(hourOfDay) {
+        when (hourOfDay) {
+            in 0..4 -> listOf(
+                context.getString(R.string.home_quote_late_night_1),
+                context.getString(R.string.home_quote_late_night_2),
+                context.getString(R.string.home_quote_late_night_3),
+                context.getString(R.string.home_quote_late_night_4)
+            )
+
+            in 5..11 -> listOf(
+                context.getString(R.string.home_quote_morning_1),
+                context.getString(R.string.home_quote_morning_2),
+                context.getString(R.string.home_quote_morning_3),
+                context.getString(R.string.home_quote_morning_4)
+            )
+
+            in 12..16 -> listOf(
+                context.getString(R.string.home_quote_afternoon_1),
+                context.getString(R.string.home_quote_afternoon_2),
+                context.getString(R.string.home_quote_afternoon_3),
+                context.getString(R.string.home_quote_afternoon_4)
+            )
+
+            in 17..20 -> listOf(
+                context.getString(R.string.home_quote_evening_1),
+                context.getString(R.string.home_quote_evening_2),
+                context.getString(R.string.home_quote_evening_3),
+                context.getString(R.string.home_quote_evening_4)
+            )
+
+            else -> listOf(
+                context.getString(R.string.home_quote_night_1),
+                context.getString(R.string.home_quote_night_2),
+                context.getString(R.string.home_quote_night_3),
+                context.getString(R.string.home_quote_night_4)
+            )
+        }.random()
+    }
+}
+
+private fun formatListeningDurationShort(durationMs: Long): String {
+    if (durationMs <= 0L) return "0m"
+
+    val totalMinutes = durationMs / 60_000L
+    val hours = totalMinutes / 60L
+    val minutes = totalMinutes % 60L
+
+    return when {
+        hours <= 0L -> "${minutes}m"
+        minutes == 0L -> "${hours}h"
+        else -> "${hours}h ${minutes}m"
+    }
+}
+
+private fun formatCompactDuration(durationMs: Long): String {
+    val totalSeconds = (durationMs / 1_000L).coerceAtLeast(0L)
+    val minutes = totalSeconds / 60L
+    val seconds = totalSeconds % 60L
+    return if (minutes > 0L) "${minutes}m ${seconds}s" else "${seconds}s"
+}
+
+private fun Song.toStreamingSongOrNull(defaultServiceId: String): StreamingSong? {
+    val uriValue = uri.toString()
+    val hasPrefixedServiceId = id.contains("::")
+    val isNetworkStream =
+        uriValue.startsWith("https://", ignoreCase = true) ||
+            uriValue.startsWith("http://", ignoreCase = true)
+
+    if (!hasPrefixedServiceId && !isNetworkStream) {
+        return null
+    }
+
+    val embeddedServiceId = id.substringBefore("::", missingDelimiterValue = "")
+    val resolvedServiceId = when {
+        embeddedServiceId in StreamingServiceId.all -> embeddedServiceId
+        defaultServiceId in StreamingServiceId.all -> defaultServiceId
+        else -> StreamingServiceId.SUBSONIC
+    }
+    val normalizedId = if (hasPrefixedServiceId) id else "$resolvedServiceId::$id"
+
+    return StreamingSong(
+        id = normalizedId,
+        title = title,
+        artist = artist,
+        album = album,
+        duration = duration,
+        artworkUri = artworkUri?.toString(),
+        sourceType = resolvedServiceId.toSourceType(),
+        streamingUrl = uriValue.takeIf { isNetworkStream },
+        previewUrl = null,
+        externalId = normalizedId.substringAfter("::", missingDelimiterValue = id)
+    )
+}
+
+private fun String.toSourceType(): SourceType {
+    return when (this) {
+        StreamingServiceId.SUBSONIC -> SourceType.SUBSONIC
+        StreamingServiceId.JELLYFIN -> SourceType.JELLYFIN
+        StreamingServiceId.NETEASE_CLOUD_MUSIC -> SourceType.NETEASE_CLOUD_MUSIC
+        StreamingServiceId.QQ_MUSIC -> SourceType.QQ_MUSIC
+        else -> SourceType.UNKNOWN
     }
 }

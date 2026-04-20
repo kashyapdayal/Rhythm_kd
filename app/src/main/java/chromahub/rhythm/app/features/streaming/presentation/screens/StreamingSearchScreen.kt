@@ -16,6 +16,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -38,6 +39,7 @@ import chromahub.rhythm.app.shared.presentation.components.common.CollapsibleHea
 fun StreamingSearchScreen(
     viewModel: StreamingMusicViewModel,
     onConfigureService: (String) -> Unit,
+    onNavigateToArtist: (StreamingArtist) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -55,6 +57,20 @@ fun StreamingSearchScreen(
     val query by viewModel.searchQuery.collectAsState()
     val results by viewModel.searchResults.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val recommendations by viewModel.recommendations.collectAsState()
+    val newReleases by viewModel.newReleases.collectAsState()
+    val featuredPlaylists by viewModel.featuredPlaylists.collectAsState()
+
+    val hasProviderDiscovery =
+        recommendations.isNotEmpty() ||
+            newReleases.isNotEmpty() ||
+            featuredPlaylists.isNotEmpty()
+
+    LaunchedEffect(selectedService, isSelectedServiceConnected, hasProviderDiscovery) {
+        if (isSelectedServiceConnected && !hasProviderDiscovery) {
+            viewModel.loadHomeContent()
+        }
+    }
 
     CollapsibleHeaderScreen(
         title = stringResource(id = R.string.search),
@@ -125,10 +141,75 @@ fun StreamingSearchScreen(
             } else if (query.isBlank()) {
                 item {
                     Text(
-                        text = stringResource(id = R.string.streaming_search_suggestions_title),
+                        text = stringResource(
+                            id = R.string.streaming_search_discovery_title,
+                            selectedServiceName
+                        ),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+
+                if (hasProviderDiscovery) {
+                    if (recommendations.isNotEmpty()) {
+                        item {
+                            Text(
+                                text = stringResource(id = R.string.streaming_home_widget_recommended_title),
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+
+                        items(recommendations.take(8), key = { it.id }) { song ->
+                            SearchSongCard(
+                                song = song,
+                                onPlaySong = { viewModel.playSong(song) }
+                            )
+                        }
+                    }
+
+                    if (newReleases.isNotEmpty()) {
+                        item {
+                            Text(
+                                text = stringResource(id = R.string.streaming_home_widget_new_releases_title),
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+
+                        items(newReleases.take(6), key = { it.id }) { album ->
+                            SearchAlbumCard(
+                                album = album,
+                                onOpenAlbum = { viewModel.playAlbum(album) }
+                            )
+                        }
+                    }
+
+                    if (featuredPlaylists.isNotEmpty()) {
+                        item {
+                            Text(
+                                text = stringResource(id = R.string.streaming_home_widget_playlists_title),
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+
+                        items(featuredPlaylists.take(6), key = { it.id }) { playlist ->
+                            SearchPlaylistCard(playlist = playlist)
+                        }
+                    }
+                }
+
+                item {
+                    Text(
+                        text = stringResource(id = R.string.streaming_search_suggestions_title),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary
                     )
                 }
 
@@ -211,7 +292,10 @@ fun StreamingSearchScreen(
                         }
 
                         items(results.albums.take(8), key = { it.id }) { album ->
-                            SearchAlbumCard(album = album)
+                            SearchAlbumCard(
+                                album = album,
+                                onOpenAlbum = { viewModel.playAlbum(album) }
+                            )
                         }
                     }
 
@@ -226,7 +310,10 @@ fun StreamingSearchScreen(
                         }
 
                         items(results.artists.take(8), key = { it.id }) { artist ->
-                            SearchArtistCard(artist = artist)
+                            SearchArtistCard(
+                                artist = artist,
+                                onOpenArtist = { onNavigateToArtist(artist) }
+                            )
                         }
                     }
 
@@ -288,8 +375,12 @@ private fun SearchSongCard(
 }
 
 @Composable
-private fun SearchAlbumCard(album: StreamingAlbum) {
+private fun SearchAlbumCard(
+    album: StreamingAlbum,
+    onOpenAlbum: () -> Unit
+) {
     Card(
+        onClick = onOpenAlbum,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainer
         ),
@@ -316,8 +407,12 @@ private fun SearchAlbumCard(album: StreamingAlbum) {
 }
 
 @Composable
-private fun SearchArtistCard(artist: StreamingArtist) {
+private fun SearchArtistCard(
+    artist: StreamingArtist,
+    onOpenArtist: () -> Unit
+) {
     Card(
+        onClick = onOpenArtist,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainer
         ),

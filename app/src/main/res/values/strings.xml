@@ -2035,6 +2035,7 @@
     <!-- Home Screen Section Titles -->
     <string name="home_top_artists">Artists</string>
     <string name="home_top_artists_subtitle">Your favorite musicians</string>
+    <string name="home_no_top_artists">No artists yet</string>
     
     <!-- Content Descriptions (additional) -->
     <string name="cd_reorder_home_sections">Reorder home sections</string>
@@ -2660,6 +2661,7 @@
     <string name="streaming_quality_lossless_desc">Best quality where supported (FLAC/ALAC).</string>
     <string name="streaming_settings_offline_mode">Offline Mode</string>
     <string name="streaming_settings_offline_mode_desc">Play downloaded tracks when enabled</string>
+    <string name="streaming_settings_group_wellbeing">Rhythm Insights</string>
     <string name="streaming_open_full_settings">Open Full Settings</string>
     <string name="streaming_open_full_settings_desc">Open app-wide settings shared across modes</string>
     <string name="streaming_switch_to_local_mode">Switch to Local Mode</string>
@@ -2670,6 +2672,10 @@
     <string name="streaming_status_not_connected">Authentication pending</string>
     <string name="streaming_status_loading">Refreshing streaming feed…</string>
     <string name="streaming_status_ready">Ready to configure and connect</string>
+    <string name="streaming_status_badge_connected">Connected</string>
+    <string name="streaming_status_badge_pending">Pending</string>
+    <string name="streaming_status_badge_refreshing">Refreshing</string>
+    <string name="streaming_status_connect_hint">Manage the selected service below to connect your account.</string>
     <string name="streaming_service_setup_coming_soon">%1$s setup is now in progress.</string>
     <string name="streaming_selected">Selected</string>
     <string name="streaming_connect">Connect</string>
@@ -2689,9 +2695,30 @@
     <string name="streaming_dashboard_subtitle">Showing streaming content for %1$s.</string>
     <string name="streaming_home_selected_service_unavailable">Selected service is not connected</string>
     <string name="streaming_home_connect_selected_service">Connect %1$s to unlock Home and Search.</string>
+    <string name="streaming_home_open_settings">Open Streaming Settings</string>
     <string name="streaming_home_connected_service">Connected service: %1$s</string>
     <string name="streaming_home_for_service">For %1$s</string>
+    <string name="streaming_home_section_fixed_hint">Pinned at top</string>
+    <string name="streaming_home_widget_greeting_subtitle">Connected to %1$s</string>
+    <string name="streaming_home_widget_recently_played_subtitle">Continue from %1$s sessions</string>
+    <string name="streaming_home_widget_recommended_title">Discover</string>
+    <string name="streaming_home_widget_recommended_subtitle">Discover picks from %1$s</string>
+    <string name="streaming_home_widget_recommended_empty">Nothing to discover yet</string>
+    <string name="streaming_home_widget_new_releases_title">New Releases</string>
+    <string name="streaming_home_widget_new_releases_subtitle">Recently added albums from %1$s</string>
+    <string name="streaming_home_widget_new_releases_empty">No new releases available</string>
+    <string name="streaming_home_widget_playlists_title">Featured Playlists</string>
+    <string name="streaming_home_widget_playlists_subtitle">Playlist picks from %1$s</string>
+    <string name="streaming_home_widget_playlists_empty">No featured playlists found</string>
+    <string name="streaming_home_widget_empty_hint">Try refreshing after syncing your streaming library.</string>
+    <string name="streaming_home_widget_playlist_track_count">%1$d tracks</string>
+    <string name="streaming_library_overview_title">%1$s Library</string>
+    <string name="streaming_library_overview_stats">%1$d songs · %2$d albums · %3$d artists · %4$d playlists</string>
+    <string name="streaming_library_play_all">Play all songs</string>
+    <string name="streaming_home_guard_break_active">Break active: %1$s left</string>
+    <string name="streaming_home_guard_exposure">Today: %1$d / %2$d min</string>
     <string name="streaming_search_subtitle">Search is scoped to %1$s.</string>
+    <string name="streaming_search_discovery_title">Discover from %1$s</string>
     <string name="streaming_search_hint">Search songs, artists, albums, playlists</string>
     <string name="streaming_search_unavailable_title">Search unavailable</string>
     <string name="streaming_search_suggestions_title">Service Suggestions</string>

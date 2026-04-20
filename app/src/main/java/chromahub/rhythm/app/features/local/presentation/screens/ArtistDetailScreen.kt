@@ -79,7 +79,11 @@ fun ArtistDetailScreen(
     favoriteSongs: Set<String> = emptySet(),
     onShowSongInfo: (Song) -> Unit = {},
     currentSong: Song? = null,
-    isPlaying: Boolean = false
+    isPlaying: Boolean = false,
+    artistOverride: Artist? = null,
+    songsOverride: List<Song>? = null,
+    albumsOverride: List<Album>? = null,
+    isContentLoadingOverride: Boolean? = null
 ) {
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
@@ -96,19 +100,30 @@ fun ArtistDetailScreen(
     val allArtists by viewModel.artists.collectAsState()
     
     // Find the artist
-    val artist = remember(allArtists, artistName) {
-        allArtists.find { it.name == artistName }
+    val artist = remember(allArtists, artistName, artistOverride) {
+        artistOverride ?: allArtists.find { it.name == artistName }
     }
 
     val artistContent by produceState<ArtistDetailContent?>(
-        initialValue = null,
+        initialValue = if (songsOverride != null && albumsOverride != null) {
+            ArtistDetailContent(songs = songsOverride, albums = albumsOverride)
+        } else {
+            null
+        },
         allSongs,
         allAlbums,
         artistName,
         groupByAlbumArtist,
         artistSeparatorEnabled,
-        artistSeparatorDelimiters
+        artistSeparatorDelimiters,
+        songsOverride,
+        albumsOverride
     ) {
+        if (songsOverride != null && albumsOverride != null) {
+            value = ArtistDetailContent(songs = songsOverride, albums = albumsOverride)
+            return@produceState
+        }
+
         value = withContext(Dispatchers.Default) {
             val charDelimiters = if (artistSeparatorEnabled) {
                 artistSeparatorDelimiters.toList().map { it.toString() }
@@ -170,12 +185,21 @@ fun ArtistDetailScreen(
         }
     }
 
-    val artistSongs = artistContent?.songs.orEmpty()
-    val artistAlbums = artistContent?.albums.orEmpty()
-    val isArtistContentLoading = artistContent == null
+    val artistSongs = songsOverride ?: artistContent?.songs.orEmpty()
+    val artistAlbums = albumsOverride ?: artistContent?.albums.orEmpty()
+    val isArtistContentLoading = isContentLoadingOverride ?: (
+        if (songsOverride != null && albumsOverride != null) {
+            false
+        } else {
+            artistContent == null
+        }
+        )
 
     val imageRefreshRequestedArtistIds = remember { mutableStateListOf<String>() }
-    LaunchedEffect(artist?.id, artist?.artworkUri) {
+    LaunchedEffect(artist?.id, artist?.artworkUri, artistOverride) {
+        if (artistOverride != null) {
+            return@LaunchedEffect
+        }
         val currentArtist = artist ?: return@LaunchedEffect
         if (currentArtist.artworkUri == null && !imageRefreshRequestedArtistIds.contains(currentArtist.id)) {
             imageRefreshRequestedArtistIds.add(currentArtist.id)

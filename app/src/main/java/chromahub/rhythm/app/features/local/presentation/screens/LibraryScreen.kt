@@ -1872,7 +1872,8 @@ fun SingleCardSongsContent(
     onSongLongPress: (Song) -> Unit = {},
     onSongSelectionToggle: (Song) -> Unit = {},
     onShowMultiSelectionSheet: () -> Unit = {},
-    onRefreshClick: (() -> Unit)? = null
+    onRefreshClick: (() -> Unit)? = null,
+    songMenuContent: (@Composable (song: Song, dismissMenu: () -> Unit) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val appSettings = remember { AppSettings.getInstance(context) }
@@ -2744,7 +2745,10 @@ fun SingleCardSongsContent(
                         isSelected = isSelected,
                         isSelectionMode = isSelectionMode,
                         selectionIndex = selectionIndex,
-                        onLongPress = { onSongLongPress(song) }
+                        onLongPress = { onSongLongPress(song) },
+                        customMenuContent = songMenuContent?.let { menuBuilder ->
+                            { dismissMenu -> menuBuilder(song, dismissMenu) }
+                        }
                     )
                 }
             }
@@ -3561,7 +3565,8 @@ fun LibrarySongItem(
     isSelected: Boolean = false,
     isSelectionMode: Boolean = false,
     selectionIndex: Int? = null,
-    onLongPress: () -> Unit = {}
+    onLongPress: () -> Unit = {},
+    customMenuContent: (@Composable (dismissMenu: () -> Unit) -> Unit)? = null
 ) {
     val context = LocalContext.current
     var showDropdown by remember { mutableStateOf(false) }
@@ -3735,6 +3740,12 @@ fun LibrarySongItem(
                     .padding(5.dp),
                 shape = RoundedCornerShape(18.dp)
             ) {
+                if (customMenuContent != null) {
+                    customMenuContent {
+                        HapticUtils.performHapticFeedback(context, haptics, HapticFeedbackType.LongPress)
+                        showDropdown = false
+                    }
+                } else {
                 // Play next
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceContainer,
@@ -4122,6 +4133,7 @@ fun LibrarySongItem(
                         }
                     )
                 }
+                }
             }
         },
         colors = ListItemDefaults.colors(
@@ -4158,7 +4170,8 @@ fun LibrarySongItemWrapper(
     isSelected: Boolean = false,
     isSelectionMode: Boolean = false,
     selectionIndex: Int? = null,
-    onLongPress: () -> Unit = {}
+    onLongPress: () -> Unit = {},
+    customMenuContent: (@Composable (dismissMenu: () -> Unit) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val isCurrentSong = currentSong?.id == song.id
@@ -4224,7 +4237,8 @@ fun LibrarySongItemWrapper(
             isSelected = isSelected,
             isSelectionMode = isSelectionMode,
             selectionIndex = selectionIndex,
-            onLongPress = onLongPress
+            onLongPress = onLongPress,
+            customMenuContent = customMenuContent
         )
     }
 }

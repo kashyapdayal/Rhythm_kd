@@ -88,22 +88,6 @@ fun StreamingHomeScreen(
                 .padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            item {
-                Text(
-                    text = stringResource(id = R.string.streaming_home_subtitle),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            item {
-                Text(
-                    text = stringResource(id = R.string.streaming_integration_services),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
 
             items(StreamingServiceOptions.defaults, key = { it.id }) { service ->
                 StreamingServiceCard(

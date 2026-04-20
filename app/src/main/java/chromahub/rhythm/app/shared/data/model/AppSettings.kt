@@ -2,6 +2,7 @@ package chromahub.rhythm.app.shared.data.model
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.net.Uri
 import android.util.Log
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
@@ -210,6 +211,7 @@ class AppSettings private constructor(context: Context) {
         
         // Recently Played
         private const val KEY_RECENTLY_PLAYED = "recently_played"
+        private const val KEY_RECENTLY_PLAYED_SONG_CACHE = "recently_played_song_cache"
         private const val KEY_LAST_PLAYED_TIMESTAMP = "last_played_timestamp"
         
         // API Integration
@@ -424,6 +426,17 @@ class AppSettings private constructor(context: Context) {
         private const val KEY_HOME_COMPACT_CARDS = "home_compact_cards"
         private const val KEY_HOME_SHOW_PLAY_BUTTONS = "home_show_play_buttons"
         private const val KEY_HOME_SECTION_ORDER = "home_section_order"
+
+        // Streaming Home Screen Customization
+        private const val KEY_STREAMING_HOME_SHOW_GREETING = "streaming_home_show_greeting"
+        private const val KEY_STREAMING_HOME_SHOW_RHYTHM_GUARD = "streaming_home_show_rhythm_guard"
+        private const val KEY_STREAMING_HOME_SHOW_RHYTHM_STATS = "streaming_home_show_rhythm_stats"
+        private const val KEY_STREAMING_HOME_SHOW_RECENTLY_PLAYED = "streaming_home_show_recently_played"
+        private const val KEY_STREAMING_HOME_SHOW_RECOMMENDED = "streaming_home_show_recommended"
+        private const val KEY_STREAMING_HOME_SHOW_NEW_RELEASES = "streaming_home_show_new_releases"
+        private const val KEY_STREAMING_HOME_SHOW_PLAYLISTS = "streaming_home_show_playlists"
+        private const val KEY_STREAMING_HOME_SECTION_ORDER = "streaming_home_section_order"
+
         private const val KEY_ALBUM_BOTTOM_SHEET_GRADIENT_BLUR = "album_bottom_sheet_gradient_blur"
         private const val KEY_ALBUM_BOTTOM_SHEET_DISC_FILTER = "album_bottom_sheet_disc_filter"
         
@@ -1058,6 +1071,63 @@ class AppSettings private constructor(context: Context) {
         }
     )
     val timeBasedPreferences: StateFlow<Map<Int, List<String>>> = _timeBasedPreferences.asStateFlow()
+
+    private data class RecentSongSnapshot(
+        val id: String,
+        val title: String,
+        val artist: String,
+        val album: String,
+        val duration: Long,
+        val uri: String,
+        val artworkUri: String?
+    )
+
+    private fun Song.toRecentSongSnapshot(): RecentSongSnapshot {
+        return RecentSongSnapshot(
+            id = id,
+            title = title,
+            artist = artist,
+            album = album,
+            duration = duration,
+            uri = uri.toString(),
+            artworkUri = artworkUri?.toString()
+        )
+    }
+
+    private fun RecentSongSnapshot.toSongOrNull(): Song? {
+        return runCatching {
+            Song(
+                id = id,
+                title = title,
+                artist = artist,
+                album = album,
+                duration = duration,
+                uri = Uri.parse(uri),
+                artworkUri = artworkUri?.takeIf { it.isNotBlank() }?.let(Uri::parse)
+            )
+        }.getOrNull()
+    }
+
+    private fun loadRecentlyPlayedSongCache(): Map<String, Song> {
+        return try {
+            val json = prefs.getString(KEY_RECENTLY_PLAYED_SONG_CACHE, null)
+            if (json.isNullOrBlank()) {
+                emptyMap()
+            } else {
+                Gson().fromJson<List<RecentSongSnapshot>>(
+                    json,
+                    object : TypeToken<List<RecentSongSnapshot>>() {}.type
+                )
+                    .orEmpty()
+                    .mapNotNull { snapshot ->
+                        snapshot.toSongOrNull()?.let { song -> song.id to song }
+                    }
+                    .toMap()
+            }
+        } catch (_: Exception) {
+            emptyMap()
+        }
+    }
     
     // Recently Played
     private val _recentlyPlayed = MutableStateFlow<List<String>>(
@@ -1073,6 +1143,9 @@ class AppSettings private constructor(context: Context) {
         }
     )
     val recentlyPlayed: StateFlow<List<String>> = _recentlyPlayed.asStateFlow()
+
+    private val _recentlyPlayedSongCache = MutableStateFlow(loadRecentlyPlayedSongCache())
+    val recentlyPlayedSongCache: StateFlow<Map<String, Song>> = _recentlyPlayedSongCache.asStateFlow()
     
     private val _lastPlayedTimestamp = MutableStateFlow(safeLong(KEY_LAST_PLAYED_TIMESTAMP, 0L))
     val lastPlayedTimestamp: StateFlow<Long> = _lastPlayedTimestamp.asStateFlow()
@@ -2411,6 +2484,20 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
         val json = Gson().toJson(songIds)
         prefs.edit().putString(KEY_RECENTLY_PLAYED, json).apply()
         _recentlyPlayed.value = songIds
+    }
+
+    fun updateRecentlyPlayedSongCache(songs: List<Song>) {
+        val snapshots = songs
+            .distinctBy { it.id }
+            .take(50)
+            .map { it.toRecentSongSnapshot() }
+
+        prefs.edit().putString(KEY_RECENTLY_PLAYED_SONG_CACHE, Gson().toJson(snapshots)).apply()
+        _recentlyPlayedSongCache.value = snapshots
+            .mapNotNull { snapshot ->
+                snapshot.toSongOrNull()?.let { song -> song.id to song }
+            }
+            .toMap()
     }
     
     fun updateLastPlayedTimestamp(timestamp: Long) {
@@ -3939,6 +4026,7 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
             val json = prefs.getString(KEY_RECENTLY_PLAYED, null)
             if (json != null) Gson().fromJson(json, object : TypeToken<List<String>>() {}.type) else emptyList()
         } catch (e: Exception) { emptyList() }
+        _recentlyPlayedSongCache.value = loadRecentlyPlayedSongCache()
         
         _lastPlayedTimestamp.value = safeLong(KEY_LAST_PLAYED_TIMESTAMP, 0L)
         
@@ -4205,6 +4293,55 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
     fun setHomeShowListeningStats(value: Boolean) {
         _homeShowListeningStats.value = value
         prefs.edit().putBoolean(KEY_HOME_SHOW_LISTENING_STATS, value).apply()
+    }
+
+    private val _streamingHomeShowGreeting = MutableStateFlow(prefs.getBoolean(KEY_STREAMING_HOME_SHOW_GREETING, true))
+    val streamingHomeShowGreeting: StateFlow<Boolean> = _streamingHomeShowGreeting.asStateFlow()
+    fun setStreamingHomeShowGreeting(value: Boolean) {
+        _streamingHomeShowGreeting.value = value
+        prefs.edit().putBoolean(KEY_STREAMING_HOME_SHOW_GREETING, value).apply()
+    }
+
+    private val _streamingHomeShowRhythmGuard = MutableStateFlow(prefs.getBoolean(KEY_STREAMING_HOME_SHOW_RHYTHM_GUARD, true))
+    val streamingHomeShowRhythmGuard: StateFlow<Boolean> = _streamingHomeShowRhythmGuard.asStateFlow()
+    fun setStreamingHomeShowRhythmGuard(value: Boolean) {
+        _streamingHomeShowRhythmGuard.value = value
+        prefs.edit().putBoolean(KEY_STREAMING_HOME_SHOW_RHYTHM_GUARD, value).apply()
+    }
+
+    private val _streamingHomeShowRhythmStats = MutableStateFlow(prefs.getBoolean(KEY_STREAMING_HOME_SHOW_RHYTHM_STATS, true))
+    val streamingHomeShowRhythmStats: StateFlow<Boolean> = _streamingHomeShowRhythmStats.asStateFlow()
+    fun setStreamingHomeShowRhythmStats(value: Boolean) {
+        _streamingHomeShowRhythmStats.value = value
+        prefs.edit().putBoolean(KEY_STREAMING_HOME_SHOW_RHYTHM_STATS, value).apply()
+    }
+
+    private val _streamingHomeShowRecentlyPlayed = MutableStateFlow(prefs.getBoolean(KEY_STREAMING_HOME_SHOW_RECENTLY_PLAYED, true))
+    val streamingHomeShowRecentlyPlayed: StateFlow<Boolean> = _streamingHomeShowRecentlyPlayed.asStateFlow()
+    fun setStreamingHomeShowRecentlyPlayed(value: Boolean) {
+        _streamingHomeShowRecentlyPlayed.value = value
+        prefs.edit().putBoolean(KEY_STREAMING_HOME_SHOW_RECENTLY_PLAYED, value).apply()
+    }
+
+    private val _streamingHomeShowRecommended = MutableStateFlow(prefs.getBoolean(KEY_STREAMING_HOME_SHOW_RECOMMENDED, true))
+    val streamingHomeShowRecommended: StateFlow<Boolean> = _streamingHomeShowRecommended.asStateFlow()
+    fun setStreamingHomeShowRecommended(value: Boolean) {
+        _streamingHomeShowRecommended.value = value
+        prefs.edit().putBoolean(KEY_STREAMING_HOME_SHOW_RECOMMENDED, value).apply()
+    }
+
+    private val _streamingHomeShowNewReleases = MutableStateFlow(prefs.getBoolean(KEY_STREAMING_HOME_SHOW_NEW_RELEASES, true))
+    val streamingHomeShowNewReleases: StateFlow<Boolean> = _streamingHomeShowNewReleases.asStateFlow()
+    fun setStreamingHomeShowNewReleases(value: Boolean) {
+        _streamingHomeShowNewReleases.value = value
+        prefs.edit().putBoolean(KEY_STREAMING_HOME_SHOW_NEW_RELEASES, value).apply()
+    }
+
+    private val _streamingHomeShowPlaylists = MutableStateFlow(prefs.getBoolean(KEY_STREAMING_HOME_SHOW_PLAYLISTS, true))
+    val streamingHomeShowPlaylists: StateFlow<Boolean> = _streamingHomeShowPlaylists.asStateFlow()
+    fun setStreamingHomeShowPlaylists(value: Boolean) {
+        _streamingHomeShowPlaylists.value = value
+        prefs.edit().putBoolean(KEY_STREAMING_HOME_SHOW_PLAYLISTS, value).apply()
     }
     
     // ==================== Player Screen Customization Settings ====================
@@ -4593,6 +4730,39 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
     fun setHomeSectionOrder(value: List<String>) {
         _homeSectionOrder.value = value
         prefs.edit().putString(KEY_HOME_SECTION_ORDER, value.joinToString(",")).apply()
+    }
+
+    private val defaultStreamingHomeSectionOrder = listOf(
+        "GREETING", "DISCOVER", "RECENTLY_PLAYED", "RHYTHM_GUARD", "RHYTHM_STATS", "RECOMMENDED", "NEW_RELEASES"
+    )
+
+    private fun normalizeStreamingHomeSectionOrder(rawSections: List<String>): List<String> {
+        val normalized = rawSections
+            .map(String::trim)
+            .map {
+                when (it) {
+                    "STATS" -> "RHYTHM_STATS"
+                    "PLAYLISTS" -> "DISCOVER"
+                    else -> it
+                }
+            }
+            .filter { it.isNotBlank() }
+
+        return (normalized + defaultStreamingHomeSectionOrder).distinct()
+    }
+
+    private val _streamingHomeSectionOrder = MutableStateFlow(
+        normalizeStreamingHomeSectionOrder(
+            prefs.getString(KEY_STREAMING_HOME_SECTION_ORDER, null)
+                ?.split(",")
+                .orEmpty()
+        )
+    )
+    val streamingHomeSectionOrder: StateFlow<List<String>> = _streamingHomeSectionOrder.asStateFlow()
+    fun setStreamingHomeSectionOrder(value: List<String>) {
+        val normalizedValue = normalizeStreamingHomeSectionOrder(value)
+        _streamingHomeSectionOrder.value = normalizedValue
+        prefs.edit().putString(KEY_STREAMING_HOME_SECTION_ORDER, normalizedValue.joinToString(",")).apply()
     }
     
     // Album Bottom Sheet Appearance Settings
