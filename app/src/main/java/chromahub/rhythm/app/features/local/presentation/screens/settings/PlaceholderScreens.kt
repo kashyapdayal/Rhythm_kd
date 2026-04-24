@@ -817,6 +817,7 @@ fun QueuePlaybackSettingsScreen(onBackClick: () -> Unit) {
     val crossfadeEnabled by appSettings.crossfade.collectAsState()
     val crossfadeDuration by appSettings.crossfadeDuration.collectAsState()
     val crossfadeRepeatOne by appSettings.crossfadeRepeatOne.collectAsState()
+    val bitPerfectMode by appSettings.bitPerfectMode.collectAsState()
     val stopPlaybackOnAppClose by appSettings.stopPlaybackOnAppClose.collectAsState()
 
     var showPlaylistBehaviorDialog by remember { mutableStateOf(false) }
@@ -10614,6 +10615,7 @@ fun PlayerCustomizationSettingsScreen(onBackClick: () -> Unit) {
     var showCornerRadiusSheet by remember { mutableStateOf(false) }
     var showPlayerProgressStyleSheet by remember { mutableStateOf(false) }
     var showPlayerThumbStyleSheet by remember { mutableStateOf(false) }
+    var showImmersiveModeBottomSheet by remember { mutableStateOf(false) }
 
     if (showLyricsSourceDialog) {
         LyricsSourceDialog(onDismiss = { showLyricsSourceDialog = false }, appSettings = appSettings, context = context, haptic = haptics)
@@ -10698,16 +10700,6 @@ fun PlayerCustomizationSettingsScreen(onBackClick: () -> Unit) {
                                 description = context.getString(R.string.settings_audio_quality_badges_desc),
                                 toggleState = playerShowAudioQualityBadges,
                                 onToggleChange = { appSettings.setPlayerShowAudioQualityBadges(it) }
-                            )
-                        ),
-                        toMaterial3SettingsItem(
-                            context = context,
-                            hapticFeedback = haptics,
-                            item = SettingItem(
-                                icon = Icons.Default.Fullscreen,
-                                title = "Immersive Mode",
-                                description = "Configure status bar hide behaviour",
-                                onClick = { showImmersiveModeBottomSheet = true }
                             )
                         ),
                         toMaterial3SettingsItem(
@@ -11406,6 +11398,48 @@ fun PlayerCustomizationSettingsScreen(onBackClick: () -> Unit) {
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun SettingsSectionHeader(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurface,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+    )
+}
+
+@Composable
+private fun ScopeOption(
+    title: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(14.dp),
+        color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            RadioButton(selected = selected, onClick = onClick)
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface
+            )
         }
     }
 }

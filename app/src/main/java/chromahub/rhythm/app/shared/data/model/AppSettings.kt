@@ -89,6 +89,8 @@ class AppSettings private constructor(context: Context) {
         private const val KEY_REPLAY_GAIN = "replay_gain"
         private const val KEY_BIT_PERFECT_MODE = "bit_perfect_mode"
         private const val KEY_AUDIO_ROUTING_MODE = "audio_routing_mode" // "default", "app", "system"
+        private const val KEY_IMMERSIVE_SCOPE = "immersive_scope"
+        private const val KEY_IMMERSIVE_BEHAVIOUR = "immersive_behaviour"
         private const val KEY_RESUME_ON_DEVICE_RECONNECT = "resume_on_device_reconnect"
         
         // Lyrics Settings
@@ -537,6 +539,16 @@ class AppSettings private constructor(context: Context) {
     
     private val _audioRoutingMode = MutableStateFlow(prefs.getString(KEY_AUDIO_ROUTING_MODE, "default") ?: "default")
     val audioRoutingMode: StateFlow<String> = _audioRoutingMode.asStateFlow()
+
+    private val _immersiveScope = MutableStateFlow(
+        ImmersiveScope.valueOf(prefs.getString(KEY_IMMERSIVE_SCOPE, ImmersiveScope.OFF.name) ?: ImmersiveScope.OFF.name)
+    )
+    val immersiveScope: StateFlow<ImmersiveScope> = _immersiveScope.asStateFlow()
+
+    private val _immersiveBehaviour = MutableStateFlow(
+        ImmersiveBehaviour.valueOf(prefs.getString(KEY_IMMERSIVE_BEHAVIOUR, ImmersiveBehaviour.STICKY.name) ?: ImmersiveBehaviour.STICKY.name)
+    )
+    val immersiveBehaviour: StateFlow<ImmersiveBehaviour> = _immersiveBehaviour.asStateFlow()
     
     // Lyrics Settings
     private val _showLyrics = MutableStateFlow(prefs.getBoolean(KEY_SHOW_LYRICS, true))
@@ -1621,6 +1633,16 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
         prefs.edit().putString(KEY_AUDIO_ROUTING_MODE, mode).apply()
         _audioRoutingMode.value = mode
         Log.d("AppSettings", "Audio routing mode set to: $mode")
+    }
+
+    fun setImmersiveScope(scope: ImmersiveScope) {
+        prefs.edit().putString(KEY_IMMERSIVE_SCOPE, scope.name).apply()
+        _immersiveScope.value = scope
+    }
+
+    fun setImmersiveBehaviour(behaviour: ImmersiveBehaviour) {
+        prefs.edit().putString(KEY_IMMERSIVE_BEHAVIOUR, behaviour.name).apply()
+        _immersiveBehaviour.value = behaviour
     }
     
     fun setAudioNormalization(enable: Boolean) {

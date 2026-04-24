@@ -180,6 +180,7 @@ fun SongInfoBottomSheet(
     onDismiss: () -> Unit,
     appSettings: AppSettings,
     onEditSong: ((title: String, artist: String, album: String, genre: String, year: Int, trackNumber: Int, artworkUri: Uri?, removeArtwork: Boolean) -> Unit)? = null,
+    onDeleteSong: (() -> Unit)? = null,
     onShowLyricsEditor: (() -> Unit)? = null,
     sheetState: SheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 ) {

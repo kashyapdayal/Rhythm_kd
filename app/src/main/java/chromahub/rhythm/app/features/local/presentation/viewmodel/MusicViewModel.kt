@@ -7,9 +7,11 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.ComponentName
+import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.IntentSender
 
 import android.os.Build
 import android.os.Bundle
@@ -19,6 +21,7 @@ import android.net.Uri
 import android.provider.MediaStore
 import android.util.Log
 import android.util.LruCache
+import androidx.activity.result.IntentSenderRequest
 import androidx.core.app.NotificationCompat
 import androidx.core.net.toUri
 import androidx.lifecycle.AndroidViewModel
@@ -54,8 +57,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
@@ -5804,19 +5809,43 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     fun requestDeleteSong(song: Song) = viewModelScope.launch {
         pendingDeleteSong = song
-        when (val result = deleteSongUseCase(song)) {
-            is chromahub.rhythm.app.features.local.domain.usecase.DeleteResult.RequiresPermission -> {
-                _deleteConfirmationLauncher.emit(IntentSenderRequest.Builder(result.intentSender).build())
+        val resolver = getApplication<Application>().contentResolver
+        val songUri = ContentUris.withAppendedId(
+            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+            song.id.toLongOrNull() ?: run {
+                _errorMessage.emit("Invalid song id for deletion")
+                pendingDeleteSong = null
+                return@launch
             }
-            is chromahub.rhythm.app.features.local.domain.usecase.DeleteResult.Success -> {
-                Log.d(TAG, "Song successfully deleted: ${song.title}")
-                pendingDeleteSong?.let { onDeleteConfirmed(it) }
+        )
+
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                val pendingIntent = MediaStore.createDeleteRequest(resolver, listOf(songUri))
+                _deleteConfirmationLauncher.emit(
+                    IntentSenderRequest.Builder(pendingIntent.intentSender).build()
+                )
+                return@launch
+            }
+
+            val rows = resolver.delete(songUri, null, null)
+            if (rows > 0) {
+                onDeleteConfirmed(song)
+            } else {
+                _errorMessage.emit("Unable to delete song from device")
                 pendingDeleteSong = null
             }
-            is chromahub.rhythm.app.features.local.domain.usecase.DeleteResult.Error -> {
-                _errorMessage.emit(result.message)
+        } catch (se: SecurityException) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && se is android.app.RecoverableSecurityException) {
+                val sender: IntentSender = se.userAction.actionIntent.intentSender
+                _deleteConfirmationLauncher.emit(IntentSenderRequest.Builder(sender).build())
+            } else {
+                _errorMessage.emit("Deletion failed: ${se.message ?: "permission denied"}")
                 pendingDeleteSong = null
             }
+        } catch (e: Exception) {
+            _errorMessage.emit("Deletion failed: ${e.message ?: "unknown error"}")
+            pendingDeleteSong = null
         }
     }
 
@@ -5830,29 +5859,44 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     fun onDeleteConfirmed(song: Song) {
         viewModelScope.launch {
             try {
-                // Ensure physical file is deleted from MediaStore. 
-                // On Android 10 (API 29), calling this again after permission granted deletes it.
-                // On Android 11+ (API 30+), createDeleteRequest already deleted it, but this is safe to call again.
-                val uri = android.content.ContentUris.withAppendedId(
-                    android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-                    song.id.toLong()
-                )
-                getApplication<android.app.Application>().contentResolver.delete(uri, null, null)
+                val songId = song.id
+                _songs.value = _songs.value.filterNot { it.id == songId }
+                _favoriteSongs.value = _favoriteSongs.value.filterNot { it == songId }.toSet()
+                _playlists.value = _playlists.value.map { playlist ->
+                    playlist.copy(songs = playlist.songs.filterNot { it.id == songId })
+                }
+
+                if (_currentSong.value?.id == songId) {
+                    _currentSong.value = null
+                    _isPlaying.value = false
+                }
+
+                savePlaylists()
+                pendingDeleteSong = null
+                Log.d(TAG, "Song successfully removed from local state: ${song.title}")
             } catch (e: Exception) {
-                Log.e(TAG, "Failed deleting physical file via MediaStore", e)
+                Log.e(TAG, "Failed to finalize song deletion", e)
             }
-            repository.removeSong(song.id)
-            Log.d(TAG, "Song successfully removed from repository: ${song.title}")
         }
     }
 
     // Custom Playlist Covers (PROMPT 2)
     fun updatePlaylistCover(playlistId: String, newUri: android.net.Uri?) {     
         viewModelScope.launch {
+            if (newUri != null) {
+                try {
+                    getApplication<Application>().contentResolver.takePersistableUriPermission(
+                        newUri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                } catch (_: Exception) {
+                    // Ignore and keep URI as-is when persistable permission is unavailable.
+                }
+            }
+
             val updated = _playlists.value.map { playlist ->
                 if (playlist.id == playlistId) {
-                    val finalUri = newUri?.let { playlistCoverManager.saveCustomCover(playlistId, it) }
-                    playlist.copy(artworkUri = finalUri)
+                    playlist.copy(artworkUri = newUri)
                 } else playlist
             }
             _playlists.value = updated
